@@ -1,0 +1,31 @@
+{
+  "name": "drivxis-plataforma-de-analisis-de-futbol",
+  "version": "1.0.0",
+  "description": "DRIVXIS video analisis de futbol",
+  "keywords": [
+    "futbol",
+    "analisis",
+    "video",
+    "analisis",
+    "de",
+    "video",
+    "con",
+    "ia",
+    "estadisticas"
+  ],
+  "homepage": "https://github.com/ceshez/DRIVXIS-Plataforma-de-analisis-de-futbol#readme",
+  "bugs": {
+    "url": "https://github.com/ceshez/DRIVXIS-Plataforma-de-analisis-de-futbol/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ceshez/DRIVXIS-Plataforma-de-analisis-de-futbol.git"
+  },
+  "license": "ISC",
+  "author": "Carlos Sanchez Hernandez",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
