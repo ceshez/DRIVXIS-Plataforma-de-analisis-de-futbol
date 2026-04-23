@@ -1,0 +1,98 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum VideoStatus {
+  UPLOADED
+  PENDING_ANALYSIS
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum AnalysisStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role     @default(USER)
+  videos       Video[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Video {
+  id               String           @id @default(cuid())
+  ownerId          String
+  owner            User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  objectKey        String           @unique
+  originalFilename String
+  mimeType         String
+  sizeBytes        BigInt
+  durationSeconds  Int?
+  status           VideoStatus      @default(UPLOADED)
+  metadata         Json?
+  analysisJobs     AnalysisJob[]
+  metricSnapshots  MetricSnapshot[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([ownerId, createdAt])
+  @@index([status])
+}
+
+model AnalysisJob {
+  id        String         @id @default(cuid())
+  videoId   String
+  video     Video          @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  status    AnalysisStatus @default(QUEUED)
+  progress  Int            @default(0)
+  error     String?
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@index([videoId])
+  @@index([status])
+}
+
+model MetricSnapshot {
+  id        String   @id @default(cuid())
+  videoId   String
+  video     Video    @relation(fields: [videoId], references: [id], onDelete: Cascade)
+  jobId     String?
+  metrics   Json
+  createdAt DateTime @default(now())
+
+  @@index([videoId, createdAt])
+}
+
+model TranslationCache {
+  id             String   @id @default(cuid())
+  locale         String
+  sourceHash     String
+  sourceText     String
+  translatedText String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([locale, sourceHash])
+  @@index([locale])
+}

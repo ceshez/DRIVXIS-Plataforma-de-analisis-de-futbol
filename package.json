@@ -23,9 +23,41 @@
   },
   "license": "ISC",
   "author": "Carlos Sanchez Hernandez",
-  "type": "commonjs",
-  "main": "index.js",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1035.0",
+    "@aws-sdk/s3-request-presigner": "^3.1035.0",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
+    "bcryptjs": "^3.0.3",
+    "clsx": "^2.1.1",
+    "next": "^16.2.4",
+    "pg": "^8.20.0",
+    "prisma": "^7.8.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  },
+  "overrides": {
+    "@hono/node-server": "^1.19.13",
+    "fast-xml-parser": "^5.7.0"
   }
 }
