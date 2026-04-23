@@ -1,4 +1,4 @@
-# Como Ejecutar el Sistema (Local, sin Docker)
+# Como Ejecutar el Sistema (Local)
 
 Este documento es el paso a paso para levantar DRIVXIS en tu computadora.
 
