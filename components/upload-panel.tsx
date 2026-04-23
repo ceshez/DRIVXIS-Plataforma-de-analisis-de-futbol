@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { RadarDemo } from "@/components/radar-demo";
+import { demoStats } from "@/lib/mock-data";
 
 type VideoRecord = {
   id: string;
@@ -98,24 +100,66 @@ export function UploadPanel({ initialVideos }: UploadPanelProps) {
 
   return (
     <section className="video-workspace">
-      <div className="upload-panel">
-        <p className="eyebrow">Biblioteca de partidos</p>
-        <h2>Sube el material ahora, conecta el modelo despues</h2>
-        <p>
-          La plataforma registra propietario, tamano, tipo de archivo, objeto de storage y estado
-          para que el pipeline Python pueda consumir la cola en una siguiente fase.
-        </p>
+      <div className="upload-shell">
+        <div className="upload-panel upload-panel--stage">
+          <p className="eyebrow">Entrada de video</p>
+          <h2>Arrastra el video del partido aquí</h2>
+          <p className="muted">
+            O haz clic para seleccionar. El sistema guarda la metadata del archivo y prepara la
+            cola para el analisis posterior.
+          </p>
 
-        <form className="upload-form" onSubmit={submit}>
-          <input name="video" type="file" accept="video/*" />
-          <button className="button primary" type="submit" disabled={busy}>
-            {busy ? "Preparando..." : "Registrar video"}
-          </button>
-        </form>
-        {message && <p className="form-note">{message}</p>}
+          <div className="upload-dropzone">
+            <div className="upload-drop-icon" aria-hidden="true">
+              ↑
+            </div>
+            <p>Haz clic para seleccionar</p>
+          </div>
+
+          <form className="upload-form upload-form--console" onSubmit={submit}>
+            <input name="video" type="file" accept="video/*" />
+            <button className="button primary" type="submit" disabled={busy}>
+              {busy ? "Preparando..." : "Registrar video"}
+            </button>
+          </form>
+
+          {message && <p className="form-note">{message}</p>}
+        </div>
+
+        <aside className="upload-sidebar">
+          <div className="scoreboard">
+            <span className="score-label">Local</span>
+            <strong>FC Norte</strong>
+            <div className="scoreline">
+              <span>2</span>
+              <span>-</span>
+              <span>0</span>
+            </div>
+            <span className="score-label score-label--right">Visitante</span>
+            <strong>UD Sur</strong>
+          </div>
+
+          <div className="sidebar-metrics">
+            {demoStats.matchMetrics.map((metric) => (
+              <article key={metric.label}>
+                <span>{metric.label}</span>
+                <strong>{metric.value}</strong>
+                <small>{metric.detail}</small>
+              </article>
+            ))}
+          </div>
+
+          <div className="analysis-radar">
+            <RadarDemo />
+          </div>
+        </aside>
       </div>
 
-      <div className="video-list">
+      <div className="recent-videos">
+        <div>
+          <p className="eyebrow">Biblioteca</p>
+          <h2>Videos recientes</h2>
+        </div>
         {videos.length === 0 ? (
           <div className="empty-state">
             <strong>No hay videos todavia.</strong>

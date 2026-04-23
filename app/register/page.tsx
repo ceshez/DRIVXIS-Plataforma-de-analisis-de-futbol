@@ -8,15 +8,15 @@ export default function RegisterPage() {
       <div className="auth-shell">
         <Logo />
         <section className="auth-panel">
-          <p className="eyebrow">Registro publico</p>
+          <p className="eyebrow">Registro público</p>
           <h1>Crea tu base de trabajo en DRIVXIS</h1>
           <p>
-            La cuenta guarda tu biblioteca de videos, cola de analisis y resultados futuros de forma
-            aislada por usuario.
+            La cuenta guarda tu biblioteca de videos, cola de análisis y resultados futuros de
+            forma aislada por usuario.
           </p>
           <AuthForm mode="register" />
           <p className="auth-switch">
-            ¿Ya tienes cuenta? <Link href="/login">Entrar</Link>
+            Ya tienes cuenta? <Link href="/login">Entrar</Link>
           </p>
         </section>
       </div>

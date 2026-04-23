@@ -57,8 +57,8 @@ export function AuthForm({ mode }: AuthFormProps) {
       )}
 
       <label>
-        Correo
-        <input name="email" type="email" autoComplete="email" placeholder="analista@club.com" required />
+        Correo electronico
+        <input name="email" type="email" autoComplete="email" placeholder="usuario@equipo.com" required />
       </label>
 
       <label>
@@ -67,7 +67,7 @@ export function AuthForm({ mode }: AuthFormProps) {
           name="password"
           type="password"
           autoComplete={mode === "register" ? "new-password" : "current-password"}
-          placeholder="Minimo 8 caracteres"
+          placeholder="********"
           required
           minLength={mode === "register" ? 8 : 1}
         />
@@ -76,7 +76,7 @@ export function AuthForm({ mode }: AuthFormProps) {
       {error && <p className="form-error">{error}</p>}
 
       <button className="button primary wide" type="submit" disabled={loading}>
-        {loading ? "Procesando..." : mode === "register" ? "Crear cuenta" : "Entrar al dashboard"}
+        {loading ? "Procesando..." : mode === "register" ? "Crear cuenta" : "Entrar al sistema"}
       </button>
     </form>
   );

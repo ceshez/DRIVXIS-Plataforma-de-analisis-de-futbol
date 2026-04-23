@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Bricolage_Grotesque, Manrope } from "next/font/google";
+import { Manrope, Orbitron } from "next/font/google";
 import "./globals.css";
 
-const display = Bricolage_Grotesque({
+const display = Orbitron({
   subsets: ["latin"],
   variable: "--font-display",
-  weight: ["500", "600", "700"],
+  weight: ["400", "500", "600", "700", "800", "900"],
 });
 
 const body = Manrope({
@@ -28,7 +28,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es">
-      <body className={`${display.variable} ${body.variable}`}>{children}</body>
+      <body className={`${display.variable} ${body.variable} min-h-screen bg-drivxis-bg text-drivxis-text antialiased`}>
+        {children}
+      </body>
     </html>
   );
 }

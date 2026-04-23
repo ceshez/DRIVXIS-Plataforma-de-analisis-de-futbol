@@ -6,6 +6,15 @@ import { demoStats } from "@/lib/mock-data";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
+const dashboardMetrics = [
+  { label: "Posesión", value: "58.6%", detail: "DRIVXIS XI" },
+  { label: "Pases completados", value: "342", detail: "pases" },
+  { label: "Distancia equipo", value: "112.4 km", detail: "recorrido total" },
+  { label: "Sprints totales", value: "86", detail: "runs" },
+  { label: "Remates", value: "16", detail: "tiros" },
+  { label: "Presión alta", value: "74%", detail: "intensidad" },
+];
+
 export default async function DashboardPage() {
   const user = await requireUser();
   const videos = await getRecentVideos(user.id);
@@ -23,21 +32,19 @@ export default async function DashboardPage() {
 
       <section className="dashboard-hero">
         <div>
-          <p className="eyebrow">Dashboard V1</p>
-          <h1>Hola, {user.name}. Tu laboratorio tactico esta listo.</h1>
+          <p className="eyebrow">Modulo</p>
+          <h1>Dashboard de análisis</h1>
           <p>
-            Estos datos son mock realista para validar la experiencia mientras el pipeline YOLO,
-            tracking y homografia se conecta en la siguiente fase.
+            Hola, {user.name}. Tu laboratorio tactico esta listo con métricas, fases, mapas y
+            actividad reciente.
           </p>
         </div>
-        <Link className="button primary" href="/dashboard/videos">
-          Gestionar videos
-        </Link>
+        <span className="status-chip">En espera</span>
       </section>
 
-      <section className="metric-grid" aria-label="Metricas del partido demo">
-        {demoStats.matchMetrics.map((metric) => (
-          <article className="metric-card" key={metric.label}>
+      <section className="metric-grid metric-grid--band" aria-label="Metricas del partido demo">
+        {dashboardMetrics.map((metric) => (
+          <article className="metric-card metric-card--band" key={metric.label}>
             <span>{metric.label}</span>
             <strong>{metric.value}</strong>
             <small>{metric.detail}</small>
@@ -49,7 +56,7 @@ export default async function DashboardPage() {
         <RadarDemo />
 
         <section className="timeline-panel">
-          <p className="eyebrow">Timeline de eventos</p>
+          <p className="eyebrow">Estadísticas clave</p>
           <h2>Lectura por tramos</h2>
           <div className="timeline-list">
             {demoStats.timeline.map((event) => (

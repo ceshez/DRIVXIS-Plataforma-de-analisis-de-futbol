@@ -8,15 +8,15 @@ export default function LoginPage() {
       <div className="auth-shell">
         <Logo />
         <section className="auth-panel">
-          <p className="eyebrow">Acceso seguro</p>
+          <p className="eyebrow">Acceso al sistema</p>
           <h1>Entra a tu sala de analisis</h1>
           <p>
-            Revisa videos registrados, estados de procesamiento y la demo tactica preparada para
-            conectar el modelo.
+            Inicia sesión para acceder al módulo de análisis. Sin instalaciones, sin hardware
+            adicional.
           </p>
           <AuthForm mode="login" />
           <p className="auth-switch">
-            ¿No tienes cuenta? <Link href="/register">Crear cuenta</Link>
+            No tienes cuenta? <Link href="/register">Crear cuenta</Link>
           </p>
         </section>
       </div>

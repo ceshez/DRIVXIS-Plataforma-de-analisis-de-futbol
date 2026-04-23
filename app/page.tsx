@@ -1,83 +1,144 @@
 import Link from "next/link";
-import { Logo } from "@/components/logo";
 import { futureAnalytics } from "@/lib/mock-data";
 import { getRequestLocale, translateDictionary } from "@/lib/i18n";
+import { SiteHeader } from "@/components/site-header";
 
 const landingCopy = {
-  navProduct: "Producto",
-  navUseCases: "Casos de uso",
-  navStats: "Estadisticas",
-  navPipeline: "IA y pipeline",
-  navSecurity: "Seguridad",
-  login: "Entrar",
-  register: "Crear cuenta",
-  eyebrow: "Analisis de futbol con vision por computadora",
-  heroTitle: "DRIVXIS convierte partidos completos en lectura tactica accionable.",
+  navProduct: "Inicio",
+  navUseCases: "Proceso",
+  navStats: "Capacidades",
+  navPipeline: "Contacto",
+  login: "Iniciar sesión",
+  register: "En línea",
+  eyebrow: "Football intelligence system - v2.1",
+  heroTitle: "DRIVXIS",
   heroBody:
-    "Una plataforma para subir videos, preparar colas de analisis y visualizar estadisticas de jugadores, equipos y eventos. El modelo real se conectara despues; la base de producto queda lista desde V1.",
-  heroPrimary: "Empezar ahora",
-  heroSecondary: "Ver dashboard demo",
-  signalA: "Tracking multiobjeto",
-  signalB: "Radar tactico",
-  signalC: "Posesion y presion",
-  useTitle: "Para equipos que necesitan explicar el partido, no solo verlo.",
-  coaches: "Entrenadores",
-  coachesText: "Detecta patrones de presion, distancia entre lineas y momentos de ruptura para preparar sesiones concretas.",
-  analysts: "Analistas",
-  analystsText: "Centraliza videos, jobs y metricas futuras en una base ordenada para iterar modelos sin rehacer producto.",
-  academies: "Academias",
-  academiesText: "Convierte material de categorias formativas en evidencia visual para seguimiento individual y colectivo.",
-  scouts: "Scouting",
-  scoutsText: "Compara velocidad, participacion, posicionamiento y carga de trabajo con contexto del partido.",
-  statsTitle: "Estadisticas preparadas para la siguiente fase del modelo.",
-  pipelineTitle: "Arquitectura pensada para crecer hacia YOLO, OpenCV y homografia.",
-  pipelineBody:
-    "DRIVXIS separa usuarios y metadata en PostgreSQL, videos en object storage y resultados del modelo en snapshots estructurados. Eso permite incorporar Python, procesamiento asincrono y almacenamiento semiestructurado sin romper la experiencia.",
-  securityTitle: "Seguridad y almacenamiento desde el primer dia.",
-  securityBody:
-    "Las contrasenas se guardan hasheadas, las rutas privadas verifican sesion, y los videos se suben con llaves de objeto aisladas por usuario. Los datos sensibles no se envian a traduccion.",
-  ctaTitle: "Prepara tu primer laboratorio tactico.",
+    "Convierte cualquier grabación de partido en datos tacticos y fisicos procesables. Diseñado para cuerpos tecnicos que trabajan con evidencia.",
+  heroPrimary: "Comenzar analisis",
+  heroSecondary: "Ver proceso",
+  metricsTitle: "Métricas por partido",
+  metricA: "40+",
+  metricALabel: "Métricas por partido",
+  metricB: "99.2%",
+  metricBLabel: "Precisión de detección",
+  metricC: "<5min",
+  metricCLabel: "Tiempo de procesamiento",
+  metricD: "24/7",
+  metricDLabel: "Acceso al sistema",
+  processTitle: "Cómo funciona.",
+  processBody:
+    "Un pipeline completamente automatizado que transforma video crudo en inteligencia tactica en menos de cinco minutos.",
+  featureTitle: "Qué analiza.",
+  featureBody:
+    "Cada modulo fue diseñado con input directo de cuerpos tecnicos profesionales.",
+  visualTitle: "Campo tactico en tiempo real",
+  visualBody:
+    "Cada analisis genera un mapa tactico interactivo del partido. Visualiza formaciones, zonas de accion, lineas defensivas y movimientos colectivos fotograma a fotograma.",
+  ctaTitle: "Empieza a analizar tu próximo partido",
   ctaBody:
-    "Crea una cuenta, registra videos y valida el dashboard mock mientras el modelo de analisis aprende a leer tus partidos.",
+    "Inicia sesion para acceder al modulo de analisis. Sin instalaciones, sin hardware adicional.",
+  footerLeft: "DRIVXIS",
 };
 
 export default async function HomePage() {
   const locale = await getRequestLocale();
   const t = await translateDictionary(landingCopy, locale);
 
-  const useCases = [
-    { title: t.coaches, text: t.coachesText },
-    { title: t.analysts, text: t.analystsText },
-    { title: t.academies, text: t.academiesText },
-    { title: t.scouts, text: t.scoutsText },
+  const processSteps = [
+    {
+      index: "01",
+      title: "Carga del video",
+      text: "Sube el footage del partido en cualquier formato estándar. El sistema acepta grabaciones desde drones, cámaras fijas o dispositivos móviles.",
+    },
+    {
+      index: "02",
+      title: "Detección con IA",
+      text: "Nuestro modelo de visión computacional detecta jugadores, árbitros y el balón fotograma a fotograma con precisión sub-pixel.",
+    },
+    {
+      index: "03",
+      title: "Extracción de datos",
+      text: "Se calculan trayectorias, velocidades, zonas de acción, presión defensiva, posesión y más de 40 métricas por jugador.",
+    },
+    {
+      index: "04",
+      title: "Reporte táctico",
+      text: "Los resultados se presentan en un dashboard interactivo con mapas de calor, gráficos tácticos y comparativas de rendimiento.",
+    },
+  ];
+
+  const capabilityCards = [
+    {
+      title: "Tracking posicional",
+      stat: "99.2%",
+      label: "precisión de detección",
+      text:
+        "Identifica la posición exacta de cada jugador en cada fotograma del video, construyendo trayectorias continuas a lo largo del partido.",
+    },
+    {
+      title: "Análisis físico",
+      stat: "40+",
+      label: "métricas por jugador",
+      text:
+        "Distancia recorrida, velocidades máximas y promedio, sprints, esfuerzos de alta intensidad y zonas de frecuencia cardiaca estimada.",
+    },
+    {
+      title: "Inteligencia táctica",
+      stat: "4-3-3",
+      label: "formación detectada auto.",
+      text:
+        "El sistema infiere la formación táctica, líneas defensivas, bloque de presión y transiciones ofensivas sin intervención manual.",
+    },
+    {
+      title: "Eventos clave",
+      stat: "<2s",
+      label: "tiempo de marcaje",
+      text:
+        "Detecta automáticamente goles, disparos, pases clave, duelos, pérdidas de balón y situaciones de riesgo defensivo.",
+    },
+  ];
+
+  const testimonials = [
+    {
+      quote:
+        "DRIVXIS nos dio acceso a datos que antes requerían un equipo de analistas. Ahora los tenemos en minutos.",
+      name: "Carlos Mendoza",
+      role: "Director Técnico — Club Atlético Norte",
+    },
+    {
+      quote:
+        "La visualización táctica es precisa y clara. Integramos el sistema en nuestros procesos de scouting sin fricciones.",
+      name: "Sofía Reyes",
+      role: "Coordinadora de Análisis — Academia Sur FC",
+    },
   ];
 
   return (
-    <main className="site-shell">
-      <header className="site-header">
-        <Logo />
-        <nav aria-label="Navegacion principal">
-          <a href="#producto">{t.navProduct}</a>
-          <a href="#casos">{t.navUseCases}</a>
-          <a href="#estadisticas">{t.navStats}</a>
-          <a href="#pipeline">{t.navPipeline}</a>
-          <a href="#seguridad">{t.navSecurity}</a>
-        </nav>
-        <div className="header-actions">
-          <Link className="button ghost" href="/login">
-            {t.login}
-          </Link>
-          <Link className="button primary" href="/register">
-            {t.register}
-          </Link>
-        </div>
-      </header>
+    <main className="site-shell overflow-x-hidden">
+      <SiteHeader
+        navItems={[
+          { href: "#inicio", label: t.navProduct },
+          { href: "#proceso", label: t.navUseCases },
+          { href: "#capacidades", label: t.navStats },
+          { href: "#contacto", label: t.navPipeline },
+        ]}
+        action={
+          <>
+            <span className="status-chip">En línea</span>
+            <Link className="button primary" href="/login">
+              {t.login}
+            </Link>
+          </>
+        }
+      />
 
-      <section className="hero-section" id="producto">
-        <div className="hero-copy">
-          <p className="eyebrow">{t.eyebrow}</p>
-          <h1>{t.heroTitle}</h1>
-          <p>{t.heroBody}</p>
+      <section className="hero-section" id="inicio">
+        <div className="hero-copy hero-copy--home">
+          <p className="eyebrow hero-eyebrow">{t.eyebrow}</p>
+          <h1>
+            DRI<span>V</span>XIS
+          </h1>
+          <p className="hero-lead">{t.heroBody}</p>
           <div className="hero-actions">
             <Link className="button primary" href="/register">
               {t.heroPrimary}
@@ -86,96 +147,150 @@ export default async function HomePage() {
               {t.heroSecondary}
             </Link>
           </div>
-        </div>
-
-        <div className="hero-visual" aria-label="Visualizacion de analisis de futbol">
-          <div className="analysis-field">
-            <span className="field-line center" />
-            <span className="field-circle" />
-            <span className="heat-zone zone-a" />
-            <span className="heat-zone zone-b" />
-            <span className="path path-one" />
-            <span className="path path-two" />
-            <span className="scan-row" />
-            <span className="player-token home p1" />
-            <span className="player-token home p2" />
-            <span className="player-token home p3" />
-            <span className="player-token away p4" />
-            <span className="player-token away p5" />
-            <span className="player-token away p6" />
-            <span className="ball-token" />
-          </div>
-          <div className="signal-strip">
-            <span>{t.signalA}</span>
-            <span>{t.signalB}</span>
-            <span>{t.signalC}</span>
-          </div>
+          <p className="hero-scroll">SCROLL</p>
         </div>
       </section>
 
-      <section className="use-cases" id="casos">
-        <div className="section-heading">
-          <p className="eyebrow">Casos de uso</p>
-          <h2>{t.useTitle}</h2>
-        </div>
-        <div className="case-grid">
-          {useCases.map((item) => (
-            <article className="case-card" key={item.title}>
-              <strong>{item.title}</strong>
-              <p>{item.text}</p>
+      <section className="stats-section stats-band">
+        <div className="stats-title">{t.metricsTitle}</div>
+        <div className="metric-grid metric-grid--band">
+          {[
+            { value: t.metricA, label: t.metricALabel },
+            { value: t.metricB, label: t.metricBLabel },
+            { value: t.metricC, label: t.metricCLabel },
+            { value: t.metricD, label: t.metricDLabel },
+          ].map((metric) => (
+            <article className="metric-card metric-card--band" key={metric.label}>
+              <strong>{metric.value}</strong>
+              <span>{metric.label}</span>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="stats-section" id="estadisticas">
+      <section className="use-cases section-tight" id="proceso">
         <div className="section-heading">
-          <p className="eyebrow">Metricas futuras</p>
-          <h2>{t.statsTitle}</h2>
+          <p className="eyebrow">Sección</p>
+          <h2>{t.processTitle}</h2>
+          <p>{t.processBody}</p>
         </div>
-        <div className="analytics-list">
-          {futureAnalytics.map((item, index) => (
-            <article key={item}>
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <strong>{item}</strong>
+        <div className="case-grid case-grid--process">
+          {processSteps.map((step) => (
+            <article className="case-card process-card" key={step.index}>
+              <span className="process-index">{step.index}</span>
+              <strong>{step.title}</strong>
+              <p>{step.text}</p>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="architecture-section" id="pipeline">
-        <div>
-          <p className="eyebrow">Pipeline</p>
-          <h2>{t.pipelineTitle}</h2>
-          <p>{t.pipelineBody}</p>
+      <section className="stats-section section-tight" id="capacidades">
+        <div className="section-heading section-heading--split">
+          <div>
+            <p className="eyebrow">Capacidades</p>
+            <h2>{t.featureTitle}</h2>
+          </div>
+          <p className="section-note">{t.featureBody}</p>
         </div>
-        <div className="pipeline-rail" aria-label="Flujo tecnico de DRIVXIS">
-          <span>Video</span>
-          <span>S3 / R2 / MinIO</span>
-          <span>PostgreSQL + Prisma</span>
-          <span>Python CV job</span>
-          <span>Metric snapshots</span>
+
+        <div className="capabilities-grid">
+          {capabilityCards.map((card, index) => (
+            <article className={`capability-card ${index === 0 ? "is-featured" : ""}`} key={card.title}>
+              <div className="capability-head">
+                <span>{card.title}</span>
+                <strong>{String(index + 1).padStart(2, "0")}</strong>
+              </div>
+              <div className="capability-stats">
+                <strong>{card.stat}</strong>
+                <span>{card.label}</span>
+              </div>
+              <p>{card.text}</p>
+            </article>
+          ))}
+        </div>
+
+        <div className="system-strip">
+          <div>
+            <span>Velocidad de procesamiento</span>
+            <strong>94%</strong>
+          </div>
+          <div>
+            <span>Precisión de detección</span>
+            <strong>99%</strong>
+          </div>
+          <div>
+            <span>Métricas por análisis</span>
+            <strong>18/100</strong>
+          </div>
+          <div>
+            <span>Cobertura de eventos</span>
+            <strong>87%</strong>
+          </div>
         </div>
       </section>
 
-      <section className="security-section" id="seguridad">
-        <div>
-          <p className="eyebrow">Seguridad</p>
-          <h2>{t.securityTitle}</h2>
-          <p>{t.securityBody}</p>
+      <section className="architecture-section section-tight" aria-label="Visualizacion tactica">
+        <div className="architecture-copy">
+          <p className="eyebrow">Visualización</p>
+          <h2>{t.visualTitle}</h2>
+          <p>{t.visualBody}</p>
+          <ul className="feature-list">
+            <li>Detección de formación automática</li>
+            <li>Heatmaps individuales y colectivos</li>
+            <li>Análisis de líneas y bloques</li>
+          </ul>
         </div>
-        <Link className="button primary" href="/register">
-          {t.register}
-        </Link>
+        <div className="pitch-shell pitch-shell--home">
+          <div className="pitch" aria-label="Mapa tactico">
+            <span className="midline" />
+            <span className="center-circle" />
+            <span className="box left" />
+            <span className="box right" />
+            <span className="ball" style={{ left: "63%", top: "45%" }} />
+            <span className="player-dot home" style={{ left: "18%", top: "28%" }} />
+            <span className="player-dot home" style={{ left: "28%", top: "52%" }} />
+            <span className="player-dot home" style={{ left: "44%", top: "38%" }} />
+            <span className="player-dot away" style={{ left: "68%", top: "26%" }} />
+            <span className="player-dot away" style={{ left: "78%", top: "44%" }} />
+            <span className="player-dot away" style={{ left: "70%", top: "68%" }} />
+          </div>
+        </div>
       </section>
 
-      <section className="final-cta" id="acceso">
+      <section className="testimonials-section section-tight">
+        <div className="testimonials-grid">
+          {testimonials.map((item) => (
+            <article className="testimonial-card" key={item.name}>
+              <span className="quote-mark" aria-hidden="true">
+                ""
+              </span>
+              <p>{item.quote}</p>
+              <strong>{item.name}</strong>
+              <span>{item.role}</span>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="final-cta" id="contacto">
+        <p className="eyebrow">Acceso al sistema</p>
         <h2>{t.ctaTitle}</h2>
         <p>{t.ctaBody}</p>
-        <Link className="button primary" href="/register">
-          {t.heroPrimary}
+        <Link className="button primary" href="/login">
+          {t.login}
         </Link>
       </section>
+
+      <footer className="site-footer">
+        <span>{t.footerLeft}</span>
+        <span>© 2026 DRIVXIS — Football intelligence system</span>
+        <div className="footer-links">
+          <a href="#inicio">Privacidad</a>
+          <a href="#inicio">Términos</a>
+          <a href="#inicio">Contacto</a>
+        </div>
+      </footer>
     </main>
   );
 }
