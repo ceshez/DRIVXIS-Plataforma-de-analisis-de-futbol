@@ -1,6 +1,6 @@
 # DRIVXIS | Plataforma de Analisis de Futbol
 
-DRIVXIS es una plataforma web para registrar videos de partidos y generar (o simular) analitica tactica/fisica a partir del video. En esta version, el sistema ya incluye autenticacion, un dashboard protegido, una biblioteca de videos y un flujo de carga que guarda metadata en base de datos y opcionalmente sube el archivo real a un storage compatible con S3.
+DRIVXIS es una plataforma web para registrar videos de partidos y generar (de momento simular) analitica tactica/fisica a partir del video. En esta version, el sistema ya incluye autenticacion, un dashboard protegido, una biblioteca de videos y un flujo de carga que guarda metadata en base de datos y opcionalmente sube el archivo real a un storage compatible con S3.
 
 ## Objetivo del proyecto
 
@@ -20,7 +20,7 @@ DRIVXIS es una plataforma web para registrar videos de partidos y generar (o sim
 - Storage (opcional): AWS SDK S3 (compatible con S3/R2/MinIO)
 - Testing (basico): Vitest
 
-## Instrucciones para ejecutar el sistema (local, sin Docker)
+## Instrucciones para ejecutar el sistema (local)
 
 Las instrucciones completas estan en [`RUNNING.md`](./RUNNING.md). Resumen rapido:
 
@@ -34,7 +34,7 @@ npm run dev
 
 Luego abre `http://localhost:3000`.
 
-## Como se usa (explicado simple)
+## Como se usa 
 
 1. Entra a la landing (`/`) y luego ve a `Iniciar sesion` o `Registrarse`.
 2. Al registrarte/iniciar sesion, el servidor crea una cookie `drivxis_session` con tu identidad (firmada, expira en 7 dias).
@@ -44,23 +44,12 @@ Luego abre `http://localhost:3000`.
    - Si el storage esta configurado, el navegador sube el archivo directo al bucket con `PUT` a la URL firmada.
    - Luego registra la metadata en la BD con `POST /api/videos`, y el sistema crea un `AnalysisJob` (en cola) y un `MetricSnapshot` (demo/mock).
 
-## Evidencia visual (capturas)
+## Capturas
 
-Guarda tus capturas en `docs/screenshots/` con estos nombres para que aparezcan aqui:
 
-- `docs/screenshots/01-landing.png`
-- `docs/screenshots/02-register.png`
-- `docs/screenshots/03-login.png`
-- `docs/screenshots/04-dashboard.png`
-- `docs/screenshots/05-videos.png`
 
 Cuando las agregues, el README las mostrara:
 
-![Landing](docs/screenshots/01-landing.png)
-![Registro](docs/screenshots/02-register.png)
-![Login](docs/screenshots/03-login.png)
-![Dashboard](docs/screenshots/04-dashboard.png)
-![Videos](docs/screenshots/05-videos.png)
 
 ## Documentacion adicional
 
