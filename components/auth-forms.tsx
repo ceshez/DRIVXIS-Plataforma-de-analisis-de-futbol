@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 type Mode = "login" | "register";
 
@@ -11,6 +12,7 @@ type AuthFormProps = {
 export function AuthForm({ mode }: AuthFormProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -51,32 +53,42 @@ export function AuthForm({ mode }: AuthFormProps) {
     <form className="auth-form" onSubmit={submit}>
       {mode === "register" && (
         <label>
-          Nombre
+          <span>Nombre</span>
           <input name="name" autoComplete="name" placeholder="Carlos Sanchez" required minLength={2} />
         </label>
       )}
 
       <label>
-        Correo electronico
-        <input name="email" type="email" autoComplete="email" placeholder="usuario@equipo.com" required />
+        <span>Correo electronico</span>
+        <input name="email" type="email" autoComplete="email" placeholder="analista@club.com" required />
       </label>
 
       <label>
-        Contrasena
-        <input
-          name="password"
-          type="password"
-          autoComplete={mode === "register" ? "new-password" : "current-password"}
-          placeholder="********"
-          required
-          minLength={mode === "register" ? 8 : 1}
-        />
+        <span>Contrasena</span>
+        <div className="password-field">
+          <input
+            name="password"
+            type={showPassword ? "text" : "password"}
+            autoComplete={mode === "register" ? "new-password" : "current-password"}
+            placeholder="********"
+            required
+            minLength={mode === "register" ? 8 : 1}
+          />
+          <button
+            type="button"
+            aria-label={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+            onClick={() => setShowPassword((current) => !current)}
+          >
+            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
       </label>
 
       {error && <p className="form-error">{error}</p>}
 
-      <button className="button primary wide" type="submit" disabled={loading}>
-        {loading ? "Procesando..." : mode === "register" ? "Crear cuenta" : "Entrar al sistema"}
+      <button className="button primary wide command-button" type="submit" disabled={loading}>
+        {loading ? <Loader2 className="spin" size={14} /> : null}
+        {loading ? "Procesando" : mode === "register" ? "Crear cuenta" : "Entrar al sistema"}
       </button>
     </form>
   );

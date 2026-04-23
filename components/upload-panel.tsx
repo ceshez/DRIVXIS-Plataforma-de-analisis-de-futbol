@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { RadarDemo } from "@/components/radar-demo";
-import { demoStats } from "@/lib/mock-data";
+import { useRef, useState } from "react";
+import { CheckCircle2, Film, Loader2, Play, SkipForward, Upload, XCircle } from "lucide-react";
+import { CornerMarks, Crosshair, MicroGrid } from "@/components/micro-graphics";
 
 type VideoRecord = {
   id: string;
@@ -16,17 +16,22 @@ type UploadPanelProps = {
   initialVideos: VideoRecord[];
 };
 
+const analysisSteps = ["Validar archivo", "Preparar storage", "Guardar metadata", "Cola de analisis"];
+
 export function UploadPanel({ initialVideos }: UploadPanelProps) {
   const [videos, setVideos] = useState(initialVideos);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage("");
 
     const input = event.currentTarget.elements.namedItem("video") as HTMLInputElement;
-    const file = input.files?.[0];
+    const file = selectedFile || input.files?.[0];
     if (!file) {
       setMessage("Selecciona un video para registrar.");
       return;
@@ -90,6 +95,7 @@ export function UploadPanel({ initialVideos }: UploadPanelProps) {
     }
 
     setVideos((current) => [created.video!, ...current]);
+    setSelectedFile(null);
     input.value = "";
     setMessage(
       presign.configured
@@ -98,85 +104,160 @@ export function UploadPanel({ initialVideos }: UploadPanelProps) {
     );
   }
 
+  function handleFiles(files: FileList | null) {
+    const file = files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      setMessage("");
+    }
+  }
+
   return (
     <section className="video-workspace">
-      <div className="upload-shell">
-        <div className="upload-panel upload-panel--stage">
-          <p className="eyebrow">Entrada de video</p>
-          <h2>Arrastra el video del partido aquí</h2>
-          <p className="muted">
-            O haz clic para seleccionar. El sistema guarda la metadata del archivo y prepara la
-            cola para el analisis posterior.
-          </p>
-
-          <div className="upload-dropzone">
-            <div className="upload-drop-icon" aria-hidden="true">
-              ↑
+      <form className="upload-console" onSubmit={submit}>
+        <div className="upload-stage">
+          <CornerMarks size={14} opacity={0.45} />
+          <div className="upload-stage__head">
+            <div>
+              <span>Entrada de video</span>
+              <h2>Arrastra el partido aqui</h2>
             </div>
-            <p>Haz clic para seleccionar</p>
+            <div className={`live-chip ${busy ? "" : "live-chip--muted"}`}>
+              <span />
+              {busy ? "Procesando" : "Listo"}
+            </div>
           </div>
 
-          <form className="upload-form upload-form--console" onSubmit={submit}>
-            <input name="video" type="file" accept="video/*" />
-            <button className="button primary" type="submit" disabled={busy}>
-              {busy ? "Preparando..." : "Registrar video"}
+          <button
+            className={`drop-zone ${dragOver ? "is-dragging" : ""}`}
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(event) => {
+              event.preventDefault();
+              setDragOver(false);
+              handleFiles(event.dataTransfer.files);
+            }}
+          >
+            <MicroGrid />
+            {selectedFile ? (
+              <div className="file-preview">
+                <Film size={42} />
+                <strong>{selectedFile.name}</strong>
+                <span>{formatBytes(selectedFile.size)}</span>
+                <div className="fake-controls">
+                  <Play size={13} />
+                  <SkipForward size={12} />
+                  <span>00:00 / 90:00</span>
+                </div>
+              </div>
+            ) : (
+              <div className="drop-zone__empty">
+                <Upload size={28} />
+                <strong>Selecciona o arrastra un video</strong>
+                <span>MP4, MOV, AVI o formatos compatibles con tu pipeline.</span>
+              </div>
+            )}
+          </button>
+
+          <input
+            ref={inputRef}
+            name="video"
+            type="file"
+            accept="video/*"
+            className="visually-hidden"
+            onChange={(event) => handleFiles(event.target.files)}
+          />
+
+          <div className="upload-actions">
+            <button className="button primary command-button" type="submit" disabled={busy}>
+              {busy ? <Loader2 className="spin" size={14} /> : <Upload size={14} />}
+              {busy ? "Preparando" : "Registrar video"}
             </button>
-          </form>
+            {selectedFile ? (
+              <button className="button ghost command-button" type="button" onClick={() => setSelectedFile(null)} disabled={busy}>
+                <XCircle size={14} />
+                Limpiar
+              </button>
+            ) : null}
+          </div>
 
           {message && <p className="form-note">{message}</p>}
         </div>
 
-        <aside className="upload-sidebar">
-          <div className="scoreboard">
-            <span className="score-label">Local</span>
-            <strong>FC Norte</strong>
-            <div className="scoreline">
-              <span>2</span>
-              <span>-</span>
-              <span>0</span>
+        <aside className="upload-side">
+          <CornerMarks size={12} opacity={0.32} />
+          <div className="score-card">
+            <div>
+              <span>Local</span>
+              <strong>FC Norte</strong>
             </div>
-            <span className="score-label score-label--right">Visitante</span>
-            <strong>UD Sur</strong>
+            <div className="score-card__score">
+              <b>2</b>
+              <span>-</span>
+              <b>0</b>
+            </div>
+            <div>
+              <span>Visitante</span>
+              <strong>UD Sur</strong>
+            </div>
           </div>
 
-          <div className="sidebar-metrics">
-            {demoStats.matchMetrics.map((metric) => (
-              <article key={metric.label}>
-                <span>{metric.label}</span>
-                <strong>{metric.value}</strong>
-                <small>{metric.detail}</small>
-              </article>
+          <div className="analysis-steps analysis-steps--vertical">
+            {analysisSteps.map((step, index) => (
+              <div className="analysis-step" key={step}>
+                <span className={busy && index < 2 ? "is-active" : videos.length > 0 && index < 4 ? "is-complete" : ""}>
+                  {videos.length > 0 && index < 4 ? <CheckCircle2 size={9} /> : null}
+                </span>
+                {step}
+              </div>
             ))}
           </div>
 
-          <div className="analysis-radar">
-            <RadarDemo />
+          <div className="mini-field">
+            <Crosshair size={18} opacity={0.2} />
+            <span className="field-midline" />
+            <span className="field-circle" />
+            <span className="ball-marker" style={{ left: "58%", top: "48%" }} />
+            <span className="player-marker home" style={{ left: "31%", top: "36%" }} />
+            <span className="player-marker away" style={{ left: "72%", top: "61%" }} />
           </div>
         </aside>
-      </div>
+      </form>
 
-      <div className="recent-videos">
-        <div>
-          <p className="eyebrow">Biblioteca</p>
-          <h2>Videos recientes</h2>
+      <section className="recent-videos lab-panel">
+        <div className="panel-heading">
+          <div>
+            <span>Biblioteca</span>
+            <h2>Videos recientes</h2>
+          </div>
         </div>
+
         {videos.length === 0 ? (
           <div className="empty-state">
+            <Film size={24} />
             <strong>No hay videos todavia.</strong>
             <span>El primer registro aparecera aqui con estado pendiente de analisis.</span>
           </div>
         ) : (
-          videos.map((video) => (
-            <article className="video-row" key={video.id}>
-              <div>
-                <strong>{video.originalFilename}</strong>
-                <span>{formatBytes(Number(video.sizeBytes))}</span>
-              </div>
-              <span className={`status-pill ${video.status.toLowerCase()}`}>{formatStatus(video.status)}</span>
-            </article>
-          ))
+          <div className="video-list">
+            {videos.map((video) => (
+              <article className="video-row" key={video.id}>
+                <Film size={17} />
+                <div>
+                  <strong>{video.originalFilename}</strong>
+                  <span>{formatBytes(Number(video.sizeBytes))}</span>
+                </div>
+                <span className={`status-pill ${video.status.toLowerCase()}`}>{formatStatus(video.status)}</span>
+              </article>
+            ))}
+          </div>
         )}
-      </div>
+      </section>
     </section>
   );
 }

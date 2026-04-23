@@ -1,7 +1,7 @@
-import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { LogoutButton } from "@/components/logout-button";
 import { UploadPanel } from "@/components/upload-panel";
+import { AnnotationLine, MicroGrid } from "@/components/micro-graphics";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 
@@ -14,19 +14,20 @@ export default async function VideosPage() {
       <header className="app-header">
         <Logo href="/dashboard" />
         <nav aria-label="Dashboard">
-          <Link href="/dashboard">Panel</Link>
-          <Link href="/dashboard/videos">Videos</Link>
+          <a href="/dashboard">Panel</a>
+          <a href="/dashboard/videos">Videos</a>
         </nav>
         <LogoutButton />
       </header>
 
-      <section className="dashboard-hero compact">
-        <div>
-          <p className="eyebrow">Storage S3-compatible</p>
+      <section className="dashboard-command dashboard-command--compact">
+        <MicroGrid />
+        <div className="dashboard-command__copy">
+          <AnnotationLine label="storage" value="S3-COMPATIBLE / VIDEOS" />
           <h1>Biblioteca de videos</h1>
           <p>
-            Guarda metadata en PostgreSQL y envia los archivos al bucket configurado con URLs
-            firmadas. Si faltan credenciales, DRIVXIS conserva la metadata para desarrollo local.
+            Guarda metadata en PostgreSQL y envia archivos al bucket configurado con URLs firmadas.
+            Si faltan credenciales, DRIVXIS conserva la metadata para desarrollo local.
           </p>
         </div>
       </section>

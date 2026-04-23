@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Manrope, Orbitron } from "next/font/google";
+import { Inter, Orbitron } from "next/font/google";
 import "./globals.css";
 
 const display = Orbitron({
@@ -8,10 +8,10 @@ const display = Orbitron({
   weight: ["400", "500", "600", "700", "800", "900"],
 });
 
-const body = Manrope({
+const body = Inter({
   subsets: ["latin"],
   variable: "--font-body",
-  weight: ["400", "500", "600", "700", "800"],
+  weight: ["300", "400", "500", "600", "700", "800"],
 });
 
 export const metadata: Metadata = {
@@ -28,7 +28,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es">
-      <body className={`${display.variable} ${body.variable} min-h-screen bg-drivxis-bg text-drivxis-text antialiased`}>
+      <body className={`${display.variable} ${body.variable}`}>
         {children}
       </body>
     </html>
