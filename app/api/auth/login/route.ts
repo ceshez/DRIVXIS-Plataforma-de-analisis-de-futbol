@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
-import { setSessionCookie } from "@/lib/session";
+import { clearSessionCookie, setSessionCookie } from "@/lib/session";
 import { loginSchema } from "@/lib/validators";
 
 export async function POST(request: Request) {
@@ -15,7 +15,19 @@ export async function POST(request: Request) {
     select: { id: true, email: true, role: true, passwordHash: true },
   });
 
-  if (!user || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
+  if (!user) {
+    await clearSessionCookie();
+    return NextResponse.json(
+      {
+        error: "No encontramos una cuenta con ese correo. Crea una cuenta antes de iniciar sesion.",
+        needsRegistration: true,
+      },
+      { status: 404 },
+    );
+  }
+
+  if (!(await verifyPassword(parsed.data.password, user.passwordHash))) {
+    await clearSessionCookie();
     return NextResponse.json({ error: "Correo o contrasena incorrectos." }, { status: 401 });
   }
 

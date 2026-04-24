@@ -3,7 +3,13 @@ import { ArrowRight } from "lucide-react";
 import { AuthForm } from "@/components/auth-forms";
 import { CornerMarks, MicroGrid } from "@/components/micro-graphics";
 
-export default function RegisterPage() {
+type RegisterPageProps = {
+  searchParams?: Promise<{ email?: string }>;
+};
+
+export default async function RegisterPage({ searchParams }: RegisterPageProps) {
+  const params = (await searchParams) ?? {};
+
   return (
     <main className="auth-page">
       <MicroGrid />
@@ -18,7 +24,7 @@ export default function RegisterPage() {
           <h1>Crea tu base de trabajo</h1>
           <p>La cuenta guarda tu biblioteca de videos, cola de analisis y resultados futuros por usuario.</p>
         </div>
-        <AuthForm mode="register" />
+        <AuthForm mode="register" initialEmail={params.email || ""} />
         <p className="auth-switch">
           Ya tienes cuenta? <Link href="/login">Entrar <ArrowRight size={12} /></Link>
         </p>

@@ -7,9 +7,10 @@ type Mode = "login" | "register";
 
 type AuthFormProps = {
   mode: Mode;
+  initialEmail?: string;
 };
 
-export function AuthForm({ mode }: AuthFormProps) {
+export function AuthForm({ mode, initialEmail = "" }: AuthFormProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -38,10 +39,15 @@ export function AuthForm({ mode }: AuthFormProps) {
       body: JSON.stringify(payload),
     });
 
-    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    const data = (await response.json().catch(() => ({}))) as { error?: string; needsRegistration?: boolean };
     setLoading(false);
 
     if (!response.ok) {
+      if (mode === "login" && data.needsRegistration) {
+        const email = encodeURIComponent(String(form.get("email") || ""));
+        window.location.href = `/register${email ? `?email=${email}` : ""}`;
+        return;
+      }
       setError(data.error || "No pudimos completar la solicitud.");
       return;
     }
@@ -60,7 +66,14 @@ export function AuthForm({ mode }: AuthFormProps) {
 
       <label>
         <span>Correo electronico</span>
-        <input name="email" type="email" autoComplete="email" placeholder="analista@club.com" required />
+        <input
+          name="email"
+          type="email"
+          autoComplete="email"
+          placeholder="analista@club.com"
+          defaultValue={initialEmail}
+          required
+        />
       </label>
 
       <label>

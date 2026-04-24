@@ -28,6 +28,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Ya existe una cuenta con ese correo." }, { status: 409 });
     }
 
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P1000") {
+      return NextResponse.json(
+        { error: "La conexion con la base de datos fue rechazada. Revisa DATABASE_URL y las credenciales." },
+        { status: 500 },
+      );
+    }
+
     return NextResponse.json({ error: "No pudimos crear la cuenta." }, { status: 500 });
   }
 }
