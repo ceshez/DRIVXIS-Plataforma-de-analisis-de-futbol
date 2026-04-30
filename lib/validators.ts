@@ -19,5 +19,6 @@ export const presignVideoSchema = z.object({
 
 export const createVideoSchema = presignVideoSchema.extend({
   objectKey: z.string().trim().min(8).max(600),
+  uploadMode: z.enum(["local", "s3"]).optional(),
   durationSeconds: z.number().int().positive().optional(),
 });

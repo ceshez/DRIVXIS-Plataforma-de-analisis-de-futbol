@@ -207,14 +207,13 @@ export default function HomePage() {
 
       <section className="section-block section-block--bordered" id="capacidades">
         <MicroGrid />
-        <div className="section-heading section-heading--split">
+        <div className="section-heading">
           <div>
             <AnnotationLine label="seccion" value="03 / CAPACIDADES" />
             <h2>
               Que analiza<span>.</span>
             </h2>
           </div>
-          <p>Cada modulo fue disenado para equipos que necesitan comparar, decidir y entrenar rapido.</p>
         </div>
 
         <div className="capability-grid">

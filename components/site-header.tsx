@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/logo";
@@ -18,7 +18,9 @@ type SiteHeaderProps = {
 
 export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps) {
   const [open, setOpen] = useState(false);
+  const [activeHash, setActiveHash] = useState(navItems[0]?.href ?? "");
   const pathname = usePathname();
+  const hashItems = useMemo(() => navItems.filter((item) => item.href.startsWith("#")), [navItems]);
 
   useEffect(() => {
     setOpen(false);
@@ -31,6 +33,67 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
     };
   }, [open]);
 
+  useEffect(() => {
+    if (pathname !== "/" || hashItems.length === 0) {
+      setActiveHash("");
+      return;
+    }
+
+    const sections = hashItems
+      .map((item) => {
+        const id = item.href.slice(1);
+        return { href: item.href, node: document.getElementById(id) };
+      })
+      .filter((section): section is { href: string; node: HTMLElement } => Boolean(section.node));
+
+    if (sections.length === 0) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((left, right) => right.intersectionRatio - left.intersectionRatio);
+        if (visible[0]?.target instanceof HTMLElement) {
+          const next = sections.find((section) => section.node === visible[0].target);
+          if (next) setActiveHash(next.href);
+        }
+      },
+      {
+        rootMargin: "-38% 0px -45% 0px",
+        threshold: [0.2, 0.35, 0.5, 0.7],
+      },
+    );
+
+    for (const section of sections) {
+      observer.observe(section.node);
+    }
+
+    const syncFromHash = () => {
+      const nextHash = window.location.hash;
+      if (nextHash && hashItems.some((item) => item.href === nextHash)) {
+        setActiveHash(nextHash);
+      }
+    };
+
+    syncFromHash();
+    window.addEventListener("hashchange", syncFromHash);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("hashchange", syncFromHash);
+    };
+  }, [hashItems, pathname]);
+
+  function getLinkClass(href: string) {
+    const classes = [];
+    if (href.startsWith("#")) {
+      if (pathname === "/" && activeHash === href) classes.push("is-active");
+    } else if (pathname === href) {
+      classes.push("is-active");
+    }
+    return classes.join(" ");
+  }
+
   return (
     <header className={`site-header ${open ? "is-open" : ""}`}>
       <div className="site-header__bar">
@@ -39,11 +102,11 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
         <nav className="site-nav" aria-label="Navegacion principal">
           {navItems.map((item) =>
             item.href.startsWith("/") ? (
-              <Link href={item.href} key={item.href}>
+              <Link href={item.href} key={item.href} className={getLinkClass(item.href) || undefined}>
                 {item.label}
               </Link>
             ) : (
-              <a href={item.href} key={item.href}>
+              <a href={item.href} key={item.href} className={getLinkClass(item.href) || undefined}>
                 {item.label}
               </a>
             ),
@@ -79,12 +142,22 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
           <nav className="mobile-menu__nav" aria-label="Navegacion movil">
             {navItems.map((item, index) =>
               item.href.startsWith("/") ? (
-                <Link href={item.href} key={item.href} onClick={() => setOpen(false)}>
+                <Link
+                  href={item.href}
+                  key={item.href}
+                  className={getLinkClass(item.href) || undefined}
+                  onClick={() => setOpen(false)}
+                >
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   {item.label}
                 </Link>
               ) : (
-                <a href={item.href} key={item.href} onClick={() => setOpen(false)}>
+                <a
+                  href={item.href}
+                  key={item.href}
+                  className={getLinkClass(item.href) || undefined}
+                  onClick={() => setOpen(false)}
+                >
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   {item.label}
                 </a>

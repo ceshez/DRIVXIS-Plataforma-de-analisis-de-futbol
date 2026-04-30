@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
+import { kickAnalysisWorker } from "@/lib/analysis-worker";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { getLocalObjectPath } from "@/lib/local-storage";
 import { createVideoSchema } from "@/lib/validators";
+import { serializeVideo, serializeVideos } from "@/lib/video-serialization";
+
+export const runtime = "nodejs";
 
 export async function GET() {
   const user = await requireUser();
@@ -14,8 +19,34 @@ export async function GET() {
       originalFilename: true,
       status: true,
       sizeBytes: true,
+      durationSeconds: true,
+      metadata: true,
       createdAt: true,
+      updatedAt: true,
       objectKey: true,
+      analysisJobs: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          id: true,
+          status: true,
+          progress: true,
+          error: true,
+          createdAt: true,
+          startedAt: true,
+          endedAt: true,
+        },
+      },
+      metricSnapshots: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          id: true,
+          jobId: true,
+          metrics: true,
+          createdAt: true,
+        },
+      },
     },
   });
 
@@ -37,6 +68,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "La llave de storage no pertenece al usuario actual." }, { status: 403 });
   }
 
+  const uploadMode = parsed.data.uploadMode || "local";
+  const sourceLocalPath = uploadMode === "local" ? getLocalObjectPath(parsed.data.objectKey) : null;
   const video = await prisma.video.create({
     data: {
       ownerId: user.id,
@@ -48,22 +81,16 @@ export async function POST(request: Request) {
       status: "PENDING_ANALYSIS",
       metadata: {
         source: "web-upload",
-        modelReady: false,
+        storageMode: uploadMode,
+        sourceLocalPath,
+        processedLocalPath: null,
+        annotatedLocalPath: null,
+        modelReady: true,
       },
       analysisJobs: {
         create: {
           status: "QUEUED",
           progress: 0,
-        },
-      },
-      metricSnapshots: {
-        create: {
-          metrics: {
-            possession: { home: 58, away: 42 },
-            distanceKm: 108.7,
-            maxSpeedKmh: 33.8,
-            notes: "Mock snapshot until the computer vision model is connected.",
-          },
         },
       },
     },
@@ -72,22 +99,37 @@ export async function POST(request: Request) {
       originalFilename: true,
       status: true,
       sizeBytes: true,
+      durationSeconds: true,
+      metadata: true,
       createdAt: true,
+      updatedAt: true,
       objectKey: true,
+      analysisJobs: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          id: true,
+          status: true,
+          progress: true,
+          error: true,
+          createdAt: true,
+          startedAt: true,
+          endedAt: true,
+        },
+      },
+      metricSnapshots: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          id: true,
+          jobId: true,
+          metrics: true,
+          createdAt: true,
+        },
+      },
     },
   });
 
+  kickAnalysisWorker();
   return NextResponse.json({ video: serializeVideo(video) }, { status: 201 });
-}
-
-function serializeVideos<T extends { sizeBytes: bigint; createdAt: Date }>(videos: T[]) {
-  return videos.map(serializeVideo);
-}
-
-function serializeVideo<T extends { sizeBytes: bigint; createdAt: Date }>(video: T) {
-  return {
-    ...video,
-    sizeBytes: video.sizeBytes.toString(),
-    createdAt: video.createdAt.toISOString(),
-  };
 }

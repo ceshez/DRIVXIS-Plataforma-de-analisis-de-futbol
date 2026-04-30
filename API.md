@@ -86,6 +86,7 @@ Esta version expone endpoints bajo `app/api/...` (Next.js Route Handlers). Todas
   - `mimeType`
   - `sizeBytes`
   - `objectKey`
+  - `uploadMode` (`local` o `s3`, opcional)
   - `durationSeconds` (opcional)
 - Validaciones importantes:
   - `objectKey` debe iniciar con `users/{userId}/videos/` (evita que un usuario registre una llave de otro).
@@ -95,11 +96,33 @@ Esta version expone endpoints bajo `app/api/...` (Next.js Route Handlers). Todas
   - `403`: `{ "error": "La llave de storage no pertenece al usuario actual." }`
 - Efecto adicional (pipeline demo):
   - Crea un `AnalysisJob` en estado `QUEUED`
-  - Crea un `MetricSnapshot` mock (para demostrar el dashboard mientras se conecta el modelo real)
+  - El worker `npm run analysis:worker` genera el `MetricSnapshot` real cuando termina el modelo
+
+### 7) Subir archivo a storage local
+
+- **PUT** `/api/videos/local-upload?objectKey=...`
+- Requiere sesion.
+- Body: archivo de video.
+- Uso: fallback local cuando S3/R2/MinIO no esta configurado.
+
+### 8) Detalle de video
+
+- **GET** `/api/videos/:id`
+- Devuelve metadata, ultimo job y ultimo snapshot de metricas.
+
+### 9) Stream de video
+
+- **GET** `/api/videos/:id/stream?variant=source|annotated`
+- Devuelve el archivo local original o anotado con soporte basico de `Range`.
+
+### 10) Reencolar analisis
+
+- **POST** `/api/videos/:id/analysis/retry`
+- Crea un nuevo `AnalysisJob` en estado `QUEUED`.
 
 ## Traduccion (i18n)
 
-### 7) Traducir diccionario
+### 11) Traducir diccionario
 
 - **POST** `/api/translate`
 - Body JSON:
@@ -114,4 +137,3 @@ Esta version expone endpoints bajo `app/api/...` (Next.js Route Handlers). Todas
 1. `POST /api/videos/presign` con info del archivo.
 2. Si `uploadUrl` viene con valor, el navegador hace `PUT` a esa URL para subir el archivo al bucket.
 3. `POST /api/videos` para guardar la metadata y dejar un job de analisis en cola.
-

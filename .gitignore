@@ -2,8 +2,13 @@
 .env.local
 .env.*.local
 node_modules/
+.venv-analysis/
 .next/
 dist/
 coverage/
 *.tsbuildinfo
 .agents/skills/
+.drivxis/
+analysis/models/*.pt
+analysis/models/*.onnx
+analysis/models/*.engine

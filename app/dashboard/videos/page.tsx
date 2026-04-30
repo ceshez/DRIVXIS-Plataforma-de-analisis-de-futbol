@@ -1,9 +1,10 @@
-import { Logo } from "@/components/logo";
+import { DashboardHeader } from "@/components/dashboard-header";
 import { LogoutButton } from "@/components/logout-button";
-import { UploadPanel } from "@/components/upload-panel";
+import { VideoHistory } from "@/components/video-history";
 import { AnnotationLine, MicroGrid } from "@/components/micro-graphics";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { serializeVideos } from "@/lib/video-serialization";
 
 export default async function VideosPage() {
   const user = await requireUser();
@@ -11,28 +12,26 @@ export default async function VideosPage() {
 
   return (
     <main className="app-frame">
-      <header className="app-header">
-        <Logo href="/dashboard" />
-        <nav aria-label="Dashboard">
-          <a href="/dashboard">Panel</a>
-          <a href="/dashboard/videos">Videos</a>
-        </nav>
-        <LogoutButton />
-      </header>
+      <DashboardHeader
+        navItems={[
+          { href: "/dashboard", label: "Panel", exact: true },
+          { href: "/dashboard/videos", label: "Historial" },
+        ]}
+        action={<LogoutButton />}
+      />
 
       <section className="dashboard-command dashboard-command--compact">
         <MicroGrid />
         <div className="dashboard-command__copy">
-          <AnnotationLine label="storage" value="S3-COMPATIBLE / VIDEOS" />
-          <h1>Biblioteca de videos</h1>
+          <AnnotationLine label="historial" value="PARTIDOS / METRICAS IA" />
+          <h1>Historial de videos</h1>
           <p>
-            Guarda metadata en PostgreSQL y envia archivos al bucket configurado con URLs firmadas.
-            Si faltan credenciales, DRIVXIS conserva la metadata para desarrollo local.
+            Revisa cada partido subido, su estado de cola y las estadisticas creadas por el modelo.
           </p>
         </div>
       </section>
 
-      <UploadPanel initialVideos={videos} />
+      <VideoHistory initialVideos={videos} />
     </main>
   );
 }
@@ -48,15 +47,38 @@ async function getVideos(ownerId: string) {
         originalFilename: true,
         status: true,
         sizeBytes: true,
+        durationSeconds: true,
+        metadata: true,
         createdAt: true,
+        updatedAt: true,
+        objectKey: true,
+        analysisJobs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            progress: true,
+            error: true,
+            createdAt: true,
+            startedAt: true,
+            endedAt: true,
+          },
+        },
+        metricSnapshots: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            jobId: true,
+            metrics: true,
+            createdAt: true,
+          },
+        },
       },
     });
 
-    return videos.map((video) => ({
-      ...video,
-      sizeBytes: video.sizeBytes.toString(),
-      createdAt: video.createdAt.toISOString(),
-    }));
+    return serializeVideos(videos);
   } catch {
     return [];
   }

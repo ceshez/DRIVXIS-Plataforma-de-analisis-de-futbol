@@ -1,8 +1,9 @@
 import { DashboardExperience } from "@/components/dashboard-experience";
-import { Logo } from "@/components/logo";
+import { DashboardHeader } from "@/components/dashboard-header";
 import { LogoutButton } from "@/components/logout-button";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { serializeVideos } from "@/lib/video-serialization";
 
 export default async function DashboardPage() {
   const user = await requireUser();
@@ -10,21 +11,17 @@ export default async function DashboardPage() {
 
   return (
     <main className="app-frame">
-      <header className="app-header">
-        <Logo href="/dashboard" />
-        <nav aria-label="Dashboard">
-          <a href="/dashboard">Panel</a>
-          <a href="/dashboard/videos">Videos</a>
-        </nav>
-        <LogoutButton />
-      </header>
+      <DashboardHeader
+        navItems={[
+          { href: "/dashboard", label: "Panel", exact: true },
+          { href: "/dashboard/videos", label: "Historial" },
+        ]}
+        action={<LogoutButton />}
+      />
 
       <DashboardExperience
         userName={user.name}
-        videos={videos.map((video) => ({
-          ...video,
-          createdAt: video.createdAt.toISOString(),
-        }))}
+        videos={videos}
       />
     </main>
   );
@@ -32,7 +29,7 @@ export default async function DashboardPage() {
 
 async function getRecentVideos(ownerId: string) {
   try {
-    return await prisma.video.findMany({
+    const videos = await prisma.video.findMany({
       where: { ownerId },
       orderBy: { createdAt: "desc" },
       take: 4,
@@ -40,9 +37,38 @@ async function getRecentVideos(ownerId: string) {
         id: true,
         originalFilename: true,
         status: true,
+        sizeBytes: true,
+        durationSeconds: true,
+        metadata: true,
         createdAt: true,
+        updatedAt: true,
+        objectKey: true,
+        analysisJobs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            progress: true,
+            error: true,
+            createdAt: true,
+            startedAt: true,
+            endedAt: true,
+          },
+        },
+        metricSnapshots: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            jobId: true,
+            metrics: true,
+            createdAt: true,
+          },
+        },
       },
     });
+    return serializeVideos(videos);
   } catch {
     return [];
   }

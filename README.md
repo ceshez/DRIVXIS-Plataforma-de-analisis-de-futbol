@@ -1,11 +1,11 @@
 # DRIVXIS | Plataforma de Analisis de Futbol
 
-DRIVXIS es una plataforma web para registrar videos de partidos y generar (de momento simular) analitica tactica/fisica a partir del video. En esta version, el sistema ya incluye autenticacion, un dashboard protegido, una biblioteca de videos y un flujo de carga que guarda metadata en base de datos y opcionalmente sube el archivo real a un storage compatible con S3.
+DRIVXIS es una plataforma web para registrar videos de partidos y generar analitica tactica/fisica a partir del video. En esta version, el sistema ya incluye autenticacion, un dashboard protegido, una biblioteca de videos, subida local/S3 y una cola de analisis que conecta un motor Python basado en YOLO.
 
 ## Objetivo del proyecto
 
 1. Centralizar el proceso de analisis: login, subida/registro de material y visualizacion de estadisticas.
-2. Dejar lista la base para conectar un modelo de vision computacional (por ejemplo, YOLO) a un pipeline de analisis (jobs + snapshots de metricas).
+2. Conectar un modelo de vision computacional basado en YOLO a un pipeline de analisis (jobs + snapshots de metricas).
 3. Entregar un sistema funcional y documentado, aplicando buenas practicas (validaciones, capas, estructura, persistencia con ORM, endpoints claros).
 
 ## Tecnologias utilizadas
@@ -18,6 +18,7 @@ DRIVXIS es una plataforma web para registrar videos de partidos y generar (de mo
 - Validacion: Zod
 - Seguridad: hashing de password con bcryptjs + cookie de sesion firmada (HMAC)
 - Storage (opcional): AWS SDK S3 (compatible con S3/R2/MinIO)
+- IA local: Python + YOLO/Ultralytics + OpenCV + Supervision + scikit-learn
 - Testing (basico): Vitest
 
 ## Instrucciones para ejecutar el sistema (local)
@@ -39,10 +40,18 @@ Luego abre `http://localhost:3000`.
 1. Entra a la landing (`/`) y luego ve a `Iniciar sesion` o `Registrarse`.
 2. Al registrarte/iniciar sesion, el servidor crea una cookie `drivxis_session` con tu identidad (firmada, expira en 7 dias).
 3. El dashboard (`/dashboard`) y la seccion de videos (`/dashboard/videos`) estan protegidos: si no hay sesion valida, redirige a `/login`.
-4. En `Videos`, registras un archivo:
+4. En `Panel`, haces click en la consola principal para subir un partido:
    - Pide un "presign" a `POST /api/videos/presign` (prepara la carga al storage).
    - Si el storage esta configurado, el navegador sube el archivo directo al bucket con `PUT` a la URL firmada.
-   - Luego registra la metadata en la BD con `POST /api/videos`, y el sistema crea un `AnalysisJob` (en cola) y un `MetricSnapshot` (demo/mock).
+   - Si no hay storage, el navegador sube el archivo a storage local con `PUT /api/videos/local-upload`.
+   - Luego registra la metadata en la BD con `POST /api/videos`, y el sistema crea un `AnalysisJob` en cola.
+5. Ejecuta el worker para procesar la cola:
+
+```bash
+npm run analysis:worker -- --once
+```
+
+Para analizar videos reales instala dependencias Python con `pip install -r analysis/requirements.txt` y coloca el peso YOLO en `analysis/models/best.pt`.
 
 ## Capturas
 
@@ -61,4 +70,4 @@ Cuando las agregues, el README las mostrara:
 
 ## Nota sobre videos (storage)
 
-Los partidos completos no se guardan en PostgreSQL. La app guarda metadata y una `objectKey` por usuario. Si el storage no esta configurado, el sistema igual permite registrar metadata para que el flujo sea demostrable en local; solo que no sube el archivo real al bucket.
+Los partidos completos no se guardan en PostgreSQL. La app guarda metadata y una `objectKey` por usuario. Si el storage S3 no esta configurado, DRIVXIS usa `.drivxis/uploads` para desarrollo local y `.drivxis/analysis` para videos anotados y metricas generadas.
