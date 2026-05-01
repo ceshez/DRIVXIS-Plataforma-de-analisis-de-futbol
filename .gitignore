@@ -12,3 +12,4 @@ coverage/
 analysis/models/*.pt
 analysis/models/*.onnx
 analysis/models/*.engine
+.claude

@@ -70,6 +70,7 @@ export async function POST(request: Request) {
 
   const uploadMode = parsed.data.uploadMode || "local";
   const sourceLocalPath = uploadMode === "local" ? getLocalObjectPath(parsed.data.objectKey) : null;
+  const matchInfo = parsed.data.matchInfo ?? null;
   const video = await prisma.video.create({
     data: {
       ownerId: user.id,
@@ -86,6 +87,7 @@ export async function POST(request: Request) {
         processedLocalPath: null,
         annotatedLocalPath: null,
         modelReady: true,
+        matchInfo,
       },
       analysisJobs: {
         create: {

@@ -21,4 +21,19 @@ export const createVideoSchema = presignVideoSchema.extend({
   objectKey: z.string().trim().min(8).max(600),
   uploadMode: z.enum(["local", "s3"]).optional(),
   durationSeconds: z.number().int().positive().optional(),
+  matchInfo: z
+    .object({
+      ownTeam: z.string().trim().min(2).max(80),
+      rivalTeam: z.string().trim().min(2).max(80),
+      ownTeamColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+      rivalTeamColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+    })
+    .optional(),
+});
+
+export const updateVideoMatchSchema = z.object({
+  matchInfo: z.object({
+    ownTeamColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/),
+    rivalTeamColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/),
+  }),
 });

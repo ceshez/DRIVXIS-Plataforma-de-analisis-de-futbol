@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart3, Film, Loader2, MoreVertical, RotateCcw, Trash2 } from "lucide-react";
+import { AnalysisVideoPlayer } from "@/components/analysis-video-player";
+import { MatchColorEditor } from "@/components/match-color-editor";
 import { getMetricDisplay, type AnalysisMetrics } from "@/lib/analysis-metrics";
 
 export type HistoryVideo = {
@@ -11,6 +13,8 @@ export type HistoryVideo = {
   status: string;
   sizeBytes: string;
   createdAt: string;
+  updatedAt?: string | null;
+  metadata?: unknown;
   sourceVideoUrl?: string;
   processedVideoUrl?: string | null;
   latestMetrics: AnalysisMetrics | null;
@@ -54,12 +58,21 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
   useEffect(() => {
     if (!selected || !shouldPollSelected) return;
 
-    const intervalId = window.setInterval(() => {
+    const eventSource = new EventSource(`/api/videos/${selected.id}/events`);
+    eventSource.addEventListener("video", (event) => {
+      const nextVideo = JSON.parse((event as MessageEvent).data) as HistoryVideo;
+      setVideos((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)));
+      if (nextVideo.status === "COMPLETED" || nextVideo.status === "FAILED") {
+        eventSource.close();
+      }
+    });
+    eventSource.onerror = () => {
+      eventSource.close();
       void refreshVideo(selected.id);
-    }, 4000);
+    };
 
     return () => {
-      window.clearInterval(intervalId);
+      eventSource.close();
     };
   }, [selected?.id, shouldPollSelected]);
 
@@ -139,8 +152,8 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
           {videos.length === 0 ? (
             <div className="empty-state">
               <Film size={24} />
-              <strong>No hay partidos todavia.</strong>
-              <span>Sube un video desde el panel principal para activar el analisis.</span>
+              <strong>No hay partidos todavía.</strong>
+              <span>Sube un video desde el panel principal para activar el análisis.</span>
             </div>
           ) : (
             <div className="video-list">
@@ -159,8 +172,13 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
                     </span>
                     <div className="video-row__copy">
                       <strong>{video.originalFilename}</strong>
-                      <span>{formatDate(video.createdAt)} / {formatBytes(Number(video.sizeBytes))}</span>
+                      <span>{formatVideoOpponent(video)}</span>
                     </div>
+                    <span className="video-row__meta">
+                      {formatDate(video.createdAt)}
+                      <br />
+                      {formatBytes(Number(video.sizeBytes))}
+                    </span>
                     <span className={`status-pill ${video.status.toLowerCase()}`}>{formatStatus(video.status)}</span>
                   </button>
 
@@ -193,30 +211,36 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
         </div>
 
         <aside className="history-detail lab-panel">
+          <div className="panel-heading">
+            <div>
+              <span>Detalle del partido</span>
+              <h2>{selected?.originalFilename ?? "Sin selección"}</h2>
+            </div>
+            {selected ? <span className={`status-pill ${selected.status.toLowerCase()}`}>{formatStatus(selected.status)}</span> : null}
+          </div>
+
           {selected ? (
             <>
-              <div className="panel-heading">
-                <div>
-                  <span>Detalle del partido</span>
-                  <h2>{selected.originalFilename}</h2>
-                </div>
-                <span className={`status-pill ${selected.status.toLowerCase()}`}>{formatStatus(selected.status)}</span>
-              </div>
-
               {selected.status === "COMPLETED" && getProcessedVideoUrl(selected) ? (
-                <video
-                  className="analysis-video"
-                  src={getProcessedVideoUrl(selected) ?? `/api/videos/${selected.id}/stream?variant=processed`}
-                  controls
-                  preload="metadata"
-                />
+                <>
+                  <AnalysisVideoPlayer
+                    src={getProcessedVideoUrl(selected) ?? `/api/videos/${selected.id}/stream?variant=processed`}
+                    title={selected.originalFilename}
+                  />
+                  <MatchColorEditor
+                    video={selected}
+                    onSaved={(nextVideo) => {
+                      setVideos((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)));
+                    }}
+                  />
+                </>
               ) : (
                 <div className="analysis-placeholder">
                   {isVideoProcessing(selected) ? <Loader2 className="spin" size={24} /> : <BarChart3 size={24} />}
-                  <strong>{selected.latestJob ? `Analisis ${formatStatus(selected.latestJob.status)}` : "Analisis en espera"}</strong>
+                  <strong>{selected.latestJob ? `Análisis ${formatStatus(selected.latestJob.status)}` : "Análisis en espera"}</strong>
                   <span>
                     {selected.latestJob?.error ||
-                      (selected.latestJob ? `Analizando video... (${getVideoProgress(selected)}%)` : "El worker generara el video anotado y las metricas.")}
+                      (selected.latestJob ? `Analizando video... (${getVideoProgress(selected)}%)` : "El worker generará el video anotado y las métricas.")}
                   </span>
                   {isVideoProcessing(selected) ? (
                     <span className="analysis-upload__progress" aria-label={`Progreso ${getVideoProgress(selected)}%`}>
@@ -227,8 +251,8 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
               )}
 
               <div className="history-stat-grid">
-                <MetricTile label="Posesion Equipo 1" value={display.possession} unit="%" />
-                <MetricTile label="Vel. maxima" value={display.maxSpeed} unit="km/h" />
+                <MetricTile label="Posesión Equipo 1" value={display.possession} unit="%" />
+                <MetricTile label="Vel. máxima" value={display.maxSpeed} unit="km/h" />
                 <MetricTile label="Vel. promedio" value={display.avgSpeed} unit="km/h" />
                 <MetricTile label="Distancia total" value={display.distanceKm} unit="km" />
               </div>
@@ -252,7 +276,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
                     </article>
                   ))
                 ) : (
-                  <p className="history-muted">Las estadisticas apareceran aqui cuando termine el worker de analisis.</p>
+                  <p className="history-muted">Las estadísticas aparecerán aquí cuando termine el worker de análisis.</p>
                 )}
               </div>
 
@@ -265,7 +289,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
             <div className="empty-state">
               <BarChart3 size={24} />
               <strong>Sin partido seleccionado.</strong>
-              <span>El historial mostrara las metricas especificas de cada video.</span>
+              <span>El historial mostrará las métricas específicas de cada video.</span>
             </div>
           )}
         </aside>
@@ -306,11 +330,11 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
             aria-labelledby="history-delete-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="history-modal__eyebrow">Confirmacion</div>
+            <div className="history-modal__eyebrow">Confirmación</div>
             <h2 id="history-delete-title">Eliminar partido del historial</h2>
             <p>
-              Se eliminara <strong>{deleteTarget.originalFilename}</strong>, su video original, el video anotado
-              y las metricas generadas por el modelo.
+              Se eliminará <strong>{deleteTarget.originalFilename}</strong>, su video original, el video anotado
+              y las métricas generadas por el modelo.
             </p>
             <div className="history-modal__actions">
               <button className="button ghost" type="button" onClick={() => setDeleteTargetId(null)} disabled={deleting}>
@@ -360,6 +384,22 @@ function getProcessedVideoUrl(video: HistoryVideo) {
   return video.processedVideoUrl || null;
 }
 
+function getVideoMatchInfo(video: HistoryVideo) {
+  const metadata = video.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return {};
+  const matchInfo = (metadata as { matchInfo?: unknown }).matchInfo;
+  if (!matchInfo || typeof matchInfo !== "object" || Array.isArray(matchInfo)) return {};
+  return matchInfo as { ownTeam?: string; rivalTeam?: string };
+}
+
+function formatVideoOpponent(video: HistoryVideo) {
+  const matchInfo = getVideoMatchInfo(video);
+  if (matchInfo.ownTeam || matchInfo.rivalTeam) {
+    return `${matchInfo.ownTeam ?? "Equipo 1"} vs ${matchInfo.rivalTeam ?? "Equipo 2"}`;
+  }
+  return "Sin equipos registrados";
+}
+
 function getVideoProgress(video: HistoryVideo) {
   if (video.status === "COMPLETED" || video.status === "FAILED") return 100;
   return Math.max(0, Math.min(99, Math.round(video.latestJob?.progress ?? (video.status === "PENDING_ANALYSIS" ? 5 : 0))));
@@ -372,7 +412,7 @@ function formatDate(value: string) {
 }
 
 function formatBytes(bytes: number) {
-  if (!Number.isFinite(bytes)) return "Tamano no disponible";
+  if (!Number.isFinite(bytes)) return "Tamaño no disponible";
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
   let unit = 0;

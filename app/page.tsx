@@ -7,25 +7,25 @@ const processSteps = [
   {
     step: "01",
     title: "Carga del video",
-    text: "Sube footage del partido en formatos estandar desde drone, camara fija o dispositivo movil.",
+    text: "Sube footage del partido en formatos estándar desde dron, cámara fija o dispositivo móvil.",
     icon: FileVideo,
   },
   {
     step: "02",
-    title: "Deteccion con IA",
-    text: "El modelo identifica jugadores, arbitros y balon fotograma a fotograma con precision sub-pixel.",
+    title: "Detección con IA",
+    text: "El modelo identifica jugadores, árbitros y balón fotograma a fotograma con precisión sub-píxel.",
     icon: Cpu,
   },
   {
     step: "03",
-    title: "Extraccion de datos",
-    text: "Calcula trayectorias, velocidades, zonas de accion, presion defensiva y posesion.",
+    title: "Extracción de datos",
+    text: "Calcula trayectorias, velocidades, zonas de acción, presión defensiva y posesión.",
     icon: TrendingUp,
   },
   {
     step: "04",
-    title: "Reporte tactico",
-    text: "Presenta mapas, graficos y comparativas listas para cuerpo tecnico y scouting.",
+    title: "Reporte táctico",
+    text: "Presenta mapas, gráficos y comparativas listas para cuerpo técnico y scouting.",
     icon: BarChart2,
   },
 ];
@@ -34,46 +34,46 @@ const capabilities = [
   {
     title: "Tracking posicional",
     value: "99.2%",
-    label: "precision de deteccion",
-    text: "Identifica la posicion exacta de cada jugador y construye trayectorias continuas durante el partido.",
+    label: "precisión de detección",
+    text: "Identifica la posición exacta de cada jugador y construye trayectorias continuas durante el partido.",
   },
   {
-    title: "Analisis fisico",
+    title: "Análisis físico",
     value: "40+",
-    label: "metricas por jugador",
+    label: "métricas por jugador",
     text: "Distancia, velocidades, sprints, esfuerzos de alta intensidad y zonas de carga estimada.",
   },
   {
-    title: "Inteligencia tactica",
+    title: "Inteligencia táctica",
     value: "4-3-3",
-    label: "formacion detectada",
-    text: "Infiere lineas defensivas, bloque de presion y transiciones ofensivas sin marcaje manual.",
+    label: "formación detectada",
+    text: "Infiere líneas defensivas, bloque de presión y transiciones ofensivas sin marcaje manual.",
   },
   {
     title: "Eventos clave",
     value: "<2s",
     label: "marcaje automatico",
-    text: "Detecta goles, remates, pases clave, duelos, perdidas y situaciones de riesgo defensivo.",
+    text: "Detecta goles, remates, pases clave, duelos, pérdidas y situaciones de riesgo defensivo.",
   },
 ];
 
 const techMetrics = [
   { label: "Velocidad de procesamiento", value: 94 },
-  { label: "Precision de deteccion", value: 99 },
-  { label: "Metricas por analisis", value: 78 },
+  { label: "Precisión de detección", value: 99 },
+  { label: "Métricas por análisis", value: 78 },
   { label: "Cobertura de eventos", value: 87 },
 ];
 
 const testimonials = [
   {
-    quote: "DRIVXIS nos dio acceso a datos que antes requerian un equipo de analistas. Ahora los tenemos en minutos.",
+    quote: "DRIVXIS nos dio acceso a datos que antes requerían un equipo de analistas. Ahora los tenemos en minutos.",
     name: "Carlos Mendoza",
-    role: "Director tecnico, Club Atletico Norte",
+    role: "Director técnico, Club Atlético Norte",
   },
   {
-    quote: "La visualizacion tactica es precisa y clara. Integramos el sistema en scouting sin fricciones.",
+    quote: "La visualización táctica es precisa y clara. Integramos el sistema en scouting sin fricciones.",
     name: "Sofia Reyes",
-    role: "Coordinadora de analisis, Academia Sur FC",
+    role: "Coordinadora de análisis, Academia Sur FC",
   },
 ];
 
@@ -115,10 +115,10 @@ export default function HomePage() {
           <>
             <span className="live-chip live-chip--small">
               <span />
-              En linea
+              En línea
             </span>
             <Link className="button primary" href="/login">
-              Iniciar sesion
+              Iniciar sesión
             </Link>
           </>
         }
@@ -140,14 +140,14 @@ export default function HomePage() {
           <h1>
             DRI<span>V</span>XIS
           </h1>
-          <p className="hero-kicker">Analisis tactico con inteligencia artificial</p>
+          <p className="hero-kicker">Análisis táctico con inteligencia artificial</p>
           <p className="hero-lead">
-            Convierte cualquier grabacion de partido en datos tacticos y fisicos procesables.
-            Disenado para cuerpos tecnicos que trabajan con evidencia.
+            Convierte cualquier grabación de partido en datos tácticos y físicos procesables.
+            Diseñado para cuerpos técnicos que trabajan con evidencia.
           </p>
           <div className="hero-actions">
             <Link className="button primary command-button" href="/register">
-              Comenzar analisis
+              Comenzar análisis
               <ArrowRight size={14} />
             </Link>
             <a className="button ghost command-button" href="#proceso">
@@ -163,11 +163,11 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="metrics-band" aria-label="Metricas de plataforma">
+      <section className="metrics-band" aria-label="Métricas de plataforma">
         <MicroGrid />
         {[
-          { value: "40+", label: "Metricas por partido" },
-          { value: "99.2%", label: "Precision de deteccion" },
+          { value: "40+", label: "Métricas por partido" },
+          { value: "99.2%", label: "Precisión de detección" },
           { value: "<5min", label: "Tiempo de procesamiento" },
           { value: "24/7", label: "Acceso al sistema" },
         ].map((metric) => (
@@ -183,9 +183,9 @@ export default function HomePage() {
         <div className="section-heading">
           <AnnotationLine label="seccion" value="02 / PROCESO" />
           <h2>
-            Como funciona<span>.</span>
+            Cómo funciona<span>.</span>
           </h2>
-          <p>Un pipeline automatizado transforma video crudo en inteligencia tactica en menos de cinco minutos.</p>
+          <p>Un pipeline automatizado transforma video crudo en inteligencia táctica en menos de cinco minutos.</p>
         </div>
 
         <div className="process-grid">
@@ -211,7 +211,7 @@ export default function HomePage() {
           <div>
             <AnnotationLine label="seccion" value="03 / CAPACIDADES" />
             <h2>
-              Que analiza<span>.</span>
+              Qué analiza<span>.</span>
             </h2>
           </div>
         </div>
@@ -235,7 +235,7 @@ export default function HomePage() {
 
         <div className="tech-panel">
           <CornerMarks size={12} opacity={0.35} />
-          <h3>Indicadores tecnicos del sistema</h3>
+          <h3>Indicadores técnicos del sistema</h3>
           <div className="tech-bars">
             {techMetrics.map((metric) => (
               <div className="tech-bar" key={metric.label}>
@@ -254,16 +254,16 @@ export default function HomePage() {
 
       <section className="visual-section">
         <div className="visual-copy">
-          <AnnotationLine label="visualizacion" value="04 / RADAR" />
+          <AnnotationLine label="visualización" value="04 / RADAR" />
           <h2>
-            Campo tactico en tiempo real<span>.</span>
+            Campo táctico en tiempo real<span>.</span>
           </h2>
           <p>
-            Cada analisis genera un mapa tactico interactivo: formaciones, zonas de accion, lineas
+            Cada análisis genera un mapa táctico interactivo: formaciones, zonas de acción, líneas
             defensivas y movimientos colectivos por tramo.
           </p>
           <div className="feature-list">
-            {["Formacion automatica", "Heatmaps individuales", "Lineas y bloques", "Control territorial"].map((item) => (
+            {["Formación automática", "Heatmaps individuales", "Líneas y bloques", "Control territorial"].map((item) => (
               <span key={item}>{item}</span>
             ))}
           </div>
@@ -303,8 +303,8 @@ export default function HomePage() {
       </section>
 
       <section className="final-cta" id="contacto">
-        <h2>Empieza a analizar tu proximo partido</h2>
-        <p>Inicia sesion para acceder al modulo de analisis. Sin instalaciones, sin hardware adicional.</p>
+        <h2>Empieza a analizar tu próximo partido</h2>
+        <p>Inicia sesión para acceder al módulo de análisis. Sin instalaciones, sin hardware adicional.</p>
         <Link className="button primary command-button" href="/login">
           Entrar al sistema
           <ArrowRight size={14} />
@@ -318,7 +318,7 @@ export default function HomePage() {
         <span>2026 / Football intelligence system</span>
         <div>
           <a href="#inicio">Privacidad</a>
-          <a href="#inicio">Terminos</a>
+          <a href="#inicio">Términos</a>
           <a href="#inicio">Contacto</a>
         </div>
       </footer>

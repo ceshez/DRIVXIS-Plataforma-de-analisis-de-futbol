@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Film, Loader2, Upload, XCircle } from "lucide-react";
 import { MicroGrid } from "@/components/micro-graphics";
 import type { AnalysisMetrics } from "@/lib/analysis-metrics";
@@ -11,6 +11,7 @@ export type UploadedVideo = {
   status: string;
   sizeBytes: string;
   createdAt: string;
+  metadata?: unknown;
   sourceVideoUrl?: string;
   processedVideoUrl?: string | null;
   latestJob?: {
@@ -46,6 +47,19 @@ export function VideoUploadDropzone({
   const [state, setState] = useState<UploadState>("idle");
   const [message, setMessage] = useState("Click para abrir archivos");
   const [fileName, setFileName] = useState("");
+  const [ownTeam, setOwnTeam] = useState("");
+  const [rivalTeam, setRivalTeam] = useState("");
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("drivxis:primary-team");
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved) as { name?: string };
+      if (parsed.name) setOwnTeam(parsed.name);
+    } catch {
+      window.localStorage.removeItem("drivxis:primary-team");
+    }
+  }, []);
 
   async function handleFiles(files: FileList | null) {
     const file = files?.[0];
@@ -54,9 +68,21 @@ export function VideoUploadDropzone({
   }
 
   async function uploadVideo(file: File) {
+    const normalizedOwnTeam = ownTeam.trim();
+    const normalizedRivalTeam = rivalTeam.trim();
+    if (normalizedOwnTeam.length < 2 || normalizedRivalTeam.length < 2) {
+      setState("error");
+      setMessage("Indica tu equipo y el rival antes de subir el partido.");
+      return;
+    }
+
     setState("uploading");
     setFileName(file.name);
     setMessage("Preparando carga");
+    const matchInfo = {
+      ownTeam: normalizedOwnTeam,
+      rivalTeam: normalizedRivalTeam,
+    };
 
     const metadata = {
       filename: file.name,
@@ -107,7 +133,7 @@ export function VideoUploadDropzone({
       const createResponse = await fetch("/api/videos", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...metadata, objectKey: presign.objectKey, uploadMode: presign.uploadMode || "local" }),
+        body: JSON.stringify({ ...metadata, objectKey: presign.objectKey, uploadMode: presign.uploadMode || "local", matchInfo }),
       });
       const created = (await createResponse.json().catch(() => ({}))) as { error?: string; video?: UploadedVideo };
       if (!createResponse.ok || !created.video) {
@@ -116,6 +142,10 @@ export function VideoUploadDropzone({
 
       setState("queued");
       setMessage("Video en cola de analisis");
+      window.localStorage.setItem(
+        "drivxis:primary-team",
+        JSON.stringify({ name: normalizedOwnTeam }),
+      );
       onUploaded?.(created.video);
       if (inputRef.current) inputRef.current.value = "";
     } catch (error) {
@@ -129,6 +159,30 @@ export function VideoUploadDropzone({
 
   return (
     <div className="analysis-upload">
+      {!disabled ? (
+        <div className="match-setup" aria-label="Datos del partido">
+          <label>
+            <span>Tu equipo</span>
+            <input
+              type="text"
+              value={ownTeam}
+              onChange={(event) => setOwnTeam(event.target.value)}
+              placeholder="Ej. DRIVXIS FC"
+              disabled={state === "uploading"}
+            />
+          </label>
+          <label>
+            <span>Rival</span>
+            <input
+              type="text"
+              value={rivalTeam}
+              onChange={(event) => setRivalTeam(event.target.value)}
+              placeholder="Ej. Academia Norte"
+              disabled={state === "uploading"}
+            />
+          </label>
+        </div>
+      ) : null}
       <button
         className={`analysis-upload__target ${dragOver ? "is-dragging" : ""}`}
         type="button"

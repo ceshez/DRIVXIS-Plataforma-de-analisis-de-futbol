@@ -103,7 +103,10 @@ async function processJob(job) {
   log(`Job ${job.id}: metrics=${metricsPath}`);
 
   await updateJobProgress(job.id, 8, { force: true });
-  await runPythonAnalysis(sourcePath, processedPath, metricsPath, async (progress) => {
+  const matchInfo = isRecord(job.video.metadata) && isRecord(job.video.metadata.matchInfo)
+    ? job.video.metadata.matchInfo
+    : {};
+  await runPythonAnalysis(sourcePath, processedPath, metricsPath, matchInfo, async (progress) => {
     await updateJobProgress(job.id, progress);
   });
   await updateJobProgress(job.id, 97, { force: true });
@@ -206,7 +209,7 @@ async function updateJobProgress(jobId, progress, options = {}) {
   progressWriteState.set(jobId, { progress: Math.max(previous.progress, bounded), writtenAt: now });
 }
 
-async function runPythonAnalysis(sourcePath, processedPath, metricsPath, onProgress) {
+async function runPythonAnalysis(sourcePath, processedPath, metricsPath, matchInfo, onProgress) {
   await stat(modelPath).catch(() => {
     throw new Error(`Missing YOLO model at ${modelPath}. Download best.pt into analysis/models/best.pt`);
   });
@@ -221,6 +224,8 @@ async function runPythonAnalysis(sourcePath, processedPath, metricsPath, onProgr
     metricsPath,
     "--model",
     modelPath,
+    "--match-info",
+    JSON.stringify(matchInfo || {}),
   ];
 
   log(`Running Python analysis: ${pythonBin} ${commandArgs.map((part) => JSON.stringify(part)).join(" ")}`);

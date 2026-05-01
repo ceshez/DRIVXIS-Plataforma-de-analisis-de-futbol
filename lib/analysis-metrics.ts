@@ -1,6 +1,18 @@
 export type AnalysisMetrics = {
   version: 1;
   source?: string;
+  match?: {
+    ownTeam: string;
+    rivalTeam: string;
+    ownTeamColor?: string | null;
+    rivalTeamColor?: string | null;
+    ownGoals?: number;
+    rivalGoals?: number;
+    detectedTeamColors?: {
+      team1?: string;
+      team2?: string;
+    };
+  };
   possession: {
     team1Pct: number;
     team2Pct: number;
@@ -24,6 +36,9 @@ export type AnalysisMetrics = {
   };
   distance: {
     totalMeters: number;
+  };
+  players?: {
+    detected: number;
   };
   video: {
     frameCount: number;
@@ -70,6 +85,22 @@ export function parseAnalysisMetrics(value: unknown): AnalysisMetrics | null {
   return {
     version: 1,
     source: typeof value.source === "string" ? value.source : undefined,
+    match: isRecord(value.match)
+      ? {
+          ownTeam: typeof value.match.ownTeam === "string" ? value.match.ownTeam : "Equipo 1",
+          rivalTeam: typeof value.match.rivalTeam === "string" ? value.match.rivalTeam : "Equipo 2",
+          ownTeamColor: typeof value.match.ownTeamColor === "string" ? value.match.ownTeamColor : null,
+          rivalTeamColor: typeof value.match.rivalTeamColor === "string" ? value.match.rivalTeamColor : null,
+          ownGoals: finiteNumber(value.match.ownGoals),
+          rivalGoals: finiteNumber(value.match.rivalGoals),
+          detectedTeamColors: isRecord(value.match.detectedTeamColors)
+            ? {
+                team1: typeof value.match.detectedTeamColors.team1 === "string" ? value.match.detectedTeamColors.team1 : undefined,
+                team2: typeof value.match.detectedTeamColors.team2 === "string" ? value.match.detectedTeamColors.team2 : undefined,
+              }
+            : undefined,
+        }
+      : undefined,
     possession: {
       team1Pct: finiteNumber(value.possession.team1Pct),
       team2Pct: finiteNumber(value.possession.team2Pct),
@@ -87,6 +118,11 @@ export function parseAnalysisMetrics(value: unknown): AnalysisMetrics | null {
     distance: {
       totalMeters: finiteNumber(value.distance.totalMeters),
     },
+    players: isRecord(value.players)
+      ? {
+          detected: finiteNumber(value.players.detected),
+        }
+      : undefined,
     video: {
       frameCount: finiteNumber(value.video.frameCount),
       fps: finiteNumber(value.video.fps),

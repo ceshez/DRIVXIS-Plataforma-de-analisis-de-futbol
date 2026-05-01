@@ -15,12 +15,12 @@ export default function LoginPage() {
         </Link>
         <div className="auth-panel__copy">
           <span>Acceso al sistema</span>
-          <h1>Entra a tu sala de analisis</h1>
-          <p>Usa tus credenciales para abrir el laboratorio tactico, revisar videos y preparar reportes.</p>
+          <h1>Entra a tu sala de análisis</h1>
+          <p>Usa tus credenciales para abrir el laboratorio táctico, revisar videos y preparar reportes.</p>
         </div>
         <AuthForm mode="login" />
         <p className="auth-switch">
-          No tienes cuenta? <Link href="/register">Crear cuenta <ArrowRight size={12} /></Link>
+          ¿No tienes cuenta? <Link href="/register">Crear cuenta <ArrowRight size={12} /></Link>
         </p>
       </section>
     </main>

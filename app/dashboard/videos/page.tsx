@@ -23,10 +23,10 @@ export default async function VideosPage() {
       <section className="dashboard-command dashboard-command--compact">
         <MicroGrid />
         <div className="dashboard-command__copy">
-          <AnnotationLine label="historial" value="PARTIDOS / METRICAS IA" />
+          <AnnotationLine label="historial" value="PARTIDOS / MÉTRICAS IA" />
           <h1>Historial de videos</h1>
           <p>
-            Revisa cada partido subido, su estado de cola y las estadisticas creadas por el modelo.
+            Revisa cada partido subido, su estado de cola y las estadísticas creadas por el modelo.
           </p>
         </div>
       </section>

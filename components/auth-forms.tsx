@@ -66,7 +66,7 @@ export function AuthForm({ mode, initialEmail = "" }: AuthFormProps) {
     setNotice({
       tone: "success",
       title: mode === "register" ? "Cuenta creada" : "Acceso validado",
-      message: mode === "register" ? "Tu sala de analisis esta lista." : "Entrando al laboratorio tactico.",
+      message: mode === "register" ? "Tu sala de análisis está lista." : "Entrando al laboratorio táctico.",
     });
     window.setTimeout(() => {
       window.location.href = "/dashboard";
@@ -79,12 +79,12 @@ export function AuthForm({ mode, initialEmail = "" }: AuthFormProps) {
         {mode === "register" && (
           <label>
             <span>Nombre</span>
-            <input name="name" autoComplete="name" placeholder="Carlos Sanchez" required minLength={2} />
+            <input name="name" autoComplete="name" placeholder="Carlos Sánchez" required minLength={2} />
           </label>
         )}
 
         <label>
-          <span>Correo electronico</span>
+          <span>Correo electrónico</span>
           <input
             name="email"
             type="email"
@@ -96,7 +96,7 @@ export function AuthForm({ mode, initialEmail = "" }: AuthFormProps) {
         </label>
 
         <label>
-          <span>Contrasena</span>
+          <span>Contraseña</span>
           <div className="password-field">
             <input
               name="password"
@@ -108,7 +108,7 @@ export function AuthForm({ mode, initialEmail = "" }: AuthFormProps) {
             />
             <button
               type="button"
-              aria-label={showPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+              aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
               onClick={() => setShowPassword((current) => !current)}
             >
               {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

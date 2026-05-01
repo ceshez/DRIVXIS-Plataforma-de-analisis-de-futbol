@@ -20,13 +20,13 @@ export default async function RegisterPage({ searchParams }: RegisterPageProps) 
           DRI<span>V</span>XIS
         </Link>
         <div className="auth-panel__copy">
-          <span>Registro publico</span>
+          <span>Registro público</span>
           <h1>Crea tu base de trabajo</h1>
-          <p>La cuenta guarda tu biblioteca de videos, cola de analisis y resultados futuros por usuario.</p>
+          <p>La cuenta guarda tu biblioteca de videos, cola de análisis y resultados futuros por usuario.</p>
         </div>
         <AuthForm mode="register" initialEmail={params.email || ""} />
         <p className="auth-switch">
-          Ya tienes cuenta? <Link href="/login">Entrar <ArrowRight size={12} /></Link>
+          ¿Ya tienes cuenta? <Link href="/login">Entrar <ArrowRight size={12} /></Link>
         </p>
       </section>
     </main>
