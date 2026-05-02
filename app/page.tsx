@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { ArrowRight, BarChart2, ChevronRight, Cpu, FileVideo, TrendingUp } from "lucide-react";
 import { AnnotationLine, CornerMarks, Crosshair, MicroGrid } from "@/components/micro-graphics";
 import { SiteHeader } from "@/components/site-header";
@@ -19,7 +19,7 @@ const processSteps = [
   {
     step: "03",
     title: "Extracción de datos",
-    text: "Calcula trayectorias, velocidades, zonas de acción, presión defensiva y posesión.",
+    text: "Calcula control del balón, distancia por equipo, zonas de acción y presión defensiva.",
     icon: TrendingUp,
   },
   {
@@ -38,10 +38,10 @@ const capabilities = [
     text: "Identifica la posición exacta de cada jugador y construye trayectorias continuas durante el partido.",
   },
   {
-    title: "Análisis físico",
-    value: "40+",
-    label: "métricas por jugador",
-    text: "Distancia, velocidades, sprints, esfuerzos de alta intensidad y zonas de carga estimada.",
+    title: "análisis colectivo",
+    value: "2x",
+    label: "métricas por equipo",
+    text: "Distancia agregada, control del balón y comparativas estables entre equipo propio y rival.",
   },
   {
     title: "Inteligencia táctica",
@@ -52,7 +52,7 @@ const capabilities = [
   {
     title: "Eventos clave",
     value: "<2s",
-    label: "marcaje automatico",
+    label: "marcaje automático",
     text: "Detecta goles, remates, pases clave, duelos, pérdidas y situaciones de riesgo defensivo.",
   },
 ];
@@ -60,7 +60,7 @@ const capabilities = [
 const techMetrics = [
   { label: "Velocidad de procesamiento", value: 94 },
   { label: "Precisión de detección", value: 99 },
-  { label: "Métricas por análisis", value: 78 },
+  { label: "métricas por análisis", value: 78 },
   { label: "Cobertura de eventos", value: 87 },
 ];
 
@@ -72,7 +72,7 @@ const testimonials = [
   },
   {
     quote: "La visualización táctica es precisa y clara. Integramos el sistema en scouting sin fricciones.",
-    name: "Sofia Reyes",
+    name: "Sofía Reyes",
     role: "Coordinadora de análisis, Academia Sur FC",
   },
 ];
@@ -140,7 +140,7 @@ export default function HomePage() {
           <h1>
             DRI<span>V</span>XIS
           </h1>
-          <p className="hero-kicker">Análisis táctico con inteligencia artificial</p>
+          <p className="hero-kicker">análisis táctico con inteligencia artificial</p>
           <p className="hero-lead">
             Convierte cualquier grabación de partido en datos tácticos y físicos procesables.
             Diseñado para cuerpos técnicos que trabajan con evidencia.
@@ -163,10 +163,10 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="metrics-band" aria-label="Métricas de plataforma">
+      <section className="metrics-band" aria-label="métricas de plataforma">
         <MicroGrid />
         {[
-          { value: "40+", label: "Métricas por partido" },
+          { value: "40+", label: "métricas por partido" },
           { value: "99.2%", label: "Precisión de detección" },
           { value: "<5min", label: "Tiempo de procesamiento" },
           { value: "24/7", label: "Acceso al sistema" },
@@ -181,7 +181,7 @@ export default function HomePage() {
       <section className="section-block" id="proceso">
         <MicroGrid />
         <div className="section-heading">
-          <AnnotationLine label="seccion" value="02 / PROCESO" />
+          <AnnotationLine label="sección" value="02 / PROCESO" />
           <h2>
             Cómo funciona<span>.</span>
           </h2>
@@ -209,7 +209,7 @@ export default function HomePage() {
         <MicroGrid />
         <div className="section-heading">
           <div>
-            <AnnotationLine label="seccion" value="03 / CAPACIDADES" />
+            <AnnotationLine label="sección" value="03 / CAPACIDADES" />
             <h2>
               Qué analiza<span>.</span>
             </h2>
@@ -259,7 +259,7 @@ export default function HomePage() {
             Campo táctico en tiempo real<span>.</span>
           </h2>
           <p>
-            Cada análisis genera un mapa táctico interactivo: formaciones, zonas de acción, líneas
+            Cada análisis genera un mapa táctico interactivo: formaciónes, zonas de acción, líneas
             defensivas y movimientos colectivos por tramo.
           </p>
           <div className="feature-list">
@@ -325,3 +325,5 @@ export default function HomePage() {
     </main>
   );
 }
+
+

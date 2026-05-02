@@ -46,7 +46,7 @@ export async function ensureLocalObjectDirectory(objectKey: string) {
 
 export function getAnalysisOutputDirectory(videoId: string) {
   if (!/^[\w-]+$/.test(videoId)) {
-    throw new Error("Video id invalido para analysis storage.");
+    throw new Error("Video id inválido para analysis storage.");
   }
   return path.resolve(getAnalysisStorageRoot(), videoId);
 }

@@ -9,7 +9,7 @@ export async function POST(request: Request) {
 
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message || "Archivo de video invalido." },
+      { error: parsed.error.issues[0]?.message || "Archivo de video inválido." },
       { status: 400 },
     );
   }

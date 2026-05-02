@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 @theme inline {
   --color-drivxis-bg: var(--bg);
@@ -1759,21 +1759,23 @@ svg {
 }
 
 .radar-card {
-  min-height: 200px;
+  min-height: 218px;
 }
 
 .stat-strip {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   background: rgba(255, 107, 43, 0.1);
 }
 
 .stat-cell {
   display: grid;
-  gap: 0.8rem;
+  align-content: space-between;
+  min-height: 132px;
+  gap: 0.75rem;
   overflow: hidden;
-  padding: var(--space-lg);
+  padding: clamp(1rem, 1.4vw, 1.45rem);
   background: var(--bg);
 }
 
@@ -1790,8 +1792,9 @@ svg {
   align-items: flex-end;
   gap: 0.3rem;
   font-family: var(--font-display);
-  font-size: 1.45rem;
+  font-size: clamp(1.08rem, 1.45vw, 1.45rem);
   line-height: 1;
+  white-space: nowrap;
 }
 
 .stat-cell small {
@@ -1804,7 +1807,7 @@ svg {
   justify-self: end;
   color: rgba(255, 107, 43, 0.08);
   font-family: var(--font-display);
-  font-size: 1.8rem;
+  font-size: clamp(1.35rem, 1.65vw, 1.8rem);
   line-height: 1;
 }
 
@@ -1832,6 +1835,29 @@ svg {
   position: absolute;
   right: 1rem;
   top: 1rem;
+}
+
+.chart-tooltip {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 150px;
+  border: 1px solid rgba(255, 107, 43, 0.28);
+  background: rgba(8, 8, 8, 0.94);
+  padding: 0.65rem 0.75rem;
+  color: var(--text);
+  font-size: 0.72rem;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.34);
+}
+
+.chart-tooltip strong {
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.chart-tooltip span {
+  color: rgba(242, 240, 238, 0.72);
 }
 
 .chart-panel--field svg {
@@ -2311,7 +2337,7 @@ svg {
 
 .match-color-editor {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
   align-items: center;
   gap: var(--space-md);
   border-top: 1px solid rgba(255, 107, 43, 0.12);
@@ -2319,11 +2345,12 @@ svg {
   padding: var(--space-md) var(--space-lg);
 }
 
-.match-color-editor > div {
+.match-color-editor__copy {
   min-width: 0;
 }
 
-.match-color-editor span {
+.match-color-editor span,
+.match-color-swatch small {
   display: block;
   color: rgba(242, 240, 238, 0.34);
   font-size: 0.58rem;
@@ -2343,29 +2370,157 @@ svg {
   text-transform: uppercase;
 }
 
-.match-color-editor small {
+.match-color-editor__copy small {
   display: block;
   margin-top: 0.22rem;
   color: rgba(255, 107, 43, 0.56);
   font-size: 0.68rem;
 }
 
-.match-color-editor label {
+.match-color-swatch {
   display: grid;
-  gap: 0.35rem;
-  justify-items: start;
+  grid-template-columns: auto minmax(4.25rem, auto);
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+  min-width: 8rem;
+  border: 1px solid rgba(255, 107, 43, 0.14);
+  background: rgba(242, 240, 238, 0.035);
+  padding: 0.55rem 0.65rem;
 }
 
-.match-color-editor input[type="color"] {
-  width: 52px;
-  height: 36px;
-  border: 1px solid rgba(255, 107, 43, 0.2);
-  border-radius: 0;
-  background: rgba(242, 240, 238, 0.04);
-  padding: 0.22rem;
+.match-color-swatch span,
+.match-color-swatch small {
+  grid-column: 2;
+}
+
+.match-color-swatch b {
+  grid-row: 1 / 3;
+  display: block;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid rgba(242, 240, 238, 0.28);
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.24),
+    0 0 18px rgba(255, 107, 43, 0.08);
+}
+
+.match-color-swatch small {
+  margin-top: -0.15rem;
+  color: rgba(242, 240, 238, 0.5);
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+}
+
+.match-color-swap,
+.match-color-save {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgba(255, 107, 43, 0.22);
+  background: rgba(255, 107, 43, 0.055);
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+
+.match-color-swap:hover,
+.match-color-save:hover {
+  border-color: rgba(255, 107, 43, 0.48);
+  background: rgba(255, 107, 43, 0.11);
+  transform: translateY(-1px);
+}
+
+.match-color-swap:disabled,
+.match-color-save:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+  transform: none;
+}
+
+.match-color-save.is-saved {
+  border-color: rgba(143, 227, 136, 0.36);
+  color: var(--success);
+}
+
+.match-color-save.is-error {
+  border-color: rgba(255, 95, 95, 0.38);
+  color: var(--danger);
+}
+
+.match-color-empty {
+  grid-column: span 3;
+  color: rgba(242, 240, 238, 0.42);
+  font-size: 0.78rem;
+}
+
+.app-toast-stack {
+  position: fixed;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 160;
+  display: grid;
+  gap: 0.65rem;
+  width: min(420px, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.app-toast {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.72rem;
+  border: 1px solid rgba(255, 107, 43, 0.28);
+  background:
+    linear-gradient(135deg, rgba(20, 12, 8, 0.98), rgba(8, 8, 8, 0.96)),
+    rgba(8, 8, 8, 0.98);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.46);
+  color: var(--text);
+  padding: 0.82rem 0.9rem;
+  pointer-events: auto;
+  animation: toastSlideIn 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.app-toast svg {
+  color: var(--accent);
+}
+
+.app-toast span {
+  color: rgba(242, 240, 238, 0.84);
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.app-toast button {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid rgba(242, 240, 238, 0.1);
+  background: rgba(242, 240, 238, 0.035);
+  color: rgba(242, 240, 238, 0.5);
   cursor: pointer;
 }
 
+.app-toast--success {
+  border-color: rgba(143, 227, 136, 0.32);
+}
+
+.app-toast--success svg {
+  color: var(--success);
+}
+
+.app-toast--warning {
+  border-color: rgba(255, 193, 95, 0.34);
+}
+
+.app-toast--warning svg {
+  color: var(--warning);
+}
 .drop-zone {
   position: relative;
   display: grid;
@@ -2647,6 +2802,17 @@ svg {
   margin-top: 1.4rem;
 }
 
+@keyframes toastSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(0.65rem) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes pulse {
   0%,
   100% {
@@ -2904,6 +3070,13 @@ svg {
     bottom: 1rem;
     width: auto;
   }
+
+  .app-toast-stack {
+    left: 1rem;
+    right: 1rem;
+    bottom: 1rem;
+    width: auto;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2915,3 +3088,4 @@ svg {
     transition-duration: 1ms !important;
   }
 }
+

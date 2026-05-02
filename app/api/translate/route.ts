@@ -8,7 +8,7 @@ export async function POST(request: Request) {
   } | null;
 
   if (!body?.dictionary || typeof body.dictionary !== "object") {
-    return NextResponse.json({ error: "Diccionario invalido." }, { status: 400 });
+    return NextResponse.json({ error: "Diccionario inválido." }, { status: 400 });
   }
 
   const locale = pickLocale(body.locale || "es");

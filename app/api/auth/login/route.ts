@@ -7,7 +7,7 @@ import { loginSchema } from "@/lib/validators";
 export async function POST(request: Request) {
   const parsed = loginSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message || "Datos invalidos." }, { status: 400 });
+    return NextResponse.json({ error: parsed.error.issues[0]?.message || "Datos inválidos." }, { status: 400 });
   }
 
   const user = await prisma.user.findUnique({
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     await clearSessionCookie();
     return NextResponse.json(
       {
-        error: "No encontramos una cuenta con ese correo. Crea una cuenta antes de iniciar sesion.",
+        error: "No encontramos una cuenta con ese correo. Crea una cuenta antes de iniciar sesión.",
         needsRegistration: true,
       },
       { status: 404 },
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
   if (!(await verifyPassword(parsed.data.password, user.passwordHash))) {
     await clearSessionCookie();
-    return NextResponse.json({ error: "Correo o contrasena incorrectos." }, { status: 401 });
+    return NextResponse.json({ error: "Correo o contraseña incorrectos." }, { status: 401 });
   }
 
   await setSessionCookie({ userId: user.id, email: user.email, role: user.role });

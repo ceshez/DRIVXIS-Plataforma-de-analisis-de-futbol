@@ -1,6 +1,7 @@
 import { rm } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { isRecord } from "@/lib/analysis-metrics";
+import { getDetectedColorPair, isAllowedDetectedColorSwap } from "@/lib/detected-color-pair";
 import {
   getAnalysisOutputDirectory,
   getLocalObjectPath,
@@ -72,7 +73,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   if (!parsed.success) {
     return NextResponse.json(
-      { error: parsed.error.issues[0]?.message || "Datos de partido invalidos." },
+      { error: parsed.error.issues[0]?.message || "Datos de partido inválidos." },
       { status: 400 },
     );
   }
@@ -83,6 +84,13 @@ export async function PATCH(request: Request, context: RouteContext) {
       id: true,
       status: true,
       metadata: true,
+      metricSnapshots: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          metrics: true,
+        },
+      },
     },
   });
 
@@ -92,7 +100,15 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   if (existingVideo.status !== "COMPLETED") {
     return NextResponse.json(
-      { error: "Los colores se configuran cuando el analisis ya termino." },
+      { error: "Los colores se configuran cuando el análisis ya termino." },
+      { status: 409 },
+    );
+  }
+
+  const detectedPair = getDetectedColorPair(existingVideo.metricSnapshots[0]?.metrics);
+  if (!isAllowedDetectedColorSwap(parsed.data.matchInfo, detectedPair)) {
+    return NextResponse.json(
+      { error: "Solo se puede guardar el par de colores detectado por el análisis, normal o intercambiado." },
       { status: 409 },
     );
   }

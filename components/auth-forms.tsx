@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { CheckCircle2, Eye, EyeOff, Loader2, XCircle } from "lucide-react";
@@ -134,3 +134,5 @@ export function AuthForm({ mode, initialEmail = "" }: AuthFormProps) {
     </>
   );
 }
+
+

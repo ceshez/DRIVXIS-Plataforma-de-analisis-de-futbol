@@ -1,9 +1,10 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart3, Film, Loader2, MoreVertical, RotateCcw, Trash2 } from "lucide-react";
 import { AnalysisVideoPlayer } from "@/components/analysis-video-player";
+import { ToastViewport, useAppToasts } from "@/components/app-toast";
 import { MatchColorEditor } from "@/components/match-color-editor";
 import { getMetricDisplay, type AnalysisMetrics } from "@/lib/analysis-metrics";
 
@@ -37,6 +38,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
   const [openMenu, setOpenMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const { toasts, pushToast, dismissToast } = useAppToasts();
   const selected = useMemo(
     () => videos.find((video) => video.id === selectedId) ?? videos[0] ?? null,
     [selectedId, videos],
@@ -46,6 +48,8 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     [deleteTargetId, videos],
   );
   const display = getMetricDisplay(selected?.latestMetrics ?? null);
+  const ownDistanceKm = getOwnDistanceKm(selected?.latestMetrics ?? null);
+  const rivalDistanceKm = getRivalDistanceKm(selected?.latestMetrics ?? null);
 
   useEffect(() => {
     if (!selected && videos[0]) {
@@ -61,7 +65,17 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     const eventSource = new EventSource(`/api/videos/${selected.id}/events`);
     eventSource.addEventListener("video", (event) => {
       const nextVideo = JSON.parse((event as MessageEvent).data) as HistoryVideo;
-      setVideos((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)));
+      setVideos((current) => {
+        const previous = current.find((video) => video.id === nextVideo.id);
+        if (previous?.status !== "COMPLETED" && nextVideo.status === "COMPLETED") {
+          pushToast("análisis terminado. El video ya está listo para revisarse.", {
+            dedupeKey: `${nextVideo.id}:completed`,
+            durationMs: 8500,
+            sound: true,
+          });
+        }
+        return current.map((video) => (video.id === nextVideo.id ? nextVideo : video));
+      });
       if (nextVideo.status === "COMPLETED" || nextVideo.status === "FAILED") {
         eventSource.close();
       }
@@ -74,7 +88,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     return () => {
       eventSource.close();
     };
-  }, [selected?.id, shouldPollSelected]);
+  }, [selected?.id, shouldPollSelected, pushToast]);
 
   useEffect(() => {
     if (!openMenu) return;
@@ -104,7 +118,17 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     const response = await fetch(`/api/videos/${videoId}`, { method: "GET", cache: "no-store" });
     const data = (await response.json().catch(() => ({}))) as { video?: HistoryVideo };
     if (!response.ok || !data.video) return;
-    setVideos((current) => current.map((video) => (video.id === data.video!.id ? data.video! : video)));
+    setVideos((current) => {
+      const previous = current.find((video) => video.id === data.video!.id);
+      if (previous?.status !== "COMPLETED" && data.video!.status === "COMPLETED") {
+        pushToast("análisis terminado. El video ya está listo para revisarse.", {
+          dedupeKey: `${data.video!.id}:completed`,
+          durationMs: 8500,
+          sound: true,
+        });
+      }
+      return current.map((video) => (video.id === data.video!.id ? data.video! : video));
+    });
   }
 
   async function retryAnalysis() {
@@ -117,6 +141,11 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     setVideos((current) => current.map((video) => (video.id === data.video!.id ? data.video! : video)));
     setSelectedId(data.video.id);
     setOpenMenu(null);
+    pushToast("Video recibido. Iniciando análisis.", {
+      dedupeKey: `${data.video.id}:queued`,
+      durationMs: 7000,
+      sound: true,
+    });
   }
 
   async function deleteVideo() {
@@ -229,6 +258,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
                   />
                   <MatchColorEditor
                     video={selected}
+                    onToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
                     onSaved={(nextVideo) => {
                       setVideos((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)));
                     }}
@@ -237,7 +267,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
               ) : (
                 <div className="analysis-placeholder">
                   {isVideoProcessing(selected) ? <Loader2 className="spin" size={24} /> : <BarChart3 size={24} />}
-                  <strong>{selected.latestJob ? `Análisis ${formatStatus(selected.latestJob.status)}` : "Análisis en espera"}</strong>
+                  <strong>{selected.latestJob ? `análisis ${formatStatus(selected.latestJob.status)}` : "análisis en espera"}</strong>
                   <span>
                     {selected.latestJob?.error ||
                       (selected.latestJob ? `Analizando video... (${getVideoProgress(selected)}%)` : "El worker generará el video anotado y las métricas.")}
@@ -252,32 +282,9 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
 
               <div className="history-stat-grid">
                 <MetricTile label="Posesión Equipo 1" value={display.possession} unit="%" />
-                <MetricTile label="Vel. máxima" value={display.maxSpeed} unit="km/h" />
-                <MetricTile label="Vel. promedio" value={display.avgSpeed} unit="km/h" />
-                <MetricTile label="Distancia total" value={display.distanceKm} unit="km" />
-              </div>
-
-              <div className="player-stat-list history-players">
-                <h2>Velocidad por jugador</h2>
-                {selected.latestMetrics?.speed.players.length ? (
-                  selected.latestMetrics.speed.players.slice(0, 6).map((player) => (
-                    <article className="player-stat" key={String(player.id)}>
-                      <div>
-                        <span>Jugador {player.id}</span>
-                        <small>Equipo {player.team ?? "-"}</small>
-                      </div>
-                      <strong>
-                        {player.maxKmh.toFixed(1)}
-                        <small>km/h</small>
-                      </strong>
-                      <span className="meter">
-                        <span style={{ width: `${Math.min(100, (player.maxKmh / Math.max(1, selected.latestMetrics!.speed.maxKmh)) * 100)}%` }} />
-                      </span>
-                    </article>
-                  ))
-                ) : (
-                  <p className="history-muted">Las estadísticas aparecerán aquí cuando termine el worker de análisis.</p>
-                )}
+                <MetricTile label="Posesión Equipo 2" value={display.rivalPossession} unit="%" />
+                <MetricTile label="Dist. equipo propio" value={formatKm(ownDistanceKm)} unit="km" />
+                <MetricTile label="Dist. equipo rival" value={formatKm(rivalDistanceKm)} unit="km" />
               </div>
 
               <button className="button ghost command-button" type="button" onClick={() => void retryAnalysis()} disabled={retrying}>
@@ -348,13 +355,14 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
           </div>
         </div>
       ) : null}
+      <ToastViewport toasts={toasts} onDismiss={dismissToast} />
     </>
   );
 }
 
 function MetricTile({ label, value, unit }: { label: string; value: string; unit: string }) {
   return (
-    <article className="stat-cell history-stat">
+    <article className="stat-cell history-stat" title={`${label}: ${value}${unit}`} aria-label={`${label}: ${value}${unit}`}>
       <span>{label}</span>
       <strong>
         {value}
@@ -365,6 +373,14 @@ function MetricTile({ label, value, unit }: { label: string; value: string; unit
       </span>
     </article>
   );
+}
+
+function getOwnDistanceKm(metrics: AnalysisMetrics | null) {
+  return metrics?.distance.teams?.own.totalKm ?? (metrics?.teamDistances?.ownTeam ?? 0) / 1000;
+}
+
+function getRivalDistanceKm(metrics: AnalysisMetrics | null) {
+  return metrics?.distance.teams?.rival.totalKm ?? (metrics?.teamDistances?.rivalTeam ?? 0) / 1000;
 }
 
 function formatStatus(status: string) {
@@ -422,3 +438,12 @@ function formatBytes(bytes: number) {
   }
   return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
+
+function formatKm(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0.00";
+  return value >= 10 ? value.toFixed(1) : value.toFixed(2);
+}
+
+
+
+

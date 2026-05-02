@@ -57,7 +57,7 @@ export function getConfiguredStorageClient() {
 export async function getStorageObject(objectKey: string) {
   assertSafeRemoteObjectKey(objectKey);
   if (!isStorageConfigured()) {
-    throw new Error("Storage S3 no esta configurado.");
+    throw new Error("Storage S3 no está configurado.");
   }
 
   return getStorageClient().send(

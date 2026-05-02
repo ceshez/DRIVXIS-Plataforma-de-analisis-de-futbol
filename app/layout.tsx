@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+﻿import type { Metadata, Viewport } from "next";
 import { Inter, Orbitron } from "next/font/google";
 import "./globals.css";
 
@@ -15,8 +15,34 @@ const body = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "DRIVXIS | Analisis inteligente de futbol",
-  description: "Plataforma web para convertir videos de futbol en estadisticas tacticas accionables.",
+  title: "DRIVXIS | análisis inteligente de fútbol",
+  description: "Plataforma web para convertir videos de fútbol en estadísticas tácticas accionables.",
+  icons: {
+    icon: [
+      { url: "/logos/drivxis-logo-oscuro.ico" },
+      {
+        url: "/logos/drivxis-logo-oscuro.svg",
+        type: "image/svg+xml",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/logos/drivxis-logo-claro.svg",
+        type: "image/svg+xml",
+        media: "(prefers-color-scheme: dark)",
+      },
+    ],
+    shortcut: ["/logos/drivxis-logo-oscuro.ico"],
+    apple: [
+      {
+        url: "/logos/drivxis-logo-oscuro.svg",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/logos/drivxis-logo-claro.svg",
+        media: "(prefers-color-scheme: dark)",
+      },
+    ],
+  },
 };
 
 export const viewport: Viewport = {
@@ -34,3 +60,4 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     </html>
   );
 }
+

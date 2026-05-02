@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Activity, CheckCircle2, Film, History, Loader2, ScanLine, Shield, Upload } from "lucide-react";
 import { getMetricDisplay, type AnalysisMetrics } from "@/lib/analysis-metrics";
 import { AnalysisVideoPlayer } from "@/components/analysis-video-player";
+import { ToastViewport, useAppToasts } from "@/components/app-toast";
 import { MatchColorEditor } from "@/components/match-color-editor";
 import { AnnotationLine, CornerMarks, Crosshair, MicroGrid } from "@/components/micro-graphics";
 import { VideoUploadDropzone, type UploadedVideo } from "@/components/video-upload-dropzone";
@@ -42,12 +43,10 @@ type DashboardExperienceProps = {
 };
 
 const radarFallback = [
-  { subject: "VEL", local: 72, rival: 68 },
-  { subject: "TEC", local: 64, rival: 60 },
-  { subject: "FIS", local: 70, rival: 66 },
-  { subject: "TAC", local: 58, rival: 54 },
-  { subject: "AIR", local: 52, rival: 48 },
-  { subject: "PRE", local: 61, rival: 59 },
+  { subject: "Control", local: 52, rival: 48, localValue: "52.0%", rivalValue: "48.0%" },
+  { subject: "Distancia", local: 64, rival: 60, localValue: "6.4 km", rivalValue: "6.0 km" },
+  { subject: "Dominio", local: 56, rival: 44, localValue: "56", rivalValue: "44" },
+  { subject: "Ritmo", local: 61, rival: 57, localValue: "61", rivalValue: "57" },
 ];
 
 const intensityData = [
@@ -67,12 +66,13 @@ const zoneData = [
   { zone: "ATQ", value: 84 },
 ];
 
-const analysisSteps = ["Subida validada", "Cola IA", "Tracking YOLO", "Métricas", "Reporte"];
+const analysisSteps = ["Subida validada", "Cola IA", "Tracking YOLO", "métricas", "Reporte"];
 
 export function DashboardExperience({ userName, videos, pollingEnabled = true }: DashboardExperienceProps) {
   const [items, setItems] = useState(videos);
   const [activeId, setActiveId] = useState(videos[0]?.id ?? "");
   const [uploadOpen, setUploadOpen] = useState(videos.length === 0);
+  const { toasts, pushToast, dismissToast } = useAppToasts();
   const featured = items.find((video) => video.id === activeId) ?? items[0] ?? null;
   const metrics = featured?.latestMetrics ?? null;
   const matchInfo = getVideoMatchInfo(featured);
@@ -82,6 +82,8 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
   const rivalGoals = metrics?.match?.rivalGoals ?? 0;
   const display = getMetricDisplay(metrics);
   const bottomStats = buildBottomStats(metrics);
+  const ownDistanceKm = getOwnDistanceKm(metrics);
+  const rivalDistanceKm = getRivalDistanceKm(metrics);
   const radarData = useMemo(() => buildRadar(metrics), [metrics]);
   const stepIndex = getStepIndex(featured?.status, featured?.latestJob?.status);
   const activeProgress = getVideoProgress(featured);
@@ -102,7 +104,17 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
     const eventSource = new EventSource(`/api/videos/${pollTarget.id}/events`);
     eventSource.addEventListener("video", (event) => {
       const nextVideo = JSON.parse((event as MessageEvent).data) as RecentVideo;
-      setItems((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)));
+      setItems((current) => {
+        const previous = current.find((video) => video.id === nextVideo.id);
+        if (previous?.status !== "COMPLETED" && nextVideo.status === "COMPLETED") {
+          pushToast("análisis terminado. El video ya está listo para revisarse.", {
+            dedupeKey: `${nextVideo.id}:completed`,
+            durationMs: 8500,
+            sound: true,
+          });
+        }
+        return current.map((video) => (video.id === nextVideo.id ? nextVideo : video));
+      });
       if (nextVideo.status === "COMPLETED" || nextVideo.status === "FAILED") {
         setActiveId(nextVideo.id);
         eventSource.close();
@@ -116,19 +128,34 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
     return () => {
       eventSource.close();
     };
-  }, [pollTarget?.id, pollingEnabled]);
+  }, [pollTarget?.id, pollingEnabled, pushToast]);
 
   function handleUploaded(video: UploadedVideo) {
     setItems((current) => [video as RecentVideo, ...current.filter((item) => item.id !== video.id)]);
     setActiveId(video.id);
     setUploadOpen(false);
+    pushToast("Video recibido. Iniciando análisis.", {
+      dedupeKey: `${video.id}:queued`,
+      durationMs: 7000,
+      sound: true,
+    });
   }
 
   async function refreshVideo(videoId: string) {
     const response = await fetch(`/api/videos/${videoId}`, { method: "GET", cache: "no-store" });
     const data = (await response.json().catch(() => ({}))) as { video?: RecentVideo };
     if (!response.ok || !data.video) return;
-    setItems((current) => current.map((video) => (video.id === data.video!.id ? data.video! : video)));
+    setItems((current) => {
+      const previous = current.find((video) => video.id === data.video!.id);
+      if (previous?.status !== "COMPLETED" && data.video!.status === "COMPLETED") {
+        pushToast("análisis terminado. El video ya está listo para revisarse.", {
+          dedupeKey: `${data.video!.id}:completed`,
+          durationMs: 8500,
+          sound: true,
+        });
+      }
+      return current.map((video) => (video.id === data.video!.id ? data.video! : video));
+    });
   }
 
   function openUploader() {
@@ -145,7 +172,7 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
           <h1>Dashboard de análisis</h1>
           <p>
             Hola, {userName}. Sube un partido desde la consola central y el worker generará video anotado,
-            posesión y velocidad por jugador.
+            control del balón y distancia agregada por equipo.
           </p>
         </div>
         <div className="live-chip">
@@ -154,7 +181,7 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
         </div>
       </section>
 
-      <section className="analysis-console" aria-label="Consola de analisis">
+      <section className="analysis-console" aria-label="Consola de análisis">
         <div className="analysis-console__stage">
           <CornerMarks size={14} opacity={0.45} />
           <div className="console-toolbar">
@@ -173,6 +200,7 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
             ) : featured?.status === "COMPLETED" && getProcessedVideoUrl(featured) && !uploadOpen ? (
               <AnalyzedVideoPanel
                 video={featured}
+                onToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
                 onUploadAnother={openUploader}
                 onVideoUpdated={(video) => {
                   setItems((current) => current.map((item) => (item.id === video.id ? video : item)));
@@ -204,7 +232,7 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
 
         <aside className="match-panel">
           <CornerMarks size={12} opacity={0.35} />
-          <div className="score-card">
+          <div className="score-card" title={`${ownTeamName}: ${display.possession}% / ${rivalTeamName}: ${display.rivalPossession}%`}>
             <div>
               <span className="score-card__team-label">
                 {matchInfo.ownTeamColor ? <i style={{ background: matchInfo.ownTeamColor }} /> : null}
@@ -222,19 +250,29 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
                 {matchInfo.rivalTeamColor ? <i style={{ background: matchInfo.rivalTeamColor }} /> : null}
                 {rivalTeamName}
               </span>
-              <strong>{(metrics?.possession.team2Pct ?? 0).toFixed(1)}%</strong>
+              <strong>{display.rivalPossession}%</strong>
             </div>
           </div>
 
           <div className="player-stat-list">
-            <h2>Estadísticas del modelo</h2>
+            <h2>Métricas del partido</h2>
             {[
-              { label: "Vel. maxima", value: display.maxSpeed, unit: "km/h", bar: Number(display.maxSpeed) * 2.4 },
-              { label: "Vel. promedio", value: display.avgSpeed, unit: "km/h", bar: Number(display.avgSpeed) * 3 },
-              { label: "Distancia total", value: display.distanceKm, unit: "km", bar: Math.min(92, Number(display.distanceKm) * 10) },
-              { label: "Frames", value: display.frameCount, unit: "", bar: 72 },
+              { label: `Control ${ownTeamName}`, value: display.possession, unit: "%", bar: Number(display.possession) },
+              { label: `Control ${rivalTeamName}`, value: display.rivalPossession, unit: "%", bar: Number(display.rivalPossession) },
+              {
+                label: `Dist. ${ownTeamName}`,
+                value: formatKm(ownDistanceKm),
+                unit: "km",
+                bar: Math.min(92, ownDistanceKm * 10),
+              },
+              {
+                label: `Dist. ${rivalTeamName}`,
+                value: formatKm(rivalDistanceKm),
+                unit: "km",
+                bar: Math.min(92, rivalDistanceKm * 10),
+              },
             ].map((stat) => (
-              <article className="player-stat" key={stat.label}>
+              <article className="player-stat" key={stat.label} title={`${stat.label}: ${stat.value}${stat.unit}`} aria-label={`${stat.label}: ${stat.value}${stat.unit}`}>
                 <div>
                   <span>{stat.label}</span>
                   <small>{featured ? formatStatus(featured.status) : "sin video"}</small>
@@ -256,41 +294,19 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
               <RadarChart data={radarData}>
                 <PolarGrid stroke="rgba(255,107,43,0.13)" strokeDasharray="3 3" />
                 <PolarAngleAxis dataKey="subject" tick={{ fill: "rgba(255,255,255,0.34)", fontSize: 8 }} />
-                <PolarRadiusAxis tick={false} axisLine={false} />
+                <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
                 <Radar dataKey="local" stroke="#ff6b2b" strokeWidth={1.6} fill="#ff6b2b" fillOpacity={0.12} />
                 <Radar dataKey="rival" stroke="rgba(255,255,255,0.26)" strokeWidth={1} fill="none" />
+                <Tooltip content={<GlobalRadarTooltip />} />
               </RadarChart>
             </ResponsiveContainer>
-          </div>
-
-          <div className="player-stat-list player-stat-list--compact">
-            <h2>Jugadores detectados</h2>
-            {metrics?.speed.players.length ? (
-              metrics.speed.players.slice(0, 5).map((player) => (
-                <article className="player-stat" key={String(player.id)}>
-                  <div>
-                    <span>Jugador {player.id}</span>
-                    <small>Equipo {player.team ?? "-"} / {formatMeters(player.distanceMeters ?? 0)}</small>
-                  </div>
-                  <strong>
-                    {player.maxKmh.toFixed(1)}
-                    <small>km/h</small>
-                  </strong>
-                  <span className="meter">
-                    <span style={{ width: `${Math.min(100, (player.maxKmh / Math.max(1, metrics.speed.maxKmh)) * 100)}%` }} />
-                  </span>
-                </article>
-              ))
-            ) : (
-              <p className="history-muted">La lista aparecerá cuando termine el análisis.</p>
-            )}
           </div>
         </aside>
       </section>
 
-      <section className="stat-strip" aria-label="Métricas del partido">
+      <section className="stat-strip" aria-label="métricas del partido">
         {bottomStats.map((stat, index) => (
-          <article className="stat-cell" key={stat.label}>
+          <article className="stat-cell" key={stat.label} title={`${stat.label}: ${stat.value}${stat.unit}`} aria-label={`${stat.label}: ${stat.value}${stat.unit}`}>
             <span>{stat.label}</span>
             <strong>
               {stat.value}
@@ -399,6 +415,7 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
         <span>Pipeline conectado a cola local de visión, tracking y métricas por partido.</span>
         <Shield size={15} />
       </section>
+      <ToastViewport toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
@@ -430,10 +447,12 @@ function AnalyzedVideoPanel({
   video,
   onUploadAnother,
   onVideoUpdated,
+  onToast,
 }: {
   video: RecentVideo;
   onUploadAnother: () => void;
   onVideoUpdated: (video: RecentVideo) => void;
+  onToast: (message: string) => void;
 }) {
   const videoUrl = getProcessedVideoUrl(video) ?? `/api/videos/${video.id}/stream?variant=processed`;
   return (
@@ -449,37 +468,97 @@ function AnalyzedVideoPanel({
           Analizar otro partido
         </button>
       </div>
-      <MatchColorEditor video={video} onSaved={onVideoUpdated} />
+      <MatchColorEditor video={video} onSaved={onVideoUpdated} onToast={onToast} />
     </div>
   );
 }
 
 function buildBottomStats(metrics: AnalysisMetrics | null) {
   const display = getMetricDisplay(metrics);
+  const ownDistanceKm = getOwnDistanceKm(metrics);
+  const rivalDistanceKm = getRivalDistanceKm(metrics);
+  const ownPossession = Number(display.possession) || 0;
+  const rivalPossession = Number(display.rivalPossession) || 0;
+  const possessionGap = Math.abs(ownPossession - rivalPossession);
+  const distanceGap = Math.abs(ownDistanceKm - rivalDistanceKm);
   return [
     { label: "Posesión Eq. 1", value: display.possession, unit: "%", bar: Number(display.possession) || 0 },
-    { label: "Posesión Eq. 2", value: (metrics?.possession.team2Pct ?? 0).toFixed(1), unit: "%", bar: metrics?.possession.team2Pct ?? 0 },
-    { label: "Vel. máxima", value: display.maxSpeed, unit: "km/h", bar: Math.min(100, Number(display.maxSpeed) * 2.4) },
-    { label: "Vel. media", value: display.avgSpeed, unit: "km/h", bar: Math.min(100, Number(display.avgSpeed) * 3) },
-    { label: "Distancia", value: display.distanceKm, unit: "km", bar: Math.min(100, Number(display.distanceKm) * 10) },
-    { label: "Frames", value: display.frameCount, unit: "", bar: metrics ? 82 : 0 },
+    { label: "Posesión Eq. 2", value: display.rivalPossession, unit: "%", bar: Number(display.rivalPossession) || 0 },
+    { label: "Dist. propio", value: formatKm(ownDistanceKm), unit: "km", bar: Math.min(100, ownDistanceKm * 10) },
+    { label: "Dist. rival", value: formatKm(rivalDistanceKm), unit: "km", bar: Math.min(100, rivalDistanceKm * 10) },
+    { label: "Dif. posesión", value: possessionGap.toFixed(1), unit: "pp", bar: Math.min(100, possessionGap) },
+    { label: "Dif. distancia", value: formatKm(distanceGap), unit: "km", bar: Math.min(100, distanceGap * 10) },
   ];
 }
 
 function buildRadar(metrics: AnalysisMetrics | null) {
   if (!metrics) return radarFallback;
-  const possession = metrics.possession.team1Pct;
-  const speed = Math.min(100, metrics.speed.maxKmh * 2.4);
-  const average = Math.min(100, metrics.speed.avgKmh * 3);
-  const distance = Math.min(100, metrics.distance.totalMeters / 80);
+  const ownPossession = metrics.ballControl?.ownTeam ?? metrics.possession.team1Pct;
+  const rivalPossession = metrics.ballControl?.rivalTeam ?? metrics.possession.team2Pct;
+  const ownDistanceKm = getOwnDistanceKm(metrics);
+  const rivalDistanceKm = getRivalDistanceKm(metrics);
+  const totalDistance = Math.max(ownDistanceKm + rivalDistanceKm, 1);
+  const ownDistanceShare = (ownDistanceKm / totalDistance) * 100;
+  const rivalDistanceShare = (rivalDistanceKm / totalDistance) * 100;
+  const ownDominance = weightedMetric(ownPossession, ownDistanceShare, 0.62);
+  const rivalDominance = weightedMetric(rivalPossession, rivalDistanceShare, 0.62);
+  const ownTempo = weightedMetric(ownDistanceShare, ownDominance, 0.58);
+  const rivalTempo = weightedMetric(rivalDistanceShare, rivalDominance, 0.58);
   return [
-    { subject: "VEL", local: speed, rival: average },
-    { subject: "POS", local: possession, rival: metrics.possession.team2Pct },
-    { subject: "DIS", local: distance, rival: Math.max(10, distance * 0.72) },
-    { subject: "FPS", local: Math.min(100, metrics.video.fps * 3), rival: 60 },
-    { subject: "FRM", local: metrics.video.frameCount ? 80 : 0, rival: 50 },
-    { subject: "IA", local: metrics.video.annotatedAvailable ? 92 : 20, rival: 52 },
+    {
+      subject: "Control",
+      local: ownPossession,
+      rival: rivalPossession,
+      localValue: `${ownPossession.toFixed(1)}%`,
+      rivalValue: `${rivalPossession.toFixed(1)}%`,
+    },
+    {
+      subject: "Distancia",
+      local: ownDistanceShare,
+      rival: rivalDistanceShare,
+      localValue: `${formatKm(ownDistanceKm)} km`,
+      rivalValue: `${formatKm(rivalDistanceKm)} km`,
+    },
+    {
+      subject: "Dominio",
+      local: ownDominance,
+      rival: rivalDominance,
+      localValue: `${ownDominance.toFixed(0)}/100`,
+      rivalValue: `${rivalDominance.toFixed(0)}/100`,
+    },
+    {
+      subject: "Ritmo",
+      local: ownTempo,
+      rival: rivalTempo,
+      localValue: `${ownTempo.toFixed(0)}/100`,
+      rivalValue: `${rivalTempo.toFixed(0)}/100`,
+    },
   ];
+}
+
+function GlobalRadarTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ dataKey?: string; payload?: Record<string, unknown> }>; label?: string }) {
+  if (!active || !payload?.length) return null;
+  const data = payload[0]?.payload ?? {};
+  return (
+    <div className="chart-tooltip">
+      <strong>{label}</strong>
+      <span>Equipo propio: {String(data.localValue ?? "-")}</span>
+      <span>Equipo rival: {String(data.rivalValue ?? "-")}</span>
+    </div>
+  );
+}
+
+function getOwnDistanceKm(metrics: AnalysisMetrics | null) {
+  return metrics?.distance.teams?.own.totalKm ?? (metrics?.teamDistances?.ownTeam ?? 0) / 1000;
+}
+
+function getRivalDistanceKm(metrics: AnalysisMetrics | null) {
+  return metrics?.distance.teams?.rival.totalKm ?? (metrics?.teamDistances?.rivalTeam ?? 0) / 1000;
+}
+
+function weightedMetric(primary: number, secondary: number, primaryWeight: number) {
+  const value = primary * primaryWeight + secondary * (1 - primaryWeight);
+  return Math.max(0, Math.min(100, value));
 }
 
 function isVideoProcessing(video: RecentVideo) {
@@ -518,17 +597,17 @@ function formatVideoOpponent(video: RecentVideo) {
   return "Datos de partido";
 }
 
-function formatMeters(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "0 m";
-  return value >= 1000 ? `${(value / 1000).toFixed(2)} km` : `${value.toFixed(0)} m`;
+function formatKm(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0.00";
+  return value >= 10 ? value.toFixed(1) : value.toFixed(2);
 }
 
 function getStepIndex(videoStatus?: string, jobStatus?: string) {
   if (!videoStatus) return 0;
-  if (videoStatus === "PENDING_ANALYSIS") return 1;
-  if (videoStatus === "PROCESSING" || jobStatus === "RUNNING") return 2;
   if (videoStatus === "COMPLETED") return 5;
   if (videoStatus === "FAILED") return 4;
+  if (videoStatus === "PENDING_ANALYSIS") return 1;
+  if (videoStatus === "PROCESSING" || jobStatus === "RUNNING") return 2;
   return 0;
 }
 
@@ -541,3 +620,7 @@ function formatDate(value: string) {
   if (Number.isNaN(date.getTime())) return "Fecha no disponible";
   return date.toLocaleDateString("es-CR", { day: "2-digit", month: "short", year: "numeric" });
 }
+
+
+
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Film, Loader2, Upload, XCircle } from "lucide-react";
@@ -141,7 +141,7 @@ export function VideoUploadDropzone({
       }
 
       setState("queued");
-      setMessage("Video en cola de analisis");
+      setMessage("Video en cola de análisis");
       window.localStorage.setItem(
         "drivxis:primary-team",
         JSON.stringify({ name: normalizedOwnTeam }),
@@ -205,7 +205,7 @@ export function VideoUploadDropzone({
         <span className="analysis-upload__icon">
           {state === "uploading" || disabled ? <Loader2 className="spin" size={30} /> : state === "queued" ? <CheckCircle2 size={30} /> : state === "error" ? <XCircle size={30} /> : <Upload size={30} />}
         </span>
-        <strong>{disabled ? "Analisis en curso" : fileName || label}</strong>
+        <strong>{disabled ? "análisis en curso" : fileName || label}</strong>
         <small>{disabled ? disabledMessage : state === "idle" ? description : message}</small>
         {displayProgress !== null ? (
           <span className="analysis-upload__progress" aria-label={`Progreso ${displayProgress}%`}>
@@ -233,3 +233,4 @@ export function VideoUploadDropzone({
     </div>
   );
 }
+

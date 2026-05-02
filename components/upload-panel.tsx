@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRef, useState } from "react";
 import { CheckCircle2, Film, Loader2, Play, SkipForward, Upload, XCircle } from "lucide-react";
@@ -16,7 +16,7 @@ type UploadPanelProps = {
   initialVideos: VideoRecord[];
 };
 
-const analysisSteps = ["Validar archivo", "Preparar storage", "Guardar metadata", "Cola de analisis"];
+const analysisSteps = ["Validar archivo", "Preparar storage", "Guardar metadata", "Cola de análisis"];
 
 export function UploadPanel({ initialVideos }: UploadPanelProps) {
   const [videos, setVideos] = useState(initialVideos);
@@ -99,7 +99,7 @@ export function UploadPanel({ initialVideos }: UploadPanelProps) {
     input.value = "";
     setMessage(
       presign.configured
-        ? "Video cargado y listo para cola de analisis."
+        ? "Video cargado y listo para cola de análisis."
         : "Metadata guardada. Configura S3/R2/MinIO para subir el archivo real.",
     );
   }
@@ -120,7 +120,7 @@ export function UploadPanel({ initialVideos }: UploadPanelProps) {
           <div className="upload-stage__head">
             <div>
               <span>Entrada de video</span>
-              <h2>Arrastra el partido aqui</h2>
+              <h2>Arrastra el partido aquí</h2>
             </div>
             <div className={`live-chip ${busy ? "" : "live-chip--muted"}`}>
               <span />
@@ -240,8 +240,8 @@ export function UploadPanel({ initialVideos }: UploadPanelProps) {
         {videos.length === 0 ? (
           <div className="empty-state">
             <Film size={24} />
-            <strong>No hay videos todavia.</strong>
-            <span>El primer registro aparecera aqui con estado pendiente de analisis.</span>
+            <strong>No hay videos todavía.</strong>
+            <span>El primer registro aparecerá aquí con estado pendiente de análisis.</span>
           </div>
         ) : (
           <div className="video-list">
@@ -263,7 +263,7 @@ export function UploadPanel({ initialVideos }: UploadPanelProps) {
 }
 
 function formatBytes(bytes: number) {
-  if (!Number.isFinite(bytes)) return "Tamano no disponible";
+  if (!Number.isFinite(bytes)) return "tamaño no disponible";
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
   let unit = 0;
@@ -277,3 +277,4 @@ function formatBytes(bytes: number) {
 function formatStatus(status: string) {
   return status.toLowerCase().replaceAll("_", " ");
 }
+

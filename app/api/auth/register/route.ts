@@ -8,7 +8,7 @@ import { registerSchema } from "@/lib/validators";
 export async function POST(request: Request) {
   const parsed = registerSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
-    return NextResponse.json({ error: parsed.error.issues[0]?.message || "Datos invalidos." }, { status: 400 });
+    return NextResponse.json({ error: parsed.error.issues[0]?.message || "Datos inválidos." }, { status: 400 });
   }
 
   try {

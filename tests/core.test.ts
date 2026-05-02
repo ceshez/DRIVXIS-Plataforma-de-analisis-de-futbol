@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { getDetectedColorPair, isAllowedDetectedColorSwap } from "@/lib/detected-color-pair";
 import { parseAnalysisMetrics } from "@/lib/analysis-metrics";
 import { pickLocale } from "@/lib/i18n";
 import { getAnalysisOutputDirectory, getLocalObjectPath, isManagedAnalysisPath, isManagedLocalUploadPath } from "@/lib/local-storage";
@@ -112,21 +115,62 @@ describe("analysis metrics contract", () => {
     const metrics = parseAnalysisMetrics({
       version: 1,
       possession: { team1Pct: 57.2, team2Pct: 42.8, unknownPct: 0 },
+      ballControl: { ownTeam: 57.2, rivalTeam: 42.8, unknown: 0 },
       speed: {
-        maxKmh: 31.4,
-        avgKmh: 18.2,
-        players: [{ id: 8, team: 1, maxKmh: 31.4, avgKmh: 19.1, distanceMeters: 9140 }],
+        maxKmh: 0,
+        avgKmh: 0,
+        rawMaxKmh: 31.4,
+        publishable: false,
+        players: [],
       },
-      distance: { totalMeters: 101420 },
+      distance: {
+        totalMeters: 101420,
+        teams: {
+          own: { name: "Equipo propio", totalMeters: 12800, totalKm: 12.8 },
+          rival: { name: "Equipo rival", totalMeters: 11600, totalKm: 11.6 },
+        },
+      },
+      teamDistances: { ownTeam: 12800, rivalTeam: 11600 },
+      quality: {
+        goalkeepers: {
+          detected: 2,
+          assigned: 2,
+          items: [{ id: 99, team: 1, teamConfidence: 0.82, reason: "goal_side_context", frames: 40 }],
+        },
+      },
       video: { frameCount: 1200, fps: 24, durationSeconds: 50, annotatedAvailable: true },
     });
 
     expect(metrics?.possession.team1Pct).toBe(57.2);
-    expect(metrics?.speed.players[0]?.team).toBe(1);
+    expect(metrics?.ballControl?.ownTeam).toBe(57.2);
+    expect(metrics?.speed.players).toHaveLength(0);
+    expect(metrics?.speed.publishable).toBe(false);
+    expect(metrics?.distance.teams?.own.totalKm).toBe(12.8);
+    expect(metrics?.teamDistances?.rivalTeam).toBe(11600);
+    expect(metrics?.quality?.goalkeepers?.items?.[0]?.team).toBe(1);
     expect(metrics?.video.annotatedAvailable).toBe(true);
   });
 
   it("rejects unknown metric versions", () => {
     expect(parseAnalysisMetrics({ version: 2 })).toBeNull();
+  });
+
+  it("allows only detected team colors in normal or swapped order", () => {
+    const detected = getDetectedColorPair({
+      version: 1,
+      match: { detectedTeamColors: { team1: "#ffffff", team2: "#00aa44" } },
+    });
+
+    expect(isAllowedDetectedColorSwap({ ownTeamColor: "#ffffff", rivalTeamColor: "#00aa44" }, detected)).toBe(true);
+    expect(isAllowedDetectedColorSwap({ ownTeamColor: "#00aa44", rivalTeamColor: "#ffffff" }, detected)).toBe(true);
+    expect(isAllowedDetectedColorSwap({ ownTeamColor: "#123456", rivalTeamColor: "#ffffff" }, detected)).toBe(false);
+  });
+});
+
+describe("match color editor", () => {
+  it("does not expose manual color picker inputs", () => {
+    const source = readFileSync(join(process.cwd(), "components", "match-color-editor.tsx"), "utf8");
+    expect(source).not.toContain('type="color"');
+    expect(source).toContain("ArrowLeftRight");
   });
 });

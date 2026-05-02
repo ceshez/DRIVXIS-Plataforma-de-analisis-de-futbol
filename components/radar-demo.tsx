@@ -22,13 +22,13 @@ export function RadarDemo() {
   );
 
   return (
-    <section className="radar-module" aria-label="Demo tactica interactiva">
+    <section className="radar-module" aria-label="Demo táctica interactiva">
       <div className="module-heading">
         <p className="eyebrow">Demo interactiva</p>
-        <h2>Radar tactico preparado para el modelo</h2>
+        <h2>Radar táctico preparado para el modelo</h2>
         <p>
-          Esta vista simula como DRIVXIS mostrara posiciones, fases y eventos cuando el pipeline
-          de vision por computadora este conectado.
+          Esta vista simula cómo DRIVXIS mostrará posiciones, fases y eventos cuando el pipeline
+          de visión por computadora esté conectado.
         </p>
       </div>
 

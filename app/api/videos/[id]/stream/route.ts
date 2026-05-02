@@ -48,7 +48,7 @@ export async function GET(request: Request, context: RouteContext) {
       : processedPath;
 
   if (!filePath) {
-    return NextResponse.json({ error: "El video procesado todavia no esta disponible." }, { status: 404 });
+    return NextResponse.json({ error: "El video procesado todavía no está disponible." }, { status: 404 });
   }
 
   try {

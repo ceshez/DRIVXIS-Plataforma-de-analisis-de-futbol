@@ -52,7 +52,7 @@ export function AnalysisVideoPlayer({ src, title, className = "" }: AnalysisVide
         className="video-fullscreen-button"
         type="button"
         onClick={() => void toggleFullscreen()}
-        aria-label={isFullscreen ? "Volver al tamano normal" : "Ver video en pantalla completa"}
+        aria-label={isFullscreen ? "Volver al tamaño normal" : "Ver video en pantalla completa"}
       >
         {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
       </button>
