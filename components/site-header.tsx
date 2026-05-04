@@ -99,7 +99,7 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
       <div className="site-header__bar">
         <Logo href={logoHref} />
 
-        <nav className="site-nav" aria-label="Navegacion principal">
+        <nav className="site-nav site-nav--primary" aria-label="Navegacion principal">
           {navItems.map((item) =>
             item.href.startsWith("/") ? (
               <Link href={item.href} key={item.href} className={getLinkClass(item.href) || undefined}>
@@ -113,7 +113,7 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
           )}
         </nav>
 
-        <div className="header-actions">
+        <div className="header-actions header-actions--primary">
           <div className="header-actions__desktop">{action}</div>
           <button
             className={`menu-toggle ${open ? "is-open" : ""}`}

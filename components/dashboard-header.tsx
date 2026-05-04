@@ -33,14 +33,14 @@ export function DashboardHeader({
   return (
     <header className="app-header">
       <Logo href={logoHref} />
-      <nav aria-label={navLabel}>
+      <nav className="app-header__nav" aria-label={navLabel}>
         {navItems.map((item) => (
           <Link href={item.href} key={item.href} className={isActive(item) ? "is-active" : undefined}>
             {item.label}
           </Link>
         ))}
       </nav>
-      {action}
+      <div className="app-header__action">{action}</div>
     </header>
   );
 }
