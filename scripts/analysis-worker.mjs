@@ -1,4 +1,4 @@
-import { createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { readFileSync } from "node:fs";
 import { mkdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
@@ -9,7 +9,7 @@ const root = process.cwd();
 loadDotEnv(path.join(root, ".env"));
 
 const { PrismaClient } = await import("@prisma/client");
-const { GetObjectCommand, S3Client } = await import("@aws-sdk/client-s3");
+const { GetObjectCommand, PutObjectCommand, S3Client } = await import("@aws-sdk/client-s3");
 
 const connectionString =
   process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/drivxis?schema=public";
@@ -113,6 +113,12 @@ async function processJob(job) {
 
   const metrics = JSON.parse(await readFile(metricsPath, "utf8"));
   const existingMetadata = isRecord(job.video.metadata) ? job.video.metadata : {};
+  const remoteOutputs = await uploadAnalysisOutputsIfConfigured({
+    video: job.video,
+    processedPath,
+    metricsPath,
+  });
+
   await prisma.metricSnapshot.create({
     data: {
       videoId: job.videoId,
@@ -133,6 +139,7 @@ async function processJob(job) {
         processedLocalPath: processedPath,
         annotatedLocalPath: processedPath,
         latestMetricsPath: metricsPath,
+        ...remoteOutputs,
         analysisCompletedAt: new Date().toISOString(),
       },
     },
@@ -147,6 +154,50 @@ async function processJob(job) {
   log(`Job ${job.id} for video ${job.videoId}: RUNNING -> COMPLETED`);
 }
 
+async function uploadAnalysisOutputsIfConfigured({ video, processedPath, metricsPath }) {
+  if (!isStorageConfigured()) return {};
+
+  const processedObjectKey = createAnalysisObjectKey({
+    userId: video.ownerId,
+    videoId: video.id,
+    filename: "processed.mp4",
+  });
+  const metricsObjectKey = createAnalysisObjectKey({
+    userId: video.ownerId,
+    videoId: video.id,
+    filename: "metrics.json",
+  });
+  const client = getStorageClient();
+
+  await client.send(
+    new PutObjectCommand({
+      Bucket: process.env.STORAGE_BUCKET,
+      Key: processedObjectKey,
+      Body: createReadStream(processedPath),
+      ContentType: "video/mp4",
+    }),
+  );
+
+  await client.send(
+    new PutObjectCommand({
+      Bucket: process.env.STORAGE_BUCKET,
+      Key: metricsObjectKey,
+      Body: createReadStream(metricsPath),
+      ContentType: "application/json",
+    }),
+  );
+
+  log(`Uploaded processed analysis to storage: ${processedObjectKey}`);
+  log(`Uploaded metrics JSON to storage: ${metricsObjectKey}`);
+
+  return {
+    processedObjectKey,
+    annotatedObjectKey: processedObjectKey,
+    latestMetricsObjectKey: metricsObjectKey,
+    analysisStorageMode: "s3",
+  };
+}
+
 async function resolveSourcePath(video, outputDir) {
   const metadata = isRecord(video.metadata) ? video.metadata : {};
   if (typeof metadata.sourceLocalPath === "string") {
@@ -159,24 +210,16 @@ async function resolveSourcePath(video, outputDir) {
     await stat(localPath);
     return localPath;
   } catch {
-    // Continue to S3 download if configured.
+    // Continue to S3/R2 download if configured.
   }
 
   if (!isStorageConfigured()) {
-    throw new Error("No local source video found and S3 storage is not configured.");
+    throw new Error("No local source video found and S3-compatible storage is not configured.");
   }
 
   const extension = path.extname(video.originalFilename) || ".mp4";
   const downloadPath = path.join(outputDir, `source${extension}`);
-  const client = new S3Client({
-    region: process.env.STORAGE_REGION || "auto",
-    endpoint: process.env.STORAGE_ENDPOINT || undefined,
-    forcePathStyle: Boolean(process.env.STORAGE_ENDPOINT?.includes("localhost")),
-    credentials: {
-      accessKeyId: process.env.STORAGE_ACCESS_KEY_ID || "",
-      secretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY || "",
-    },
-  });
+  const client = getStorageClient();
 
   const object = await client.send(
     new GetObjectCommand({
@@ -185,7 +228,7 @@ async function resolveSourcePath(video, outputDir) {
     }),
   );
   if (!object.Body) {
-    throw new Error("S3 object did not include a readable body.");
+    throw new Error("Storage object did not include a readable body.");
   }
   await pipeline(object.Body, createWriteStream(downloadPath));
   return downloadPath;
@@ -321,6 +364,35 @@ function isStorageConfigured() {
       process.env.STORAGE_ACCESS_KEY_ID &&
       process.env.STORAGE_SECRET_ACCESS_KEY
   );
+}
+
+function shouldForcePathStyle(endpoint) {
+  if (!endpoint) return false;
+  return endpoint.includes("localhost") || endpoint.includes("127.0.0.1") || endpoint.includes("r2.cloudflarestorage.com");
+}
+
+function getStorageClient() {
+  const endpoint = process.env.STORAGE_ENDPOINT || undefined;
+  return new S3Client({
+    region: process.env.STORAGE_REGION || "auto",
+    endpoint,
+    forcePathStyle: shouldForcePathStyle(endpoint),
+    credentials: {
+      accessKeyId: process.env.STORAGE_ACCESS_KEY_ID || "",
+      secretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY || "",
+    },
+  });
+}
+
+function createAnalysisObjectKey({ userId, videoId, filename }) {
+  const safeVideoId = String(videoId).replace(/[^\w-]+/g, "-").slice(0, 120) || crypto.randomUUID();
+  const safeFilename = String(filename)
+    .normalize("NFKD")
+    .replace(/[^\w.\-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 140) || "analysis-output";
+  return `users/${userId}/analysis/${safeVideoId}/${safeFilename}`;
 }
 
 function wait(ms) {
