@@ -1,29 +1,35 @@
 # DRIVXIS | Plataforma de Analisis de Futbol
 
-DRIVXIS es una plataforma web para registrar videos de partidos y generar analitica tactica/fisica a partir del video. En esta version, el sistema ya incluye autenticacion, un dashboard protegido, una biblioteca de videos, subida local/S3 y una cola de analisis que conecta un motor Python basado en YOLO.
+DRIVXIS es una plataforma web para registrar videos de partidos de futbol y generar analitica tactica/fisica a partir del video.
 
-## Objetivo del proyecto
+La version actual incluye:
 
-1. Centralizar el proceso de analisis: login, subida/registro de material y visualizacion de estadisticas.
-2. Conectar un modelo de vision computacional basado en YOLO a un pipeline de analisis (jobs + snapshots de metricas).
-3. Entregar un sistema funcional y documentado, aplicando buenas practicas (validaciones, capas, estructura, persistencia con ORM, endpoints claros).
+- Autenticacion de usuarios.
+- Dashboard protegido.
+- Biblioteca de videos.
+- Subida local o a storage compatible con S3.
+- Cola de analisis conectada a un motor Python basado en YOLO.
+- Persistencia con PostgreSQL y Prisma.
 
-## Tecnologias utilizadas
+## Stack principal
 
-- Frontend/Fullstack: Next.js (App Router) + React + TypeScript
-- Estilos: Tailwind CSS
-- Backend/API: Route Handlers de Next.js (`app/api/...`)
-- Base de datos: PostgreSQL
-- ORM: Prisma
-- Validacion: Zod
-- Seguridad: hashing de password con bcryptjs + cookie de sesion firmada (HMAC)
-- Storage (opcional): AWS SDK S3 (compatible con S3/R2/MinIO)
-- IA local: Python + YOLO/Ultralytics + OpenCV + Supervision + scikit-learn
-- Testing (basico): Vitest
+- Next.js App Router + React + TypeScript
+- Tailwind CSS
+- Route Handlers en `app/api/**/route.ts`
+- PostgreSQL + Prisma
+- Zod
+- bcryptjs + cookie de sesion firmada
+- Storage S3/R2/MinIO o fallback local
+- Python + YOLO/Ultralytics + OpenCV
+- Vitest
 
-## Instrucciones para ejecutar el sistema (local)
+## Ejecutar en local
 
-Las instrucciones completas estan en [`RUNNING.md`](./RUNNING.md). Resumen rapido:
+Guia completa:
+
+- [`docs/RUNNING.md`](./docs/RUNNING.md)
+
+Resumen rapido:
 
 ```bash
 npm install
@@ -33,41 +39,63 @@ npm run prisma:migrate
 npm run dev
 ```
 
-Luego abre `http://localhost:3000`.
+Abrir:
 
-## Como se usa 
+```txt
+http://localhost:3000
+```
 
-1. Entra a la landing (`/`) y luego ve a `Iniciar sesion` o `Registrarse`.
-2. Al registrarte/iniciar sesion, el servidor crea una cookie `drivxis_session` con tu identidad (firmada, expira en 7 dias).
-3. El dashboard (`/dashboard`) y la seccion de videos (`/dashboard/videos`) estan protegidos: si no hay sesion valida, redirige a `/login`.
-4. En `Panel`, haces click en la consola principal para subir un partido:
-   - Pide un "presign" a `POST /api/videos/presign` (prepara la carga al storage).
-   - Si el storage esta configurado, el navegador sube el archivo directo al bucket con `PUT` a la URL firmada.
-   - Si no hay storage, el navegador sube el archivo a storage local con `PUT /api/videos/local-upload`.
-   - Luego registra la metadata en la BD con `POST /api/videos`, y el sistema crea un `AnalysisJob` en cola.
-5. Ejecuta el worker para procesar la cola:
+Para ejecutar el worker:
 
 ```bash
 npm run analysis:worker -- --once
 ```
 
-Para analizar videos reales instala dependencias Python con `pip install -r analysis/requirements.txt` y coloca el peso YOLO en `analysis/models/best.pt`.
+## Documentacion
 
-## Capturas
+Indice principal:
 
+- [`docs/INDEX.md`](./docs/INDEX.md)
 
+Documentos clave:
 
-Cuando las agregues, el README las mostrara:
+- [`AGENTS.md`](./AGENTS.md) - reglas para Codex dentro del repo.
+- [`docs/CODEX.md`](./docs/CODEX.md) - guia para pedir tareas a Codex.
+- [`docs/PROJECT_CONTEXT.md`](./docs/PROJECT_CONTEXT.md) - contexto general del proyecto.
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) - arquitectura.
+- [`docs/DATABASE.md`](./docs/DATABASE.md) - base de datos.
+- [`docs/API.md`](./docs/API.md) - endpoints y contratos.
+- [`docs/ANALYSIS_PIPELINE.md`](./docs/ANALYSIS_PIPELINE.md) - worker y analisis de video.
+- [`docs/UI_GUIDE.md`](./docs/UI_GUIDE.md) - reglas visuales.
+- [`docs/ROADMAP.md`](./docs/ROADMAP.md) - mejoras futuras.
 
+## Prompt recomendado para Codex
 
-## Documentacion adicional
+```txt
+Read first:
+- AGENTS.md
+- docs/INDEX.md
+- docs/CODEX.md
+- docs/PROJECT_CONTEXT.md
 
-- Arquitectura del sistema: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
-- Diseno de base de datos: [`DATABASE.md`](./DATABASE.md)
-- Servicios / endpoints: [`API.md`](./API.md)
-- Ejecucion local (paso a paso): [`RUNNING.md`](./RUNNING.md)
-- Mejoras futuras: [`FUTURE_IMPROVEMENTS.md`](./FUTURE_IMPROVEMENTS.md)
+Task:
+[describe la tarea]
 
-## Nota sobre videos (storage)
+Modify only:
+[archivos o carpetas]
 
-Los partidos completos no se guardan en PostgreSQL. La app guarda metadata y una `objectKey` por usuario. Si el storage S3 no esta configurado, DRIVXIS usa `.drivxis/uploads` para desarrollo local y `.drivxis/analysis` para videos anotados y metricas generadas.
+Do not modify:
+[partes delicadas]
+
+Make the smallest safe change.
+Preserve existing functionality.
+After finishing, summarize files changed, what changed, how to test and risks.
+```
+
+## Comandos de verificacion
+
+```bash
+npm run typecheck
+npm test
+npm run build
+```
