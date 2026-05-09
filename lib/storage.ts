@@ -24,6 +24,11 @@ export function createVideoObjectKey({ userId, filename }: StorageInput) {
   return `users/${userId}/videos/${date}/${random}-${cleanFilename(filename) || "match-video"}`;
 }
 
+export function createAnalysisObjectKey({ userId, videoId, filename }: { userId: string; videoId: string; filename: string }) {
+  const safeVideoId = videoId.replace(/[^\w-]+/g, "-").slice(0, 120) || crypto.randomUUID();
+  return `users/${userId}/analysis/${safeVideoId}/${cleanFilename(filename) || "analysis-output"}`;
+}
+
 function assertSafeRemoteObjectKey(objectKey: string) {
   if (!objectKey || objectKey.includes("\\") || objectKey.includes("\0") || objectKey.split("/").some((part) => part === ".." || part === "")) {
     throw new Error("Llave de storage invalida.");
@@ -38,11 +43,17 @@ export function isStorageConfigured() {
   );
 }
 
+function shouldForcePathStyle(endpoint?: string) {
+  if (!endpoint) return false;
+  return endpoint.includes("localhost") || endpoint.includes("127.0.0.1") || endpoint.includes("r2.cloudflarestorage.com");
+}
+
 function getStorageClient() {
+  const endpoint = process.env.STORAGE_ENDPOINT || undefined;
   return new S3Client({
     region: process.env.STORAGE_REGION || "auto",
-    endpoint: process.env.STORAGE_ENDPOINT || undefined,
-    forcePathStyle: Boolean(process.env.STORAGE_ENDPOINT?.includes("localhost")),
+    endpoint,
+    forcePathStyle: shouldForcePathStyle(endpoint),
     credentials: {
       accessKeyId: process.env.STORAGE_ACCESS_KEY_ID || "",
       secretAccessKey: process.env.STORAGE_SECRET_ACCESS_KEY || "",
@@ -54,7 +65,7 @@ export function getConfiguredStorageClient() {
   return getStorageClient();
 }
 
-export async function getStorageObject(objectKey: string) {
+export async function getStorageObject(objectKey: string, range?: string | null) {
   assertSafeRemoteObjectKey(objectKey);
   if (!isStorageConfigured()) {
     throw new Error("Storage S3 no está configurado.");
@@ -64,8 +75,35 @@ export async function getStorageObject(objectKey: string) {
     new GetObjectCommand({
       Bucket: process.env.STORAGE_BUCKET,
       Key: objectKey,
+      Range: range || undefined,
     }),
   );
+}
+
+export async function putStorageObject({
+  objectKey,
+  body,
+  contentType,
+}: {
+  objectKey: string;
+  body: BodyInit | Uint8Array | Buffer | string | NodeJS.ReadableStream;
+  contentType: string;
+}) {
+  assertSafeRemoteObjectKey(objectKey);
+  if (!isStorageConfigured()) {
+    throw new Error("Storage S3 no está configurado.");
+  }
+
+  await getStorageClient().send(
+    new PutObjectCommand({
+      Bucket: process.env.STORAGE_BUCKET,
+      Key: objectKey,
+      Body: body,
+      ContentType: contentType,
+    }),
+  );
+
+  return { objectKey };
 }
 
 export async function createPresignedUpload(input: StorageInput) {
