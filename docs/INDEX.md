@@ -14,6 +14,7 @@ Usa este indice para saber que documento leer antes de pedirle una tarea a Codex
 - `docs/DATABASE.md` - modelos, relaciones y decisiones de base de datos.
 - `docs/API.md` - endpoints, contratos y flujo de subida/analisis.
 - `docs/ANALYSIS_PIPELINE.md` - worker, YOLO, jobs y metricas.
+- `docs/CLOUDFLARE_R2.md` - configuracion de Cloudflare R2 para videos.
 - `docs/RUNNING.md` - como ejecutar el proyecto localmente.
 
 ## Producto y roadmap
@@ -57,6 +58,16 @@ Leer:
 - `docs/CODEX.md`
 - `docs/ANALYSIS_PIPELINE.md`
 - `docs/DATABASE.md`
+
+### Storage, Cloudflare R2 o videos remotos
+
+Leer:
+
+- `AGENTS.md`
+- `docs/CODEX.md`
+- `docs/CLOUDFLARE_R2.md`
+- `docs/API.md`
+- `docs/ANALYSIS_PIPELINE.md`
 
 ### Setup, errores de build o entorno local
 
