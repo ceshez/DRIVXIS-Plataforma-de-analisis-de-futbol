@@ -207,29 +207,6 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
         </div>
       </section>
 
-      {storageUsage ? (
-        <section className="lab-panel storage-diagnostics">
-          <div className="panel-heading">
-            <div>
-              <span>Cuota</span>
-              <h2>Uso de almacenamiento</h2>
-            </div>
-          </div>
-          <p className="history-muted">
-            Usado: {formatStorageBytes(storageUsage.usedBytes)} / Límite: {formatStorageBytes(storageUsage.limitBytes)} / Disponible: {formatStorageBytes(storageUsage.remainingBytes)}
-          </p>
-          <span className="analysis-upload__progress" aria-label={`Uso ${Math.round(storageUsage.percentUsed)}%`}>
-            <span style={{ width: `${Math.max(0, Math.min(100, storageUsage.percentUsed))}%` }} />
-          </span>
-          {storageUsage.percentUsed >= 90 ? (
-            <p className="storage-hint">Estás cerca de tu límite de almacenamiento.</p>
-          ) : null}
-          {hasNoRemainingStorage ? (
-            <p className="storage-hint">You have reached your storage limit.</p>
-          ) : null}
-        </section>
-      ) : null}
-
       <section className="analysis-console" aria-label="Consola de análisis">
         <div className="analysis-console__stage">
           <CornerMarks size={14} opacity={0.45} />

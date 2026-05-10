@@ -31,6 +31,8 @@ model User {
   email        String   @unique
   name         String
   passwordHash String
+  avatarObjectKey String?
+  avatarMimeType  String?
   role         Role     @default(USER)
   storageLimitBytes BigInt @default(1073741824)
   storageUsedBytes  BigInt @default(0)

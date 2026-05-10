@@ -1,7 +1,7 @@
 import { DashboardHeader } from "@/components/dashboard-header";
-import { LogoutButton } from "@/components/logout-button";
 import { VideoHistory } from "@/components/video-history";
 import { AnnotationLine, MicroGrid } from "@/components/micro-graphics";
+import { UserProfileMenu } from "@/components/user-profile-menu";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { serializeVideos } from "@/lib/video-serialization";
@@ -17,7 +17,14 @@ export default async function VideosPage() {
           { href: "/dashboard", label: "Panel", exact: true },
           { href: "/dashboard/videos", label: "Historial" },
         ]}
-        action={<LogoutButton />}
+        action={
+          <UserProfileMenu
+            name={user.name}
+            email={user.email}
+            hasAvatar={Boolean(user.avatarObjectKey)}
+            avatarVersion={user.updatedAt.toISOString()}
+          />
+        }
       />
 
       <section className="dashboard-command dashboard-command--compact">

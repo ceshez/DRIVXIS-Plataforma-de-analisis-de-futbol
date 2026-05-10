@@ -1,6 +1,6 @@
 import { DashboardExperience } from "@/components/dashboard-experience";
 import { DashboardHeader } from "@/components/dashboard-header";
-import { LogoutButton } from "@/components/logout-button";
+import { UserProfileMenu } from "@/components/user-profile-menu";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { serializeVideos } from "@/lib/video-serialization";
@@ -16,7 +16,14 @@ export default async function DashboardPage() {
           { href: "/dashboard", label: "Panel", exact: true },
           { href: "/dashboard/videos", label: "Historial" },
         ]}
-        action={<LogoutButton />}
+        action={
+          <UserProfileMenu
+            name={user.name}
+            email={user.email}
+            hasAvatar={Boolean(user.avatarObjectKey)}
+            avatarVersion={user.updatedAt.toISOString()}
+          />
+        }
       />
       <DashboardExperience
         userName={user.name}

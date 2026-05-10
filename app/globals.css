@@ -552,6 +552,207 @@ svg {
   align-items: center;
 }
 
+.profile-menu {
+  position: relative;
+}
+
+.profile-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255, 107, 43, 0.3);
+  border-radius: 999px;
+  background: rgba(16, 16, 16, 0.96);
+  padding: 0;
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    transform 180ms ease,
+    background-color 180ms ease;
+}
+
+.profile-menu__trigger:hover {
+  border-color: rgba(255, 107, 43, 0.44);
+  transform: translateY(-1px);
+}
+
+.profile-menu__trigger:focus-visible {
+  outline: 2px solid rgba(255, 107, 43, 0.55);
+  outline-offset: 2px;
+}
+
+.profile-menu__avatar,
+.profile-menu__avatar-image {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.profile-menu__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(140deg, rgba(255, 107, 43, 0.25), rgba(20, 15, 12, 0.96));
+  color: rgba(255, 242, 232, 0.96);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.profile-menu__avatar-image {
+  display: block;
+  object-fit: cover;
+}
+
+.profile-menu__dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.55rem);
+  z-index: 140;
+  display: grid;
+  width: min(92vw, 342px);
+  border: 1px solid rgba(255, 107, 43, 0.28);
+  border-radius: 0;
+  background:
+    linear-gradient(180deg, rgba(18, 14, 12, 0.98), rgba(7, 7, 7, 0.99)),
+    rgba(8, 8, 8, 0.98);
+  box-shadow: 0 26px 72px rgba(0, 0, 0, 0.48);
+  overflow: hidden;
+}
+
+.profile-menu__identity {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 0.72rem;
+  align-items: center;
+  padding: 0.88rem 0.95rem 0.84rem;
+}
+
+.profile-menu__identity-avatar,
+.profile-menu__identity-avatar-image {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+}
+
+.profile-menu__identity-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 107, 43, 0.22);
+  background: linear-gradient(140deg, rgba(255, 107, 43, 0.24), rgba(20, 15, 12, 0.95));
+  color: rgba(255, 240, 228, 0.95);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.profile-menu__identity-avatar-image {
+  display: block;
+  object-fit: cover;
+}
+
+.profile-menu__identity-copy {
+  min-width: 0;
+}
+
+.profile-menu__identity-copy strong {
+  display: block;
+  overflow: hidden;
+  color: rgba(242, 240, 238, 0.95);
+  font-size: 0.9rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-menu__identity-copy span {
+  display: block;
+  overflow: hidden;
+  margin-top: 0.14rem;
+  color: rgba(242, 240, 238, 0.46);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-menu__links {
+  display: grid;
+  padding: 0;
+}
+
+.profile-menu__item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.66rem;
+  min-height: 42px;
+  border: 0;
+  background: transparent;
+  padding: 0.52rem 0.95rem;
+  color: rgba(242, 240, 238, 0.84);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease;
+}
+
+.profile-menu__item svg {
+  color: rgba(255, 107, 43, 0.9);
+}
+
+.profile-menu__item strong,
+.profile-menu__item span {
+  color: inherit;
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.profile-menu__item:hover,
+.profile-menu__item:focus-visible {
+  background: rgba(255, 107, 43, 0.08);
+  color: rgba(242, 240, 238, 0.98);
+}
+
+.profile-menu__item:focus-visible {
+  outline: none;
+}
+
+.profile-menu__item.is-active {
+  background: rgba(255, 107, 43, 0.1);
+  color: rgba(255, 247, 240, 0.98);
+}
+
+.profile-menu__item:disabled {
+  opacity: 0.65;
+  cursor: default;
+}
+
+.profile-menu__error {
+  margin: 0;
+  padding: 0.3rem 0.95rem 0.64rem;
+  color: rgba(255, 188, 188, 0.94);
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+}
+
 .live-chip--muted {
   color: rgba(242, 240, 238, 0.44);
   border-color: rgba(242, 240, 238, 0.12);
