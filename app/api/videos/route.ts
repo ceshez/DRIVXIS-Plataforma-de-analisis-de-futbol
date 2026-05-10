@@ -2,55 +2,92 @@ import { NextResponse } from "next/server";
 import { kickAnalysisWorker } from "@/lib/analysis-worker";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { buildStorageUsagePayload } from "@/lib/storage-usage";
 import { getLocalObjectPath } from "@/lib/local-storage";
 import { createVideoSchema } from "@/lib/validators";
 import { serializeVideo, serializeVideos } from "@/lib/video-serialization";
 
 export const runtime = "nodejs";
 
+class StorageQuotaExceededError extends Error {
+  constructor(
+    public readonly usedBytes: bigint,
+    public readonly limitBytes: bigint,
+  ) {
+    super("Storage limit exceeded.");
+  }
+}
+
 export async function GET() {
   const user = await requireUser();
-  const videos = await prisma.video.findMany({
-    where: { ownerId: user.id },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-    select: {
-      id: true,
-      originalFilename: true,
-      status: true,
-      sizeBytes: true,
-      durationSeconds: true,
-      metadata: true,
-      createdAt: true,
-      updatedAt: true,
-      objectKey: true,
-      analysisJobs: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: {
-          id: true,
-          status: true,
-          progress: true,
-          error: true,
-          createdAt: true,
-          startedAt: true,
-          endedAt: true,
-        },
-      },
-      metricSnapshots: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: {
-          id: true,
-          jobId: true,
-          metrics: true,
-          createdAt: true,
-        },
-      },
-    },
-  });
+  let videos;
+  let fallbackUsed = false;
 
-  return NextResponse.json({ videos: serializeVideos(videos) });
+  try {
+    videos = await prisma.video.findMany({
+      where: { ownerId: user.id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        originalFilename: true,
+        status: true,
+        sizeBytes: true,
+        durationSeconds: true,
+        metadata: true,
+        createdAt: true,
+        updatedAt: true,
+        objectKey: true,
+        analysisJobs: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            progress: true,
+            error: true,
+            createdAt: true,
+            startedAt: true,
+            endedAt: true,
+          },
+        },
+        metricSnapshots: {
+          orderBy: { createdAt: "desc" },
+          take: 1,
+          select: {
+            id: true,
+            jobId: true,
+            metrics: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+  } catch {
+    fallbackUsed = true;
+    videos = await prisma.video.findMany({
+      where: { ownerId: user.id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        originalFilename: true,
+        status: true,
+        sizeBytes: true,
+        durationSeconds: true,
+        metadata: true,
+        createdAt: true,
+        updatedAt: true,
+        objectKey: true,
+      },
+    });
+  }
+
+  const serialized = serializeVideos(videos);
+  return NextResponse.json({
+    videos: serialized,
+    ...(fallbackUsed ? { warnings: ["VIDEO_RELATION_FALLBACK_USED"] } : {}),
+  });
 }
 
 export async function POST(request: Request) {
@@ -69,68 +106,124 @@ export async function POST(request: Request) {
   }
 
   const uploadMode = parsed.data.uploadMode || "local";
+  const videoSizeBytes = BigInt(parsed.data.sizeBytes);
   const sourceLocalPath = uploadMode === "local" ? getLocalObjectPath(parsed.data.objectKey) : null;
   const matchInfo = parsed.data.matchInfo ?? null;
-  const video = await prisma.video.create({
-    data: {
-      ownerId: user.id,
-      objectKey: parsed.data.objectKey,
-      originalFilename: parsed.data.filename,
-      mimeType: parsed.data.mimeType,
-      sizeBytes: BigInt(parsed.data.sizeBytes),
-      durationSeconds: parsed.data.durationSeconds,
-      status: "PENDING_ANALYSIS",
-      metadata: {
-        source: "web-upload",
-        storageMode: uploadMode,
-        sourceLocalPath,
-        processedLocalPath: null,
-        annotatedLocalPath: null,
-        modelReady: true,
-        matchInfo,
-      },
-      analysisJobs: {
-        create: {
-          status: "QUEUED",
-          progress: 0,
+  let video;
+  try {
+    video = await prisma.$transaction(async (tx) => {
+      const quota = await tx.user.findUnique({
+        where: { id: user.id },
+        select: {
+          storageUsedBytes: true,
+          storageLimitBytes: true,
         },
-      },
-    },
-    select: {
-      id: true,
-      originalFilename: true,
-      status: true,
-      sizeBytes: true,
-      durationSeconds: true,
-      metadata: true,
-      createdAt: true,
-      updatedAt: true,
-      objectKey: true,
-      analysisJobs: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
+      });
+      if (!quota) {
+        throw new Error("Usuario no encontrado.");
+      }
+
+      const projectedUsage = quota.storageUsedBytes + videoSizeBytes;
+      if (projectedUsage > quota.storageLimitBytes) {
+        throw new StorageQuotaExceededError(quota.storageUsedBytes, quota.storageLimitBytes);
+      }
+
+      const reserveQuota = await tx.user.updateMany({
+        where: {
+          id: user.id,
+          storageUsedBytes: { lte: quota.storageLimitBytes - videoSizeBytes },
+        },
+        data: {
+          storageUsedBytes: { increment: videoSizeBytes },
+        },
+      });
+      if (reserveQuota.count !== 1) {
+        const latestQuota = await tx.user.findUnique({
+          where: { id: user.id },
+          select: {
+            storageUsedBytes: true,
+            storageLimitBytes: true,
+          },
+        });
+        if (!latestQuota) {
+          throw new Error("Usuario no encontrado.");
+        }
+        throw new StorageQuotaExceededError(latestQuota.storageUsedBytes, latestQuota.storageLimitBytes);
+      }
+
+      return tx.video.create({
+        data: {
+          ownerId: user.id,
+          objectKey: parsed.data.objectKey,
+          originalFilename: parsed.data.filename,
+          mimeType: parsed.data.mimeType,
+          sizeBytes: videoSizeBytes,
+          durationSeconds: parsed.data.durationSeconds,
+          status: "PENDING_ANALYSIS",
+          metadata: {
+            source: "web-upload",
+            storageMode: uploadMode,
+            sourceLocalPath,
+            processedLocalPath: null,
+            annotatedLocalPath: null,
+            modelReady: true,
+            matchInfo,
+          },
+          analysisJobs: {
+            create: {
+              status: "QUEUED",
+              progress: 0,
+            },
+          },
+        },
         select: {
           id: true,
+          originalFilename: true,
           status: true,
-          progress: true,
-          error: true,
+          sizeBytes: true,
+          durationSeconds: true,
+          metadata: true,
           createdAt: true,
-          startedAt: true,
-          endedAt: true,
+          updatedAt: true,
+          objectKey: true,
+          analysisJobs: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: {
+              id: true,
+              status: true,
+              progress: true,
+              error: true,
+              createdAt: true,
+              startedAt: true,
+              endedAt: true,
+            },
+          },
+          metricSnapshots: {
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            select: {
+              id: true,
+              jobId: true,
+              metrics: true,
+              createdAt: true,
+            },
+          },
         },
-      },
-      metricSnapshots: {
-        orderBy: { createdAt: "desc" },
-        take: 1,
-        select: {
-          id: true,
-          jobId: true,
-          metrics: true,
-          createdAt: true,
+      });
+    });
+  } catch (error) {
+    if (error instanceof StorageQuotaExceededError) {
+      return NextResponse.json(
+        {
+          error: "Storage limit exceeded.",
+          storage: buildStorageUsagePayload(error.usedBytes, error.limitBytes),
         },
-      },
-    },
-  });
+        { status: 403 },
+      );
+    }
+    throw error;
+  }
 
   kickAnalysisWorker();
   return NextResponse.json({ video: serializeVideo(video) }, { status: 201 });

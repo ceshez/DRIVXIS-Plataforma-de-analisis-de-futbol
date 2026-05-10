@@ -42,6 +42,13 @@ type DashboardExperienceProps = {
   pollingEnabled?: boolean;
 };
 
+type StorageUsagePayload = {
+  usedBytes: string;
+  limitBytes: string;
+  remainingBytes: string;
+  percentUsed: number;
+};
+
 const radarFallback = [
   { subject: "Control", local: 52, rival: 48, localValue: "52.0%", rivalValue: "48.0%" },
   { subject: "Distancia", local: 64, rival: 60, localValue: "6.4 km", rivalValue: "6.0 km" },
@@ -72,6 +79,7 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
   const [items, setItems] = useState(videos);
   const [activeId, setActiveId] = useState(videos[0]?.id ?? "");
   const [uploadOpen, setUploadOpen] = useState(videos.length === 0);
+  const [storageUsage, setStorageUsage] = useState<StorageUsagePayload | null>(null);
   const { toasts, pushToast, dismissToast } = useAppToasts();
   const featured = items.find((video) => video.id === activeId) ?? items[0] ?? null;
   const metrics = featured?.latestMetrics ?? null;
@@ -90,13 +98,18 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
   const hasProcessingVideo = items.some(isVideoProcessing);
   const isFeaturedProcessing = featured ? isVideoProcessing(featured) : false;
   const pollTarget = featured && isVideoProcessing(featured) ? featured : items.find(isVideoProcessing) ?? null;
-  const canUpload = !hasProcessingVideo;
+  const hasNoRemainingStorage = storageUsage ? parseStorageBigInt(storageUsage.remainingBytes) <= 0n : false;
+  const canUpload = !hasProcessingVideo && !hasNoRemainingStorage;
 
   useEffect(() => {
     if (!featured && items[0]) {
       setActiveId(items[0].id);
     }
   }, [featured, items]);
+
+  useEffect(() => {
+    void refreshStorageUsage();
+  }, []);
 
   useEffect(() => {
     if (!pollingEnabled || !pollTarget) return;
@@ -112,6 +125,8 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
             durationMs: 8500,
             sound: true,
           });
+          pushCompletionStorageToast(nextVideo, pushToast);
+          void refreshStorageUsage();
         }
         return current.map((video) => (video.id === nextVideo.id ? nextVideo : video));
       });
@@ -139,6 +154,7 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
       durationMs: 7000,
       sound: true,
     });
+    void refreshStorageUsage();
   }
 
   async function refreshVideo(videoId: string) {
@@ -153,6 +169,8 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
           durationMs: 8500,
           sound: true,
         });
+        pushCompletionStorageToast(data.video!, pushToast);
+        void refreshStorageUsage();
       }
       return current.map((video) => (video.id === data.video!.id ? data.video! : video));
     });
@@ -161,6 +179,14 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
   function openUploader() {
     if (!canUpload) return;
     setUploadOpen(true);
+  }
+
+  async function refreshStorageUsage() {
+    const response = await fetch("/api/storage/usage", { cache: "no-store" }).catch(() => null);
+    if (!response?.ok) return;
+    const payload = (await response.json().catch(() => null)) as StorageUsagePayload | null;
+    if (!payload) return;
+    setStorageUsage(payload);
   }
 
   return (
@@ -181,6 +207,29 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
         </div>
       </section>
 
+      {storageUsage ? (
+        <section className="lab-panel storage-diagnostics">
+          <div className="panel-heading">
+            <div>
+              <span>Cuota</span>
+              <h2>Uso de almacenamiento</h2>
+            </div>
+          </div>
+          <p className="history-muted">
+            Usado: {formatStorageBytes(storageUsage.usedBytes)} / Límite: {formatStorageBytes(storageUsage.limitBytes)} / Disponible: {formatStorageBytes(storageUsage.remainingBytes)}
+          </p>
+          <span className="analysis-upload__progress" aria-label={`Uso ${Math.round(storageUsage.percentUsed)}%`}>
+            <span style={{ width: `${Math.max(0, Math.min(100, storageUsage.percentUsed))}%` }} />
+          </span>
+          {storageUsage.percentUsed >= 90 ? (
+            <p className="storage-hint">Estás cerca de tu límite de almacenamiento.</p>
+          ) : null}
+          {hasNoRemainingStorage ? (
+            <p className="storage-hint">You have reached your storage limit.</p>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="analysis-console" aria-label="Consola de análisis">
         <div className="analysis-console__stage">
           <CornerMarks size={14} opacity={0.45} />
@@ -197,20 +246,26 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
           <div className="video-radar video-radar--upload">
             {isFeaturedProcessing ? (
               <AnalysisProgressPanel video={featured} progress={activeProgress} />
-            ) : featured?.status === "COMPLETED" && getProcessedVideoUrl(featured) && !uploadOpen ? (
-              <AnalyzedVideoPanel
-                video={featured}
-                onToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
-                onUploadAnother={openUploader}
-                onVideoUpdated={(video) => {
-                  setItems((current) => current.map((item) => (item.id === video.id ? video : item)));
-                }}
-              />
+            ) : featured?.status === "COMPLETED" && !uploadOpen ? (
+              getProcessedVideoUrl(featured) ? (
+                <AnalyzedVideoPanel
+                  video={featured}
+                  onToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
+                  onStreamError={(message) => pushToast(message, { tone: "warning", durationMs: 9000 })}
+                  onUploadAnother={openUploader}
+                  onVideoUpdated={(video) => {
+                    setItems((current) => current.map((item) => (item.id === video.id ? video : item)));
+                  }}
+                />
+              ) : (
+                <MissingProcessedOutputPanel video={featured} onUploadAnother={openUploader} />
+              )
             ) : (
               <VideoUploadDropzone
                 onUploaded={handleUploaded}
+                onNotify={(message, tone = "info") => pushToast(message, { tone, durationMs: 9000 })}
                 disabled={!canUpload}
-                disabledMessage={`Analizando video... (${activeProgress}%)`}
+                disabledMessage={hasNoRemainingStorage ? "You have reached your storage limit." : `Analizando video... (${activeProgress}%)`}
                 progress={hasProcessingVideo ? activeProgress : undefined}
                 label={items.length ? "Analizar otro partido" : "Selecciona o arrastra un partido"}
                 description={items.length ? "El resultado anterior queda guardado en historial." : "MP4, MOV, AVI o formatos compatibles con el pipeline."}
@@ -354,14 +409,7 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
 
         <article className="chart-panel chart-panel--field">
           <h2>Mapa del modelo</h2>
-          <svg viewBox="0 0 240 130" fill="none" aria-hidden="true">
-            <rect x="2" y="2" width="236" height="126" stroke="rgba(255,107,43,0.24)" strokeWidth="0.75" />
-            <line x1="120" y1="2" x2="120" y2="128" stroke="rgba(255,107,43,0.14)" strokeWidth="0.5" />
-            <circle cx="120" cy="65" r="20" stroke="rgba(255,107,43,0.14)" strokeWidth="0.5" />
-            <ellipse cx="70" cy="63" rx="34" ry="30" fill="rgba(255,107,43,0.12)" />
-            <ellipse cx="154" cy="68" rx="26" ry="22" fill="rgba(255,107,43,0.2)" />
-            <circle cx="155" cy="65" r="3.5" stroke="#ff6b2b" strokeWidth="0.75" />
-          </svg>
+          <svg fill="none" aria-hidden="true" viewBox="0 0 240 130"><defs><radialGradient id="heat-hot" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="rgba(255,146,67,0.9)"/><stop offset="35%" stopColor="rgba(244,223,72,0.78)"/><stop offset="62%" stopColor="rgba(117,241,77,0.58)"/><stop offset="100%" stopColor="rgba(33,110,255,0)"/></radialGradient><filter id="heat-blur"><feGaussianBlur stdDeviation="7"/></filter></defs><path stroke="rgba(255,107,43,0.24)" strokeWidth=".75" d="M2 2h236v126H2z"/><path stroke="rgba(255,255,255,0.25)" strokeWidth=".75" d="M120 2v126"/><circle cx="120" cy="65" r="20" stroke="rgba(255,255,255,0.24)" strokeWidth=".75"/><path stroke="rgba(255,255,255,0.22)" strokeWidth=".75" d="M2 44h38v42H2zm198 0h38v42h-38z"/><g fill="url(#heat-hot)" filter="url(#heat-blur)"><circle cx="55" cy="40" r="24"/><circle cx="80" cy="95" r="30"/><circle cx="105" cy="58" r="20"/><circle cx="140" cy="70" r="22"/><circle cx="165" cy="40" r="18"/><circle cx="186" cy="88" r="16"/></g><path fill="url(#heat-hot)" d="M2 2h236v126H2z" opacity=".08"/></svg>
         </article>
       </section>
 
@@ -401,6 +449,7 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
                 <div className="video-row__copy">
                   <strong>{video.originalFilename}</strong>
                   <span>{formatVideoOpponent(video)}</span>
+                  <StorageStatusInline video={video} />
                 </div>
                 <span className="video-row__meta">{formatDate(video.createdAt)}</span>
                 <span className={`status-pill ${video.status.toLowerCase()}`}>{formatStatus(video.status)}</span>
@@ -436,7 +485,7 @@ function AnalysisProgressPanel({ video, progress }: { video: RecentVideo; progre
           <span style={{ width: `${progress}%` }} />
         </span>
         <span className="analysis-result-panel__meta">
-          El upload queda bloqueado hasta terminar el tracking y la generación del video anotado.
+          Subir otro video está bloqueado hasta terminar el tracking y la generación del video anotado.
         </span>
       </div>
     </div>
@@ -448,16 +497,23 @@ function AnalyzedVideoPanel({
   onUploadAnother,
   onVideoUpdated,
   onToast,
+  onStreamError,
 }: {
   video: RecentVideo;
   onUploadAnother: () => void;
   onVideoUpdated: (video: RecentVideo) => void;
   onToast: (message: string) => void;
+  onStreamError: (message: string) => void;
 }) {
   const videoUrl = getProcessedVideoUrl(video) ?? `/api/videos/${video.id}/stream?variant=processed`;
   return (
     <div className="analysis-result-panel">
-      <AnalysisVideoPlayer src={videoUrl} title={video.originalFilename} className="analysis-video-shell--dashboard" />
+      <AnalysisVideoPlayer
+        src={videoUrl}
+        title={video.originalFilename}
+        className="analysis-video-shell--dashboard"
+        onStreamError={onStreamError}
+      />
       <div className="analysis-result-panel__footer">
         <div>
           <span>Resultado listo</span>
@@ -469,6 +525,28 @@ function AnalyzedVideoPanel({
         </button>
       </div>
       <MatchColorEditor video={video} onSaved={onVideoUpdated} onToast={onToast} />
+    </div>
+  );
+}
+
+function MissingProcessedOutputPanel({ video, onUploadAnother }: { video: RecentVideo; onUploadAnother: () => void }) {
+  const warning = getProcessedMissingWarning(video);
+  return (
+    <div className="analysis-result-panel analysis-result-panel--processing">
+      <MicroGrid />
+      <div className="analysis-result-panel__inner">
+        <span className="analysis-upload__icon">
+          <Film size={30} />
+        </span>
+        <div>
+          <strong>{video.originalFilename}</strong>
+          <small>{warning}</small>
+        </div>
+        <button className="button ghost command-button" type="button" onClick={onUploadAnother}>
+          <Upload size={14} />
+          Analizar otro partido
+        </button>
+      </div>
     </div>
   );
 }
@@ -597,6 +675,88 @@ function formatVideoOpponent(video: RecentVideo) {
   return "Datos de partido";
 }
 
+function StorageStatusInline({ video }: { video: RecentVideo }) {
+  const labels = getStorageLabels(video);
+  if (!labels.length) return null;
+  return (
+    <span className="storage-hint">
+      {labels.join(" | ")}
+    </span>
+  );
+}
+
+function getStorageLabels(video: RecentVideo) {
+  const metadata = getVideoMetadata(video);
+  const labels: string[] = [];
+
+  if (metadata.storageMode === "s3") labels.push("Original: R2");
+  if (metadata.storageMode === "local") labels.push("Original: Local");
+
+  if (typeof metadata.processedObjectKey === "string" || typeof metadata.annotatedObjectKey === "string") {
+    labels.push("Processed: R2");
+  } else if (typeof metadata.processedLocalPath === "string" || typeof metadata.annotatedLocalPath === "string") {
+    labels.push("Processed: Local");
+  } else if (video.status === "COMPLETED") {
+    labels.push("Processed: Missing");
+  }
+
+  return labels;
+}
+
+function getProcessedMissingWarning(video: RecentVideo) {
+  const metadata = getVideoMetadata(video);
+  const warnings = getResilienceWarnings(video);
+  const hasProcessedRemote = typeof metadata.processedObjectKey === "string" || typeof metadata.annotatedObjectKey === "string";
+  const hasProcessedLocal = typeof metadata.processedLocalPath === "string" || typeof metadata.annotatedLocalPath === "string";
+  if (warnings.includes("PROCESSED_VIDEO_MISSING")) return "Video file missing.";
+  if (video.status !== "COMPLETED") return "";
+  return hasProcessedRemote || hasProcessedLocal ? "" : "No se encontró la ubicación del video procesado.";
+}
+
+function getResilienceWarnings(video: RecentVideo) {
+  const metadata = getVideoMetadata(video);
+  const raw = metadata.resilienceWarnings;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is string => typeof item === "string");
+}
+
+function getVideoMetadata(video: RecentVideo) {
+  if (!video.metadata || typeof video.metadata !== "object" || Array.isArray(video.metadata)) {
+    return {} as Record<string, unknown>;
+  }
+  return video.metadata as Record<string, unknown>;
+}
+
+function pushCompletionStorageToast(
+  video: RecentVideo,
+  pushToast: (message: string, options?: { tone?: "success" | "info" | "warning"; durationMs?: number; dedupeKey?: string; sound?: boolean }) => void,
+) {
+  const warning = getProcessedMissingWarning(video);
+  if (warning) {
+    pushToast("Análisis finalizado, pero el video no está guardado en la nube.", {
+      tone: "warning",
+      dedupeKey: `${video.id}:processed-missing`,
+      durationMs: 9000,
+    });
+    return;
+  }
+
+  const labels = getStorageLabels(video);
+  if (labels.includes("Processed: R2")) {
+    pushToast("Análisis completado. Video guardado en el dispositivo.", {
+      tone: "success",
+      dedupeKey: `${video.id}:processed-r2`,
+      durationMs: 9000,
+    });
+  } else if (labels.includes("Processed: Local")) {
+    pushToast("Análisis completado. Video guardado en el dispositivo.", {
+      tone: "warning",
+      dedupeKey: `${video.id}:processed-local`,
+      durationMs: 9000,
+    });
+  }
+}
+
 function formatKm(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "0.00";
   return value >= 10 ? value.toFixed(1) : value.toFixed(2);
@@ -621,6 +781,26 @@ function formatDate(value: string) {
   return date.toLocaleDateString("es-CR", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function parseStorageBigInt(value: string) {
+  try {
+    return BigInt(value);
+  } catch {
+    return 0n;
+  }
+}
+
+function formatStorageBytes(value: string) {
+  const bytes = Number(parseStorageBigInt(value));
+  if (!Number.isFinite(bytes) || bytes < 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let amount = bytes;
+  let unit = 0;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+  return `${amount.toFixed(amount >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
 
 
 

@@ -59,11 +59,7 @@ export function RadarDemo() {
               style={{ left: `${player.x}%`, top: `${player.y}%` }}
             />
           ))}
-          <svg className="run-lines" viewBox="0 0 100 100" aria-hidden="true">
-            <path d="M18 28 C34 22, 48 34, 63 45" />
-            <path d="M31 48 C44 54, 58 51, 72 31" />
-            <path d="M74 42 C68 55, 62 61, 54 72" />
-          </svg>
+          <svg aria-hidden="true" className="run-lines" viewBox="0 0 100 100"><path d="M18 28c16-6 30 6 45 17"/><path d="M31 48c13 6 27 3 41-17m2 11c-6 13-12 19-20 30"/></svg>
         </div>
       </div>
     </section>

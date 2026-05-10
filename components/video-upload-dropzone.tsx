@@ -25,6 +25,7 @@ export type UploadedVideo = {
 
 type VideoUploadDropzoneProps = {
   onUploaded?: (video: UploadedVideo) => void;
+  onNotify?: (message: string, tone?: "success" | "info" | "warning") => void;
   label?: string;
   description?: string;
   disabled?: boolean;
@@ -36,6 +37,7 @@ type UploadState = "idle" | "uploading" | "queued" | "error";
 
 export function VideoUploadDropzone({
   onUploaded,
+  onNotify,
   label = "Selecciona o arrastra un partido",
   description = "MP4, MOV, AVI o formatos compatibles con el pipeline.",
   disabled = false,
@@ -46,6 +48,7 @@ export function VideoUploadDropzone({
   const [dragOver, setDragOver] = useState(false);
   const [state, setState] = useState<UploadState>("idle");
   const [message, setMessage] = useState("Click para abrir archivos");
+  const [presignDiagnostic, setPresignDiagnostic] = useState("");
   const [fileName, setFileName] = useState("");
   const [ownTeam, setOwnTeam] = useState("");
   const [rivalTeam, setRivalTeam] = useState("");
@@ -76,9 +79,17 @@ export function VideoUploadDropzone({
       return;
     }
 
+    const requestedMimeType = file.type.trim();
+    if (!requestedMimeType || !requestedMimeType.startsWith("video/")) {
+      setState("error");
+      setMessage("El archivo no tiene un MIME type de video válido.");
+      return;
+    }
+
     setState("uploading");
     setFileName(file.name);
     setMessage("Preparando carga");
+    setPresignDiagnostic("");
     const matchInfo = {
       ownTeam: normalizedOwnTeam,
       rivalTeam: normalizedRivalTeam,
@@ -86,9 +97,10 @@ export function VideoUploadDropzone({
 
     const metadata = {
       filename: file.name,
-      mimeType: file.type || "video/mp4",
+      mimeType: requestedMimeType,
       sizeBytes: file.size,
     };
+    let attemptedRemotePut = false;
 
     try {
       const presignResponse = await fetch("/api/videos/presign", {
@@ -98,35 +110,86 @@ export function VideoUploadDropzone({
       });
       const presign = (await presignResponse.json().catch(() => ({}))) as {
         error?: string;
+        details?: string;
+        configured?: boolean;
+        provider?: "local" | "r2" | "s3-compatible";
         uploadMode?: "local" | "s3";
         uploadUrl?: string | null;
         objectKey?: string;
+        signedContentType?: string;
+        configErrors?: string[];
       };
 
       if (!presignResponse.ok || !presign.objectKey) {
-        throw new Error(presign.error || "No se pudo preparar la carga.");
+        throw new Error(presign.details || presign.error || "No se pudo preparar la carga.");
       }
 
-      setMessage(presign.uploadMode === "s3" ? "Subiendo a storage" : "Guardando archivo local");
+      const uploadUrlHost = getUploadUrlHost(presign.uploadUrl);
+      const signedMimeType = (presign.signedContentType || metadata.mimeType).trim();
+      const putContentType = file.type.trim();
+      const isRequestedMimeMatch = putContentType === metadata.mimeType;
+      const isSignedMimeMatch = putContentType === signedMimeType;
+
+      setPresignDiagnostic(
+        `Presign: configured=${String(Boolean(presign.configured))} | uploadMode=${presign.uploadMode || "unknown"} | uploadUrl=${String(Boolean(presign.uploadUrl))} | host=${uploadUrlHost || "null"}`,
+      );
+
+      if (process.env.NODE_ENV === "development") {
+        console.info("[DRIVXIS upload diagnostics]", {
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+          requestedMimeType: metadata.mimeType,
+          presignMimeType: signedMimeType,
+          mimeMatchRequestedVsFileType: isRequestedMimeMatch,
+          mimeMatchSignedVsFileType: isSignedMimeMatch,
+          uploadUrlHost,
+          configured: Boolean(presign.configured),
+          uploadMode: presign.uploadMode || "unknown",
+          hasUploadUrl: Boolean(presign.uploadUrl),
+        });
+      }
+
       if (presign.uploadMode === "s3" && presign.uploadUrl) {
+        const uploadStartMessage = "Subiendo a la nube... Esto puede tardar varios minutos"
+        setMessage(uploadStartMessage);
+        onNotify?.(uploadStartMessage, "info");
+      } else {
+        const fallbackReason = presign.configErrors?.[0] || "Almacenamiento remoto no configurado";
+        const fallbackMessage = `Using local fallback. ${fallbackReason}`;
+        setMessage(fallbackMessage);
+        onNotify?.(fallbackMessage, "warning");
+      }
+
+      if (presign.uploadMode === "s3" && presign.uploadUrl) {
+        if (!isRequestedMimeMatch || !isSignedMimeMatch) {
+          throw new Error("Content-Type mismatch: the signed Content-Type must match the upload Content-Type.");
+        }
+        attemptedRemotePut = true;
         const uploadResponse = await fetch(presign.uploadUrl, {
           method: "PUT",
-          headers: { "content-type": metadata.mimeType },
+          headers: { "Content-Type": putContentType },
           body: file,
         });
         if (!uploadResponse.ok) {
-          throw new Error("El bucket rechazo la carga. Revisa las credenciales de storage.");
+          throw new Error(await describeRemoteUploadFailure(uploadResponse));
         }
+        const successMessage = "Video original subido a la nube.";
+        setMessage(successMessage);
+        onNotify?.(successMessage, "success");
       } else {
         const localUploadResponse = await fetch(`/api/videos/local-upload?objectKey=${encodeURIComponent(presign.objectKey)}`, {
           method: "PUT",
-          headers: { "content-type": metadata.mimeType },
+          headers: { "Content-Type": metadata.mimeType },
           body: file,
         });
         const localUpload = (await localUploadResponse.json().catch(() => ({}))) as { error?: string };
         if (!localUploadResponse.ok) {
           throw new Error(localUpload.error || "No se pudo guardar el archivo local.");
         }
+        const localSuccessMessage = "Video original guardado localmente. No se subió a la nube.";
+        setMessage(localSuccessMessage);
+        onNotify?.(localSuccessMessage, "warning");
       }
 
       setMessage("Registrando metadata");
@@ -149,8 +212,11 @@ export function VideoUploadDropzone({
       onUploaded?.(created.video);
       if (inputRef.current) inputRef.current.value = "";
     } catch (error) {
+      const reason = normalizeUploadError(error, attemptedRemotePut);
+      const prefixed = `Upload failed: ${reason}`;
       setState("error");
-      setMessage(error instanceof Error ? error.message : "No se pudo completar la carga.");
+      setMessage(prefixed);
+      onNotify?.(prefixed, "warning");
     }
   }
 
@@ -228,9 +294,52 @@ export function VideoUploadDropzone({
         <div className="analysis-upload__note">
           <Film size={14} />
           <span>{message}</span>
+          {presignDiagnostic ? <small className="storage-hint">{presignDiagnostic}</small> : null}
         </div>
       ) : null}
     </div>
   );
+}
+
+async function describeRemoteUploadFailure(response: Response) {
+  const status = response.status;
+  const safeText = await readSafeResponseText(response);
+  if (status === 403) {
+    const baseMessage = "R2 rejected the upload with 403. Possible SignatureDoesNotMatch or Content-Type mismatch.";
+    return safeText ? `${baseMessage} ${safeText}` : baseMessage;
+  }
+  if (status === 400) {
+    const baseMessage = "R2 rejected the upload request. Check bucket, object key, endpoint and headers.";
+    return safeText ? `${baseMessage} ${safeText}` : baseMessage;
+  }
+  if (status >= 500) {
+    return `Cloudflare R2 upload failed with server error (${status}).`;
+  }
+
+  return safeText ? `Cloudflare R2 upload failed (${status}). ${safeText}` : `Cloudflare R2 upload failed with status ${status}.`;
+}
+
+function normalizeUploadError(error: unknown, attemptedRemotePut: boolean) {
+  if (attemptedRemotePut && error instanceof TypeError) {
+    return "Browser network error during R2 PUT. This can be CORS, wrong endpoint, or blocked request.";
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "No se pudo completar la carga.";
+}
+
+function getUploadUrlHost(uploadUrl?: string | null) {
+  if (!uploadUrl) return null;
+  try {
+    return new URL(uploadUrl).host;
+  } catch {
+    return null;
+  }
+}
+
+async function readSafeResponseText(response: Response) {
+  const rawText = await response.text().catch(() => "");
+  return rawText.replace(/\s+/g, " ").trim().slice(0, 180);
 }
 

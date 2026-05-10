@@ -76,6 +76,10 @@ async function claimNextJob() {
     include: { video: true },
   });
   if (!job) return null;
+  if (!job.video) {
+    await markJobFailedIfRunning(job.id, "Video was deleted before the analysis could start.");
+    return null;
+  }
 
   const claimed = await prisma.analysisJob.updateMany({
     where: { id: job.id, status: "QUEUED" },
@@ -84,15 +88,24 @@ async function claimNextJob() {
   if (claimed.count !== 1) return null;
 
   log(`Job ${job.id} for video ${job.videoId}: QUEUED -> RUNNING`);
-  await prisma.video.update({
+  const markedVideo = await prisma.video.updateMany({
     where: { id: job.videoId },
     data: { status: "PROCESSING" },
   });
+  if (markedVideo.count !== 1) {
+    await markJobFailedIfRunning(job.id, "Video was deleted before analysis started.");
+    log(`Job ${job.id}: video ${job.videoId} no longer exists after claim.`);
+    return null;
+  }
 
   return { ...job, status: "RUNNING" };
 }
 
 async function processJob(job) {
+  if (!job.video) {
+    await markJobFailedIfRunning(job.id, "Video no longer exists.");
+    return;
+  }
   const outputDir = path.join(analysisRoot, job.videoId);
   await mkdir(outputDir, { recursive: true });
   const sourcePath = await resolveSourcePath(job.video, outputDir);
@@ -111,50 +124,137 @@ async function processJob(job) {
   });
   await updateJobProgress(job.id, 97, { force: true });
 
+  const processedStat = await stat(processedPath);
+  const metricsStat = await stat(metricsPath);
+  const processedSizeBytes = BigInt(processedStat.size);
+  const metricsSizeBytes = BigInt(metricsStat.size);
   const metrics = JSON.parse(await readFile(metricsPath, "utf8"));
   const existingMetadata = isRecord(job.video.metadata) ? job.video.metadata : {};
-  const remoteOutputs = await uploadAnalysisOutputsIfConfigured({
-    video: job.video,
-    processedPath,
-    metricsPath,
-  });
+  const baseMetadata = {
+    ...existingMetadata,
+    processedLocalPath: processedPath,
+    annotatedLocalPath: processedPath,
+    latestMetricsPath: metricsPath,
+    processedSizeBytes: processedSizeBytes.toString(),
+    metricsSizeBytes: metricsSizeBytes.toString(),
+  };
 
-  await prisma.metricSnapshot.create({
-    data: {
-      videoId: job.videoId,
-      jobId: job.id,
-      metrics,
-    },
-  });
-
-  await prisma.video.update({
+  const updatedBaseMetadata = await prisma.video.updateMany({
     where: { id: job.videoId },
     data: {
-      status: "COMPLETED",
-      durationSeconds: Number.isFinite(metrics?.video?.durationSeconds)
-        ? Math.max(1, Math.round(metrics.video.durationSeconds))
-        : job.video.durationSeconds,
       metadata: {
-        ...existingMetadata,
-        processedLocalPath: processedPath,
-        annotatedLocalPath: processedPath,
-        latestMetricsPath: metricsPath,
-        ...remoteOutputs,
-        analysisCompletedAt: new Date().toISOString(),
+        ...baseMetadata,
+        analysisStorageMode: isStorageConfigured() ? "local-pending-remote-upload" : "local",
       },
     },
   });
+  if (updatedBaseMetadata.count !== 1) {
+    await markJobFailedIfRunning(job.id, "Video was deleted during analysis.");
+    log(`Job ${job.id}: video deleted while updating metadata.`);
+    return;
+  }
 
-  await prisma.analysisJob.update({
-    where: { id: job.id },
-    data: { status: "COMPLETED", progress: 100, endedAt: new Date() },
-  });
+  let remoteOutputs = {};
+  try {
+    remoteOutputs = await uploadAnalysisOutputsIfConfigured({
+      video: job.video,
+      processedPath,
+      metricsPath,
+      processedSizeBytes,
+      metricsSizeBytes,
+    });
+  } catch (error) {
+    const uploadMessage = error instanceof Error ? error.message : String(error);
+    await prisma.video.updateMany({
+      where: { id: job.videoId },
+      data: {
+        metadata: {
+          ...baseMetadata,
+          analysisStorageMode: "local",
+          analysisUploadError: uploadMessage.slice(0, 500),
+        },
+      },
+    });
+    throw new Error(`Analysis output upload failed: ${uploadMessage}`);
+  }
+
+  const previousProcessedSizeBytes = parseMetadataBigInt(existingMetadata.processedSizeBytes);
+  const previousMetricsSizeBytes = parseMetadataBigInt(existingMetadata.metricsSizeBytes);
+  const hadPreviousRemoteOutput =
+    typeof existingMetadata.processedObjectKey === "string" ||
+    typeof existingMetadata.annotatedObjectKey === "string" ||
+    typeof existingMetadata.latestMetricsObjectKey === "string";
+  const previousRemoteTotalBytes = hadPreviousRemoteOutput ? previousProcessedSizeBytes + previousMetricsSizeBytes : 0n;
+  const nextRemoteTotalBytes = remoteOutputs.analysisStorageMode === "s3" ? processedSizeBytes + metricsSizeBytes : 0n;
+  const remoteStorageDeltaBytes = nextRemoteTotalBytes - previousRemoteTotalBytes;
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      const currentVideo = await tx.video.findUnique({
+        where: { id: job.videoId },
+        select: { id: true, ownerId: true, durationSeconds: true },
+      });
+      if (!currentVideo) {
+        throw new Error("VIDEO_NOT_FOUND_DURING_PROCESSING");
+      }
+
+      await tx.metricSnapshot.create({
+        data: {
+          videoId: job.videoId,
+          jobId: job.id,
+          metrics,
+        },
+      });
+
+      await tx.video.updateMany({
+        where: { id: job.videoId },
+        data: {
+          status: "COMPLETED",
+          durationSeconds: Number.isFinite(metrics?.video?.durationSeconds)
+            ? Math.max(1, Math.round(metrics.video.durationSeconds))
+            : currentVideo.durationSeconds,
+          metadata: {
+            ...baseMetadata,
+            ...remoteOutputs,
+            analysisCompletedAt: new Date().toISOString(),
+            analysisUploadError: null,
+          },
+        },
+      });
+
+      if (remoteStorageDeltaBytes !== 0n) {
+        const owner = await tx.user.findUnique({
+          where: { id: currentVideo.ownerId },
+          select: { storageUsedBytes: true },
+        });
+        if (owner) {
+          const nextUsedBytes = owner.storageUsedBytes + remoteStorageDeltaBytes;
+          await tx.user.update({
+            where: { id: currentVideo.ownerId },
+            data: { storageUsedBytes: nextUsedBytes > 0n ? nextUsedBytes : 0n },
+          });
+        }
+      }
+
+      await tx.analysisJob.updateMany({
+        where: { id: job.id },
+        data: { status: "COMPLETED", progress: 100, endedAt: new Date() },
+      });
+    });
+  } catch (error) {
+    if (isVideoDeletedError(error)) {
+      await markJobFailedIfRunning(job.id, "Video was deleted while analysis was running.");
+      log(`Job ${job.id}: video deleted before completion writeback.`);
+      return;
+    }
+    throw error;
+  }
   progressWriteState.delete(job.id);
 
   log(`Job ${job.id} for video ${job.videoId}: RUNNING -> COMPLETED`);
 }
 
-async function uploadAnalysisOutputsIfConfigured({ video, processedPath, metricsPath }) {
+async function uploadAnalysisOutputsIfConfigured({ video, processedPath, metricsPath, processedSizeBytes, metricsSizeBytes }) {
   if (!isStorageConfigured()) return {};
 
   const processedObjectKey = createAnalysisObjectKey({
@@ -194,6 +294,8 @@ async function uploadAnalysisOutputsIfConfigured({ video, processedPath, metrics
     processedObjectKey,
     annotatedObjectKey: processedObjectKey,
     latestMetricsObjectKey: metricsObjectKey,
+    processedSizeBytes: processedSizeBytes.toString(),
+    metricsSizeBytes: metricsSizeBytes.toString(),
     analysisStorageMode: "s3",
   };
 }
@@ -344,22 +446,50 @@ async function failJob(job, error) {
   console.error(`[${new Date().toISOString()}] Job ${job.id} for video ${job.videoId}: RUNNING -> FAILED`);
   console.error(message);
   progressWriteState.delete(job.id);
-  await prisma.analysisJob.update({
-    where: { id: job.id },
-    data: { status: "FAILED", progress: 100, error: message.slice(0, 2000), endedAt: new Date() },
+  try {
+    await prisma.analysisJob.updateMany({
+      where: { id: job.id },
+      data: { status: "FAILED", progress: 100, error: message.slice(0, 2000), endedAt: new Date() },
+    });
+    await prisma.video.updateMany({
+      where: { id: job.videoId },
+      data: { status: "FAILED" },
+    });
+  } catch (nestedError) {
+    const nestedMessage = nestedError instanceof Error ? nestedError.message : String(nestedError);
+    console.error(`[${new Date().toISOString()}] failJob warning for ${job.id}: ${nestedMessage}`);
+  }
+}
+
+async function markJobFailedIfRunning(jobId, reason) {
+  progressWriteState.delete(jobId);
+  await prisma.analysisJob.updateMany({
+    where: { id: jobId, status: { in: ["RUNNING", "QUEUED"] } },
+    data: { status: "FAILED", progress: 100, error: String(reason).slice(0, 2000), endedAt: new Date() },
   });
-  await prisma.video.update({
-    where: { id: job.videoId },
-    data: { status: "FAILED" },
-  });
+}
+
+function isVideoDeletedError(error) {
+  if (!error) return false;
+  if (error instanceof Error && error.message === "VIDEO_NOT_FOUND_DURING_PROCESSING") return true;
+  const prismaError = error;
+  return prismaError?.code === "P2025" || prismaError?.code === "P2003";
 }
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function parseMetadataBigInt(value) {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return BigInt(Math.round(value));
+  if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+  return 0n;
+}
+
 function isStorageConfigured() {
   return Boolean(
+    process.env.STORAGE_ENDPOINT &&
     process.env.STORAGE_BUCKET &&
       process.env.STORAGE_ACCESS_KEY_ID &&
       process.env.STORAGE_SECRET_ACCESS_KEY

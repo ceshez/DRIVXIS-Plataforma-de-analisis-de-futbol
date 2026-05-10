@@ -18,7 +18,6 @@ export default async function DashboardPage() {
         ]}
         action={<LogoutButton />}
       />
-
       <DashboardExperience
         userName={user.name}
         videos={videos}

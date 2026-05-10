@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeftRight, Loader2, Save } from "lucide-react";
@@ -81,8 +81,8 @@ export function MatchColorEditor<TVideo extends VideoWithMatch>({
         </strong>
         {detectedPair ? (
           <small>
-            Detectados por el an?lisis
-            {detectedColors?.tentative ? " � tentativos" : ""}
+            Detectados por el análisis
+            {detectedColors?.tentative ? " - tentativos" : ""}
           </small>
         ) : (
           <small>Sin colores detectados aun</small>
@@ -105,7 +105,7 @@ export function MatchColorEditor<TVideo extends VideoWithMatch>({
           <ColorSwatch label="Equipo rival" color={pair.rivalTeamColor} />
         </>
       ) : (
-        <div className="match-color-empty">El an?lisis debe detectar dos colores antes de permitir intercambio.</div>
+        <div className="match-color-empty">El análisis debe detectar dos colores antes de permitir intercambio.</div>
       )}
 
       <button
@@ -168,3 +168,5 @@ function getVideoMatchInfo(video: VideoWithMatch): MatchInfo {
   if (!matchInfo || typeof matchInfo !== "object" || Array.isArray(matchInfo)) return {};
   return matchInfo as MatchInfo;
 }
+
+

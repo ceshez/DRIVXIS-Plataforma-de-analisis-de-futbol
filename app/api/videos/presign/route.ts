@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { buildStorageUsagePayload } from "@/lib/storage-usage";
 import { createPresignedUpload } from "@/lib/storage";
 import { requireUser } from "@/lib/session";
 import { presignVideoSchema } from "@/lib/validators";
@@ -14,11 +16,44 @@ export async function POST(request: Request) {
     );
   }
 
-  const presign = await createPresignedUpload({
-    userId: user.id,
-    filename: parsed.data.filename,
-    mimeType: parsed.data.mimeType,
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: {
+      storageUsedBytes: true,
+      storageLimitBytes: true,
+    },
   });
+  if (!dbUser) {
+    return NextResponse.json({ error: "Usuario no encontrado." }, { status: 404 });
+  }
 
-  return NextResponse.json(presign);
+  const requestedSizeBytes = BigInt(parsed.data.sizeBytes);
+  const projectedUsage = dbUser.storageUsedBytes + requestedSizeBytes;
+  if (projectedUsage > dbUser.storageLimitBytes) {
+    return NextResponse.json(
+      {
+        error: "Storage limit exceeded.",
+        storage: buildStorageUsagePayload(dbUser.storageUsedBytes, dbUser.storageLimitBytes),
+      },
+      { status: 403 },
+    );
+  }
+
+  try {
+    const presign = await createPresignedUpload({
+      userId: user.id,
+      filename: parsed.data.filename,
+      mimeType: parsed.data.mimeType,
+    });
+    return NextResponse.json(presign);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "No se pudo preparar la carga en storage remoto.";
+    return NextResponse.json(
+      {
+        error: "No se pudo preparar la URL de carga para Cloudflare R2/S3.",
+        details: message.slice(0, 400),
+      },
+      { status: 500 },
+    );
+  }
 }

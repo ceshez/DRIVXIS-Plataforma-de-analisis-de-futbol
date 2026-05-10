@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN     "storageLimitBytes" BIGINT NOT NULL DEFAULT 1073741824,
+ADD COLUMN     "storageUsedBytes" BIGINT NOT NULL DEFAULT 0;

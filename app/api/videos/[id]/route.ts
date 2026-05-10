@@ -10,6 +10,7 @@ import {
 } from "@/lib/local-storage";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { deleteStorageObjects, isStorageConfigured } from "@/lib/storage";
 import { updateVideoMatchSchema } from "@/lib/validators";
 import { serializeVideo } from "@/lib/video-serialization";
 
@@ -173,8 +174,16 @@ export async function DELETE(_request: Request, context: RouteContext) {
     where: { id, ownerId: user.id },
     select: {
       id: true,
+      status: true,
       objectKey: true,
+      sizeBytes: true,
       metadata: true,
+      analysisJobs: {
+        where: { status: { in: ["QUEUED", "RUNNING"] } },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: { id: true, status: true },
+      },
     },
   });
 
@@ -182,10 +191,49 @@ export async function DELETE(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Video no encontrado." }, { status: 404 });
   }
 
+  const activeJob = video.analysisJobs[0] ?? null;
+  if (activeJob) {
+    return NextResponse.json(
+      {
+        error: "This video is currently being analyzed. Stop or wait for analysis before deleting.",
+        code: "VIDEO_ANALYSIS_ACTIVE",
+        jobStatus: activeJob.status,
+      },
+      { status: 409 },
+    );
+  }
+
   const metadata = isRecord(video.metadata) ? video.metadata : {};
+  const remoteObjectKeys = new Set<string>();
+  const addRemoteKey = (value: unknown) => {
+    if (typeof value !== "string") return;
+    if (!value.startsWith(`users/${user.id}/`)) return;
+    remoteObjectKeys.add(value);
+  };
+  addRemoteKey(video.objectKey);
+  addRemoteKey(metadata.processedObjectKey);
+  addRemoteKey(metadata.annotatedObjectKey);
+  addRemoteKey(metadata.latestMetricsObjectKey);
+
+  if (isStorageConfigured() && remoteObjectKeys.size > 0) {
+    const remoteDeletion = await deleteStorageObjects(Array.from(remoteObjectKeys));
+    if (remoteDeletion.warnings.length > 0) {
+      return NextResponse.json(
+        {
+          error: "No se pudo eliminar uno o más objetos en Cloudflare R2. El video no se eliminó de la base de datos.",
+          warnings: remoteDeletion.warnings,
+        },
+        { status: 502 },
+      );
+    }
+  }
+
   const cleanupTargets = new Set<string>();
-  const sourcePath = getLocalObjectPath(video.objectKey);
-  cleanupTargets.add(sourcePath);
+  try {
+    cleanupTargets.add(getLocalObjectPath(video.objectKey));
+  } catch {
+    // Continue cleanup with managed paths found in metadata.
+  }
 
   const metadataSourcePath = typeof metadata.sourceLocalPath === "string" ? metadata.sourceLocalPath : null;
   if (metadataSourcePath && isManagedLocalUploadPath(metadataSourcePath)) {
@@ -207,10 +255,31 @@ export async function DELETE(_request: Request, context: RouteContext) {
     cleanupTargets.add(metricsPath);
   }
 
+  const processedSizeBytes = parseMetadataBigInt(metadata.processedSizeBytes);
+  const metricsSizeBytes = parseMetadataBigInt(metadata.metricsSizeBytes);
+  const bytesToSubtract = video.sizeBytes + processedSizeBytes + metricsSizeBytes;
   const analysisDirectory = getAnalysisOutputDirectory(video.id);
 
-  await prisma.video.delete({
-    where: { id: video.id },
+  await prisma.$transaction(async (tx) => {
+    const dbUser = await tx.user.findUnique({
+      where: { id: user.id },
+      select: { storageUsedBytes: true },
+    });
+    if (!dbUser) {
+      throw new Error("Usuario no encontrado.");
+    }
+
+    const nextUsedBytes = dbUser.storageUsedBytes - bytesToSubtract;
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        storageUsedBytes: nextUsedBytes > 0n ? nextUsedBytes : 0n,
+      },
+    });
+
+    await tx.video.delete({
+      where: { id: video.id },
+    });
   });
 
   const cleanupResults = await Promise.allSettled([
@@ -225,4 +294,11 @@ export async function DELETE(_request: Request, context: RouteContext) {
   }
 
   return NextResponse.json({ ok: true, deletedId: video.id });
+}
+
+function parseMetadataBigInt(value: unknown) {
+  if (typeof value === "bigint") return value;
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return BigInt(Math.round(value));
+  if (typeof value === "string" && /^\d+$/.test(value)) return BigInt(value);
+  return 0n;
 }

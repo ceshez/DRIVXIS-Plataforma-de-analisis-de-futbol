@@ -7,11 +7,13 @@ type AnalysisVideoPlayerProps = {
   src: string;
   title: string;
   className?: string;
+  onStreamError?: (message: string) => void;
 };
 
-export function AnalysisVideoPlayer({ src, title, className = "" }: AnalysisVideoPlayerProps) {
+export function AnalysisVideoPlayer({ src, title, className = "", onStreamError }: AnalysisVideoPlayerProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [streamError, setStreamError] = useState("");
 
   useEffect(() => {
     function syncFullscreenState() {
@@ -21,6 +23,10 @@ export function AnalysisVideoPlayer({ src, title, className = "" }: AnalysisVide
     document.addEventListener("fullscreenchange", syncFullscreenState);
     return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
   }, []);
+
+  useEffect(() => {
+    setStreamError("");
+  }, [src]);
 
   async function toggleFullscreen() {
     const target = shellRef.current;
@@ -38,6 +44,38 @@ export function AnalysisVideoPlayer({ src, title, className = "" }: AnalysisVide
     await target.requestFullscreen();
   }
 
+  async function handlePlaybackError() {
+    const fallbackMessage = "No se pudo reproducir el video procesado.";
+    try {
+      const response = await fetch(src, {
+        method: "GET",
+        headers: { range: "bytes=0-1" },
+        cache: "no-store",
+      });
+      if (response.ok) {
+        setStreamError(fallbackMessage);
+        onStreamError?.(fallbackMessage);
+        return;
+      }
+
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+        details?: { remoteError?: string };
+      };
+      const detail = payload.details?.remoteError ? ` (${payload.details.remoteError})` : "";
+      const message = payload.error
+        ? `${payload.error}${payload.code ? ` [${payload.code}]` : ""}${detail}`
+        : `${fallbackMessage}${detail}`;
+      setStreamError(message);
+      onStreamError?.(message);
+    } catch {
+      const networkMessage = "No se pudo cargar el stream. Verifica red, sesion o configuracion de storage.";
+      setStreamError(networkMessage);
+      onStreamError?.(networkMessage);
+    }
+  }
+
   return (
     <div className={`analysis-video-shell ${isFullscreen ? "is-fullscreen" : ""} ${className}`} ref={shellRef}>
       <video
@@ -47,6 +85,9 @@ export function AnalysisVideoPlayer({ src, title, className = "" }: AnalysisVide
         controls
         preload="metadata"
         title={title}
+        onError={() => {
+          void handlePlaybackError();
+        }}
       />
       <button
         className="video-fullscreen-button"
@@ -56,6 +97,7 @@ export function AnalysisVideoPlayer({ src, title, className = "" }: AnalysisVide
       >
         {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
       </button>
+      {streamError ? <p className="history-muted">{streamError}</p> : null}
     </div>
   );
 }

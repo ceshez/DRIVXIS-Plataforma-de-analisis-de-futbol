@@ -91,6 +91,14 @@ Respuesta si storage no esta configurado:
 - `uploadUrl: null`
 - `expiresIn: 0`
 
+Respuesta si excede cuota:
+
+- HTTP `403`
+- `error: "Storage limit exceeded."`
+- `storage.usedBytes`
+- `storage.limitBytes`
+- `storage.remainingBytes`
+
 ### Listar videos
 
 ```txt
@@ -121,6 +129,7 @@ Body:
 Reglas:
 
 - `objectKey` debe pertenecer al usuario actual.
+- Revalida cuota en backend aunque el cliente no pase por `presign`.
 - Debe crear un `AnalysisJob` en cola.
 
 ### Upload local
@@ -147,6 +156,54 @@ Debe devolver:
 - ultimo job
 - ultimo snapshot de metricas
 
+### Uso de storage por usuario
+
+```txt
+GET /api/storage/usage
+```
+
+Requiere sesion.
+
+Devuelve:
+
+- `usedBytes`
+- `limitBytes`
+- `remainingBytes`
+- `percentUsed`
+
+### Diagnostico seguro de storage
+
+```txt
+GET /api/storage/debug
+```
+
+Requiere sesion.
+
+Devuelve:
+
+- `configured`
+- `endpointHost`
+- `bucketName`
+- `region`
+- `hasAccessKey`
+- `hasSecretKey`
+- `warnings`
+
+### Check server-side de conectividad storage
+
+```txt
+GET /api/storage/check
+```
+
+Requiere sesion.
+
+Devuelve:
+
+- `ok`
+- `message`
+- `errorName`/`errorCode` cuando falla
+- `httpStatusCode` y `details` sanitizado cuando aplica
+
 ### Stream de video
 
 ```txt
@@ -154,6 +211,22 @@ GET /api/videos/:id/stream?variant=source|annotated
 ```
 
 Debe devolver archivo local original o anotado, con soporte basico de `Range` si aplica.
+
+### Eliminar video
+
+```txt
+DELETE /api/videos/:id
+```
+
+Requiere sesion.
+
+Comportamiento:
+
+- Verifica propiedad del video.
+- Elimina objetos remotos asociados (original/procesado/metricas) en R2.
+- Si falla la eliminacion remota, no elimina el registro DB.
+- Ajusta `storageUsedBytes` sin permitir valores negativos.
+- Limpia archivos locales gestionados cuando existen.
 
 ### Reencolar analisis
 
@@ -190,6 +263,13 @@ Uso:
 5. Se crea `AnalysisJob`.
 6. Worker procesa el video.
 7. UI consulta resultados.
+
+## Cuotas de storage
+
+- El limite se valida en `presign` y se valida de nuevo en `POST /api/videos`.
+- La cuota no depende de valores enviados por el frontend.
+- El worker suma uso de salida procesada al completar uploads remotos.
+- El borrado de videos descuenta uso de original/procesado/metricas.
 
 ## Reglas para Codex
 

@@ -27,12 +27,16 @@ Campos importantes:
 - `name`
 - `passwordHash`
 - `role`
+- `storageLimitBytes`
+- `storageUsedBytes`
 - `createdAt`
 - `updatedAt`
 
 Relacion:
 
 - Un usuario puede tener muchos videos.
+- `storageLimitBytes` define la cuota maxima por usuario (1GB por defecto).
+- `storageUsedBytes` mantiene el uso acumulado y se actualiza solo en backend/worker.
 
 ### Video
 
@@ -135,6 +139,11 @@ erDiagram
 
 - No guardar videos pesados en PostgreSQL.
 - Guardar solo metadata, `objectKey`, estados y resultados.
+- No permitir que el frontend edite cuotas (`storageLimitBytes` / `storageUsedBytes`).
+- Ajustar `storageUsedBytes` en backend cuando:
+  - se registra un video original,
+  - el worker sube salidas procesadas,
+  - se elimina un video y sus objetos remotos.
 - Usar Prisma como fuente principal de estructura.
 - No crear SQL manual salvo que sea necesario.
 - Antes de cambiar modelos, analizar impacto en endpoints, UI y worker.

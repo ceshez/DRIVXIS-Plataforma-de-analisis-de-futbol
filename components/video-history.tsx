@@ -73,6 +73,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
             durationMs: 8500,
             sound: true,
           });
+          pushCompletionStorageToast(nextVideo, pushToast);
         }
         return current.map((video) => (video.id === nextVideo.id ? nextVideo : video));
       });
@@ -126,6 +127,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
           durationMs: 8500,
           sound: true,
         });
+        pushCompletionStorageToast(data.video!, pushToast);
       }
       return current.map((video) => (video.id === data.video!.id ? data.video! : video));
     });
@@ -152,9 +154,16 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     if (!deleteTarget) return;
     setDeleting(true);
     const response = await fetch(`/api/videos/${deleteTarget.id}`, { method: "DELETE" });
-    const data = (await response.json().catch(() => ({}))) as { deletedId?: string };
+    const data = (await response.json().catch(() => ({}))) as { deletedId?: string; error?: string; code?: string };
     setDeleting(false);
-    if (!response.ok || !data.deletedId) return;
+    if (!response.ok || !data.deletedId) {
+      const message = data.error || "No se pudo eliminar el video.";
+      pushToast(message, {
+        tone: data.code === "VIDEO_ANALYSIS_ACTIVE" ? "warning" : "info",
+        durationMs: 9000,
+      });
+      return;
+    }
 
     setVideos((current) => {
       const nextVideos = current.filter((video) => video.id !== data.deletedId);
@@ -202,6 +211,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
                     <div className="video-row__copy">
                       <strong>{video.originalFilename}</strong>
                       <span>{formatVideoOpponent(video)}</span>
+                      <StorageStatusInline video={video} />
                     </div>
                     <span className="video-row__meta">
                       {formatDate(video.createdAt)}
@@ -244,9 +254,13 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
             <div>
               <span>Detalle del partido</span>
               <h2>{selected?.originalFilename ?? "Sin selección"}</h2>
+              {selected ? <StorageStatusInline video={selected} /> : null}
             </div>
             {selected ? <span className={`status-pill ${selected.status.toLowerCase()}`}>{formatStatus(selected.status)}</span> : null}
           </div>
+          <p className="history-muted">
+            Local folders may still be used temporarily by the analysis worker, but the main stored video is in R2 when storageMode is s3.
+          </p>
 
           {selected ? (
             <>
@@ -255,6 +269,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
                   <AnalysisVideoPlayer
                     src={getProcessedVideoUrl(selected) ?? `/api/videos/${selected.id}/stream?variant=processed`}
                     title={selected.originalFilename}
+                    onStreamError={(message) => pushToast(message, { tone: "warning", durationMs: 9000 })}
                   />
                   <MatchColorEditor
                     video={selected}
@@ -269,8 +284,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
                   {isVideoProcessing(selected) ? <Loader2 className="spin" size={24} /> : <BarChart3 size={24} />}
                   <strong>{selected.latestJob ? `análisis ${formatStatus(selected.latestJob.status)}` : "análisis en espera"}</strong>
                   <span>
-                    {selected.latestJob?.error ||
-                      (selected.latestJob ? `Analizando video... (${getVideoProgress(selected)}%)` : "El worker generará el video anotado y las métricas.")}
+                    {getVideoPlaceholderMessage(selected)}
                   </span>
                   {isVideoProcessing(selected) ? (
                     <span className="analysis-upload__progress" aria-label={`Progreso ${getVideoProgress(selected)}%`}>
@@ -414,6 +428,99 @@ function formatVideoOpponent(video: HistoryVideo) {
     return `${matchInfo.ownTeam ?? "Equipo 1"} vs ${matchInfo.rivalTeam ?? "Equipo 2"}`;
   }
   return "Sin equipos registrados";
+}
+
+function StorageStatusInline({ video }: { video: HistoryVideo }) {
+  const labels = getStorageLabels(video);
+  if (!labels.length) return null;
+  return (
+    <span className="storage-hint">
+      {labels.join(" | ")}
+    </span>
+  );
+}
+
+function getVideoMetadata(video: HistoryVideo) {
+  if (!video.metadata || typeof video.metadata !== "object" || Array.isArray(video.metadata)) {
+    return {} as Record<string, unknown>;
+  }
+  return video.metadata as Record<string, unknown>;
+}
+
+function getStorageLabels(video: HistoryVideo) {
+  const metadata = getVideoMetadata(video);
+  const labels: string[] = [];
+
+  if (metadata.storageMode === "s3") labels.push("Original: R2");
+  if (metadata.storageMode === "local") labels.push("Original: Local");
+
+  if (typeof metadata.processedObjectKey === "string" || typeof metadata.annotatedObjectKey === "string") {
+    labels.push("Processed: R2");
+  } else if (typeof metadata.processedLocalPath === "string" || typeof metadata.annotatedLocalPath === "string") {
+    labels.push("Processed: Local");
+  } else if (video.status === "COMPLETED") {
+    labels.push("Processed: Missing");
+  }
+
+  return labels;
+}
+
+function getProcessedMissingWarning(video: HistoryVideo) {
+  const metadata = getVideoMetadata(video);
+  const warnings = getResilienceWarnings(video);
+  const hasProcessedRemote = typeof metadata.processedObjectKey === "string" || typeof metadata.annotatedObjectKey === "string";
+  const hasProcessedLocal = typeof metadata.processedLocalPath === "string" || typeof metadata.annotatedLocalPath === "string";
+  if (warnings.includes("PROCESSED_VIDEO_MISSING")) return "Video file missing.";
+  if (video.status !== "COMPLETED") return "";
+  return hasProcessedRemote || hasProcessedLocal ? "" : "Processed video location not found.";
+}
+
+function getVideoPlaceholderMessage(video: HistoryVideo) {
+  const missingWarning = getProcessedMissingWarning(video);
+  const warnings = getResilienceWarnings(video);
+  if (missingWarning) return missingWarning;
+  if (warnings.includes("ANALYSIS_INTERRUPTED")) return "Analysis was interrupted.";
+  if (video.status === "FAILED" && !video.latestJob?.error) return "Analysis was interrupted.";
+  if (video.latestJob?.error) return video.latestJob.error;
+  if (video.latestJob) return `Analizando video... (${getVideoProgress(video)}%)`;
+  return "El worker generará el video anotado y las métricas.";
+}
+
+function getResilienceWarnings(video: HistoryVideo) {
+  const metadata = getVideoMetadata(video);
+  const raw = metadata.resilienceWarnings;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is string => typeof item === "string");
+}
+
+function pushCompletionStorageToast(
+  video: HistoryVideo,
+  pushToast: (message: string, options?: { tone?: "success" | "info" | "warning"; durationMs?: number; dedupeKey?: string; sound?: boolean }) => void,
+) {
+  const warning = getProcessedMissingWarning(video);
+  if (warning) {
+    pushToast("Analysis completed but processed video not found in R2/local storage.", {
+      tone: "warning",
+      dedupeKey: `${video.id}:processed-missing`,
+      durationMs: 9000,
+    });
+    return;
+  }
+
+  const labels = getStorageLabels(video);
+  if (labels.includes("Processed: R2")) {
+    pushToast("Analysis completed and processed video stored in Cloudflare R2.", {
+      tone: "success",
+      dedupeKey: `${video.id}:processed-r2`,
+      durationMs: 9000,
+    });
+  } else if (labels.includes("Processed: Local")) {
+    pushToast("Analysis completed. Processed video is only in local storage.", {
+      tone: "warning",
+      dedupeKey: `${video.id}:processed-local`,
+      durationMs: 9000,
+    });
+  }
 }
 
 function getVideoProgress(video: HistoryVideo) {

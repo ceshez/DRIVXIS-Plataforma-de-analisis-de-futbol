@@ -93,6 +93,32 @@ Para produccion, agregar tambien tu dominio:
    - metricas: `users/{userId}/analysis/{videoId}/metrics.json`
 7. La app muestra el video procesado usando el endpoint interno de stream.
 
+## 5.1 Cuotas por usuario
+
+- Cada usuario tiene `storageLimitBytes` y `storageUsedBytes`.
+- La cuota se valida en backend antes de generar presign y se revalida al registrar metadata.
+- Si se excede, la API responde `403 Storage limit exceeded`.
+- La cuota del frontend es solo lectura (`/api/storage/usage`); el cliente no la puede editar.
+
+## 5.2 Contabilidad de uso
+
+- Al registrar video original se suma `sizeBytes`.
+- El worker sube `processed.mp4` y `metrics.json` a R2 y guarda:
+  - `processedObjectKey`
+  - `latestMetricsObjectKey`
+  - `processedSizeBytes`
+  - `metricsSizeBytes`
+- En reanalisis, se aplica delta para evitar doble conteo.
+
+## 5.3 Eliminacion remota
+
+- Al eliminar un video, la app intenta borrar en R2:
+  - objeto original
+  - objeto procesado/anotado
+  - objeto de metricas
+- Si la eliminacion remota falla, la API no elimina el registro en DB (consistencia primero).
+- Despues de eliminar correctamente, se descuenta cuota del usuario.
+
 ## 6. Verificacion
 
 ```bash
@@ -102,6 +128,21 @@ npm run build
 npm run analysis:worker -- --once
 ```
 
+## 6.1 Prueba manual con presigned URL (debug local)
+
+1. Genera una presigned URL desde la app (`POST /api/videos/presign`).
+2. Usala solo para debugging local y no la compartas ni la subas al repo.
+3. Prueba el PUT con `curl`:
+
+```bash
+curl -X PUT "PRESIGNED_URL" -H "Content-Type: video/mp4" --data-binary @sample.mp4
+```
+
+Interpretacion rapida:
+
+- Si `curl` funciona pero el navegador falla, el problema suele ser CORS o headers del browser.
+- Si `curl` falla con `403`, suele ser firma (`SignatureDoesNotMatch`), `Content-Type` distinto, credenciales, endpoint o bucket.
+
 ## 7. Notas importantes
 
 - R2 no reemplaza PostgreSQL.
@@ -109,3 +150,4 @@ npm run analysis:worker -- --once
 - R2 guarda archivos pesados: videos originales y videos procesados.
 - El endpoint interno `/api/videos/:id/stream` sigue protegiendo el acceso con sesion.
 - No hace falta hacer publico el bucket para que la app funcione.
+- La cuota de storage nunca se confia al frontend.

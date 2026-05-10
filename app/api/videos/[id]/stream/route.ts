@@ -46,15 +46,20 @@ export async function GET(request: Request, context: RouteContext) {
   const remoteObjectKey = variant === "source" ? sourceObjectKey : processedObjectKey;
   const contentType = variant === "source" ? video.mimeType : "video/mp4";
   const range = request.headers.get("range");
+  let remoteError: { code: string; message: string } | null = null;
 
-  if (remoteObjectKey && isStorageConfigured()) {
-    try {
-      return await streamRemoteObject(remoteObjectKey, contentType, range);
-    } catch {
-      if (variant === "processed") {
-        return NextResponse.json({ error: "El video procesado todavía no está disponible en storage." }, { status: 404 });
+  if (remoteObjectKey) {
+    if (isStorageConfigured()) {
+      try {
+        return await streamRemoteObject(remoteObjectKey, contentType, range);
+      } catch (error) {
+        remoteError = describeRemoteError(error);
       }
-      // If source storage fails, continue with local fallback below.
+    } else {
+      remoteError = {
+        code: "STORAGE_NOT_CONFIGURED",
+        message: "Storage remoto no configurado.",
+      };
     }
   }
 
@@ -64,21 +69,41 @@ export async function GET(request: Request, context: RouteContext) {
       : typeof metadata.annotatedLocalPath === "string"
         ? metadata.annotatedLocalPath
         : "";
+  const resolvedSourcePath = resolveSourceLocalPath(metadata, video.objectKey);
   const filePath =
     variant === "source"
-      ? typeof metadata.sourceLocalPath === "string"
-        ? metadata.sourceLocalPath
-        : getLocalObjectPath(video.objectKey)
+      ? resolvedSourcePath
       : processedPath;
 
   if (!filePath) {
-    return NextResponse.json({ error: "El video procesado todavía no está disponible." }, { status: 404 });
+    return getMissingFileResponse({
+      variant,
+      remoteObjectKey,
+      remoteError,
+    });
   }
 
   try {
     return await streamLocalFile(filePath, contentType, range);
   } catch {
-    return NextResponse.json({ error: "No encontramos el archivo local del video." }, { status: 404 });
+    if (variant === "source") {
+      if (remoteError) {
+        return streamErrorResponse(404, "SOURCE_VIDEO_MISSING", "No encontramos el video fuente en storage remoto ni local.", {
+          remoteError: remoteError.message,
+        });
+      }
+      return streamErrorResponse(404, "SOURCE_VIDEO_MISSING_LOCAL", "No encontramos el video fuente local.");
+    }
+
+    if (remoteError) {
+      return streamErrorResponse(
+        404,
+        "PROCESSED_VIDEO_MISSING",
+        "El video procesado no esta disponible en Cloudflare R2/storage remoto ni local.",
+        { remoteError: remoteError.message },
+      );
+    }
+    return streamErrorResponse(404, "PROCESSED_VIDEO_MISSING_LOCAL", "El video procesado no existe en almacenamiento local.");
   }
 }
 
@@ -144,4 +169,82 @@ async function streamLocalFile(filePath: string, contentType: string, range: str
       "content-type": contentType,
     },
   });
+}
+
+function streamErrorResponse(status: number, code: string, error: string, details?: Record<string, string>) {
+  return NextResponse.json(
+    {
+      error,
+      code,
+      ...(details ? { details } : {}),
+    },
+    { status },
+  );
+}
+
+function describeRemoteError(error: unknown) {
+  const message = error instanceof Error ? error.message : "No se pudo leer el objeto remoto.";
+  const storageError = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+  const status = storageError?.$metadata?.httpStatusCode || 0;
+  const name = storageError?.name || "";
+
+  if (message.includes("Storage S3 no est")) {
+    return { code: "STORAGE_NOT_CONFIGURED", message: "Storage remoto no configurado." };
+  }
+  if (name === "NoSuchKey" || status === 404) {
+    return { code: "REMOTE_OBJECT_NOT_FOUND", message: "Objeto remoto no encontrado en Cloudflare R2/storage." };
+  }
+  if (name === "AccessDenied" || status === 401 || status === 403) {
+    return { code: "REMOTE_ACCESS_DENIED", message: "Storage remoto rechazo el acceso (401/403)." };
+  }
+
+  return { code: "REMOTE_STREAM_FAILED", message: message.slice(0, 260) };
+}
+
+function getMissingFileResponse({
+  variant,
+  remoteObjectKey,
+  remoteError,
+}: {
+  variant: "source" | "processed";
+  remoteObjectKey: string;
+  remoteError: { code: string; message: string } | null;
+}) {
+  if (variant === "source") {
+    if (remoteObjectKey && remoteError) {
+      return streamErrorResponse(404, "SOURCE_VIDEO_MISSING", "No encontramos el video fuente en Cloudflare R2/storage remoto ni local.", {
+        remoteError: remoteError.message,
+      });
+    }
+    return streamErrorResponse(404, "SOURCE_VIDEO_MISSING_LOCAL", "No encontramos el video fuente local.");
+  }
+
+  if (!remoteObjectKey) {
+    return streamErrorResponse(404, "PROCESSED_VIDEO_LOCATION_NOT_FOUND", "Processed video location not found.");
+  }
+  if (remoteError?.code === "STORAGE_NOT_CONFIGURED") {
+    return streamErrorResponse(
+      404,
+      "PROCESSED_STORAGE_NOT_CONFIGURED",
+      "Storage remoto no esta configurado y no hay copia local del video procesado.",
+    );
+  }
+  if (remoteError?.code === "REMOTE_OBJECT_NOT_FOUND") {
+    return streamErrorResponse(404, "PROCESSED_REMOTE_OBJECT_NOT_FOUND", "El video procesado no fue encontrado en Cloudflare R2/storage remoto.");
+  }
+  if (remoteError) {
+    return streamErrorResponse(502, "PROCESSED_REMOTE_STREAM_FAILED", "No se pudo leer el video procesado desde storage remoto.", {
+      remoteError: remoteError.message,
+    });
+  }
+  return streamErrorResponse(404, "PROCESSED_VIDEO_MISSING_LOCAL", "El video procesado no existe en almacenamiento local.");
+}
+
+function resolveSourceLocalPath(metadata: Record<string, unknown>, objectKey: string) {
+  if (typeof metadata.sourceLocalPath === "string") return metadata.sourceLocalPath;
+  try {
+    return getLocalObjectPath(objectKey);
+  } catch {
+    return "";
+  }
 }

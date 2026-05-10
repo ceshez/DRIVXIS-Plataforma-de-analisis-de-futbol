@@ -2065,6 +2065,14 @@ svg {
   font-size: 0.78rem;
 }
 
+.storage-hint {
+  display: block;
+  color: rgba(255, 193, 95, 0.82) !important;
+  font-size: 0.66rem !important;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
 .status-pill {
   display: inline-flex;
   flex: 0 0 auto;
@@ -2137,6 +2145,13 @@ svg {
 
 .security-line svg {
   color: var(--accent);
+}
+
+.storage-diagnostics {
+  display: grid;
+  gap: var(--space-sm);
+  margin-top: var(--space-lg);
+  padding: var(--space-lg);
 }
 
 .upload-console {
