@@ -21,6 +21,7 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
   const [nonce, setNonce] = useState(avatarVersion || "0");
   const [hasServerAvatar, setHasServerAvatar] = useState(hasAvatar);
   const initials = useMemo(() => (name.trim() || email.trim() || "U").charAt(0).toUpperCase(), [email, name]);
+  const fileInputId = "profile-avatar-input";
 
   const currentAvatarUrl = useMemo(
     () => (hasServerAvatar ? `/api/profile/avatar?v=${encodeURIComponent(nonce)}` : ""),
@@ -57,7 +58,7 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
       return;
     }
     if (!selectedFile.size || selectedFile.size > MAX_AVATAR_BYTES) {
-      setError("La imagen supera el límite de 2MB.");
+      setError("La imagen supera el limite de 2MB.");
       return;
     }
 
@@ -95,32 +96,35 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
       setMessage("Imagen de perfil actualizada.");
       window.dispatchEvent(new CustomEvent("drivxis:avatar-updated", { detail: { updatedAt } }));
     } catch {
-      setError("No se pudo subir la imagen. Revisa tu conexión.");
+      setError("No se pudo subir la imagen. Revisa tu conexion.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <section className="profile-avatar-card lab-panel">
-      <div className="profile-avatar-card__preview">
-        {previewUrl ? (
-          <img src={previewUrl} alt="Vista previa del avatar" />
-        ) : currentAvatarUrl ? (
-          <img src={currentAvatarUrl} alt="Avatar actual" />
-        ) : (
-          <span>{initials}</span>
-        )}
+    <section className="profile-editor lab-panel">
+      <div className="profile-editor__avatar-wrap">
+        <label className="profile-editor__avatar-button" htmlFor={fileInputId} aria-label="Actualizar foto de perfil">
+          {previewUrl ? (
+            <img src={previewUrl} alt="Vista previa del avatar" />
+          ) : currentAvatarUrl ? (
+            <img src={currentAvatarUrl} alt="Avatar actual" />
+          ) : (
+            <span>{initials}</span>
+          )}
+          <span className="profile-editor__avatar-overlay">
+            <i aria-hidden="true">+</i>
+            <b>Actualizar foto de perfil</b>
+          </span>
+        </label>
+        <p className="profile-editor__avatar-help">JPG, PNG o WEBP hasta 2MB.</p>
       </div>
 
-      <div className="profile-avatar-card__copy">
-        <strong>Imagen de perfil</strong>
-        <p>Formatos permitidos: JPG, PNG, WEBP. Tamaño máximo: 2MB.</p>
-      </div>
-
-      <label className="button ghost profile-avatar-card__input">
+      <label className="profile-editor__input-shell" htmlFor={fileInputId}>
         Seleccionar imagen
         <input
+          id={fileInputId}
           type="file"
           accept={ALLOWED_TYPES.join(",")}
           onChange={(event) => onSelectFile(event.target.files?.[0] || null)}
@@ -128,12 +132,24 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
         />
       </label>
 
-      <button className="button primary" type="button" onClick={() => void uploadAvatar()} disabled={loading || !selectedFile}>
+      <div className="profile-editor__fields">
+        <label>
+          <span>Nombre</span>
+          <input type="text" value={name} readOnly aria-readonly="true" />
+        </label>
+        <label>
+          <span>Correo</span>
+          <input type="email" value={email} readOnly aria-readonly="true" />
+        </label>
+      </div>
+
+      <button className="button primary profile-editor__save" type="button" onClick={() => void uploadAvatar()} disabled={loading || !selectedFile}>
         {loading ? "Subiendo..." : "Guardar avatar"}
       </button>
 
-      {message ? <p className="profile-avatar-card__message profile-avatar-card__message--success">{message}</p> : null}
-      {error ? <p className="profile-avatar-card__message profile-avatar-card__message--error">{error}</p> : null}
+      <p className="profile-editor__note">Mas opciones de perfil estaran disponibles proximamente.</p>
+      {message ? <p className="profile-editor__message profile-editor__message--success">{message}</p> : null}
+      {error ? <p className="profile-editor__message profile-editor__message--error">{error}</p> : null}
     </section>
   );
 }

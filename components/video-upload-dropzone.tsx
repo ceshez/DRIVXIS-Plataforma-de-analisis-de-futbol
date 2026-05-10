@@ -294,7 +294,6 @@ export function VideoUploadDropzone({
         <div className="analysis-upload__note">
           <Film size={14} />
           <span>{message}</span>
-          {presignDiagnostic ? <small className="storage-hint">{presignDiagnostic}</small> : null}
         </div>
       ) : null}
     </div>
@@ -342,4 +341,3 @@ async function readSafeResponseText(response: Response) {
   const rawText = await response.text().catch(() => "");
   return rawText.replace(/\s+/g, " ").trim().slice(0, 180);
 }
-

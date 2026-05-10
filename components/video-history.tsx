@@ -258,9 +258,6 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
             </div>
             {selected ? <span className={`status-pill ${selected.status.toLowerCase()}`}>{formatStatus(selected.status)}</span> : null}
           </div>
-          <p className="history-muted">
-            Local folders may still be used temporarily by the analysis worker, but the main stored video is in R2 when storageMode is s3.
-          </p>
 
           {selected ? (
             <>
@@ -431,13 +428,8 @@ function formatVideoOpponent(video: HistoryVideo) {
 }
 
 function StorageStatusInline({ video }: { video: HistoryVideo }) {
-  const labels = getStorageLabels(video);
-  if (!labels.length) return null;
-  return (
-    <span className="storage-hint">
-      {labels.join(" | ")}
-    </span>
-  );
+  void video;
+  return null;
 }
 
 function getVideoMetadata(video: HistoryVideo) {

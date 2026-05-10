@@ -1,5 +1,5 @@
+import { Bot, Clock3, Gauge, HardDrive, TriangleAlert, Video, Activity } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard-header";
-import { AnnotationLine, MicroGrid } from "@/components/micro-graphics";
 import { UserProfileMenu } from "@/components/user-profile-menu";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -26,65 +26,87 @@ export default async function UsagePage() {
         }
       />
 
-      <section className="dashboard-command dashboard-command--compact">
-        <MicroGrid />
-        <div className="dashboard-command__copy">
-          <AnnotationLine label="uso" value="RECURSOS / CUOTAS" />
-          <h1>Uso</h1>
-          <p>
-            Vista preliminar del uso de almacenamiento, videos y tokens del bot.
-          </p>
-        </div>
-      </section>
-
-      <section className="lab-panel storage-diagnostics">
-        <div className="panel-heading">
-          <div>
-            <span>Cuota</span>
-            <h2>Uso de almacenamiento</h2>
+      <section className="usage-page">
+        <header className="usage-page__header">
+          <div className="usage-page__title">
+            <Gauge size={14} />
+            <h1>Uso</h1>
           </div>
-        </div>
-        <p className="history-muted">
-          Usado: {formatBytes(usage.storage.usedBytes)} / Límite: {formatBytes(usage.storage.limitBytes)} / Disponible: {formatBytes(usage.storage.remainingBytes)}
-        </p>
-        <span className="analysis-upload__progress" aria-label={`Uso ${Math.round(usage.storage.percentUsed)}%`}>
-          <span style={{ width: `${Math.max(0, Math.min(100, usage.storage.percentUsed))}%` }} />
-        </span>
-        {usage.storage.percentUsed >= 90 ? (
-          <p className="storage-hint">Estás cerca de tu límite de almacenamiento.</p>
-        ) : null}
-      </section>
+          <p>Monitorea el consumo de tu cuenta dentro de DRIVXIS.</p>
+        </header>
 
-      <section className="history-stat-grid">
-        <article className="stat-cell history-stat">
-          <span>Videos subidos</span>
-          <strong>
-            {usage.videoCount}
-            <small>total</small>
-          </strong>
-          <span className="history-muted">Conteo global de videos registrados.</span>
-        </article>
+        <section className={`usage-storage ${getStorageToneClass(usage.storage.percentUsed)}`}>
+          <div className="usage-storage__top">
+            <div>
+              <span>Almacenamiento</span>
+              <h2>
+                {formatBytes(usage.storage.usedBytes)} usados de {formatBytes(usage.storage.limitBytes)}
+              </h2>
+            </div>
+            <HardDrive size={16} />
+          </div>
 
-        <article className="stat-cell history-stat">
-          <span>Tokens del bot</span>
-          <strong>
-            --
-            <small>próximamente</small>
-          </strong>
-          <span className="history-muted">Este módulo se habilitará en una fase posterior.</span>
-        </article>
+          <span className="usage-storage__progress" aria-label={`Uso ${Math.round(usage.storage.percentUsed)}%`}>
+            <span style={{ width: `${Math.max(0, Math.min(100, usage.storage.percentUsed))}%` }} />
+          </span>
+
+          <div className="usage-storage__meta" aria-label="Detalle de almacenamiento">
+            <article>
+              <small>Usado</small>
+              <strong>{formatBytes(usage.storage.usedBytes)}</strong>
+            </article>
+            <article>
+              <small>Disponible</small>
+              <strong>{formatBytes(usage.storage.remainingBytes)}</strong>
+            </article>
+            <article>
+              <small>Limite</small>
+              <strong>{formatBytes(usage.storage.limitBytes)}</strong>
+            </article>
+          </div>
+
+          {usage.storage.percentUsed >= 100 ? <p className="usage-storage__warning">Has alcanzado tu limite de almacenamiento.</p> : null}
+          {usage.storage.percentUsed >= 90 && usage.storage.percentUsed < 100 ? (
+            <p className="usage-storage__warning">Estas cerca de tu limite de almacenamiento.</p>
+          ) : null}
+        </section>
+
+        <section className="usage-videos">
+          <div className="usage-videos__heading">
+            <h2>Videos</h2>
+          </div>
+          <div className="usage-videos__grid">
+            <MetricCard icon={<Video size={15} />} label="Videos subidos" value={usage.videos.total} />
+            <MetricCard icon={<Activity size={15} />} label="Analizados" value={usage.videos.analyzed} />
+            <MetricCard icon={<Clock3 size={15} />} label="En proceso" value={usage.videos.processing} />
+            <MetricCard icon={<TriangleAlert size={15} />} label="Fallidos" value={usage.videos.failed} />
+          </div>
+        </section>
+
+        <section className="usage-bot">
+          <div className="usage-bot__title">
+            <Bot size={15} />
+            <h2>Tokens del bot</h2>
+            <span>Proximamente</span>
+          </div>
+          <p>Aqui podras ver el consumo de asistencia inteligente dentro de DRIVXIS.</p>
+        </section>
       </section>
     </main>
   );
 }
 
 async function getUsage(userId: string) {
-  const [dbUser, videoCount] = await Promise.all([
+  const [dbUser, total, analyzed, processingQueued, processingRunning, failed] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: { storageUsedBytes: true, storageLimitBytes: true },
     }),
     prisma.video.count({ where: { ownerId: userId } }),
+    prisma.video.count({ where: { ownerId: userId, status: "COMPLETED" } }),
+    prisma.video.count({ where: { ownerId: userId, status: "PENDING_ANALYSIS" } }),
+    prisma.video.count({ where: { ownerId: userId, status: "PROCESSING" } }),
+    prisma.video.count({ where: { ownerId: userId, status: "FAILED" } }),
   ]);
 
   const storage = dbUser
@@ -98,8 +120,31 @@ async function getUsage(userId: string) {
       remainingBytes: storage.remainingBytes,
       percentUsed: storage.percentUsed,
     },
-    videoCount,
+    videos: {
+      total,
+      analyzed,
+      processing: processingQueued + processingRunning,
+      failed,
+    },
   };
+}
+
+function MetricCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+  return (
+    <article className="usage-metric">
+      <div className="usage-metric__top">
+        <span>{icon}</span>
+        <small>{label}</small>
+      </div>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function getStorageToneClass(percentUsed: number) {
+  if (percentUsed >= 100) return "is-danger";
+  if (percentUsed >= 90) return "is-warning";
+  return "is-normal";
 }
 
 function formatBytes(value: string) {
@@ -119,4 +164,3 @@ function formatBytes(value: string) {
   }
   return `${amount.toFixed(amount >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
-
