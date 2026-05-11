@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Activity, CheckCircle2, Film, History, Loader2, ScanLine, Shield, Upload } from "lucide-react";
-import { getMetricDisplay, type AnalysisMetrics } from "@/lib/analysis-metrics";
+import { type AnalysisMetrics } from "@/lib/analysis-metrics";
 import { AnalysisVideoPlayer } from "@/components/analysis-video-player";
 import { ToastViewport, useAppToasts } from "@/components/app-toast";
 import { MatchColorEditor } from "@/components/match-color-editor";
@@ -34,6 +34,31 @@ type MatchInfo = {
   rivalTeam?: string;
   ownTeamColor?: string;
   rivalTeamColor?: string;
+};
+
+type TeamColorAssignment = {
+  ownTeamColor: string | null;
+  rivalTeamColor: string | null;
+  isSwapped: boolean;
+};
+
+type MatchMetricConfig = {
+  id: string;
+  label: string;
+  unit: string;
+  valueTarget: number;
+  barTarget: number;
+  color?: string;
+  formatValue: (value: number) => string;
+};
+
+type BottomStatConfig = {
+  id: string;
+  label: string;
+  unit: string;
+  valueTarget: number;
+  barTarget: number;
+  formatValue: (value: number) => string;
 };
 
 type DashboardExperienceProps = {
@@ -84,15 +109,81 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
   const featured = items.find((video) => video.id === activeId) ?? items[0] ?? null;
   const metrics = featured?.latestMetrics ?? null;
   const matchInfo = getVideoMatchInfo(featured);
+  const colorAssignment = useMemo(() => resolveTeamColorAssignment(matchInfo, metrics), [matchInfo, metrics]);
   const ownTeamName = metrics?.match?.ownTeam ?? matchInfo.ownTeam ?? "Equipo 1";
   const rivalTeamName = metrics?.match?.rivalTeam ?? matchInfo.rivalTeam ?? "Equipo 2";
-  const ownGoals = metrics?.match?.ownGoals ?? 0;
-  const rivalGoals = metrics?.match?.rivalGoals ?? 0;
-  const display = getMetricDisplay(metrics);
-  const bottomStats = buildBottomStats(metrics);
-  const ownDistanceKm = getOwnDistanceKm(metrics);
-  const rivalDistanceKm = getRivalDistanceKm(metrics);
-  const radarData = useMemo(() => buildRadar(metrics), [metrics]);
+  const rawOwnGoals = metrics?.match?.ownGoals ?? 0;
+  const rawRivalGoals = metrics?.match?.rivalGoals ?? 0;
+  const ownGoals = colorAssignment.isSwapped ? rawRivalGoals : rawOwnGoals;
+  const rivalGoals = colorAssignment.isSwapped ? rawOwnGoals : rawRivalGoals;
+  const rawOwnPossession = metrics?.ballControl?.ownTeam ?? metrics?.possession.team1Pct ?? 0;
+  const rawRivalPossession = metrics?.ballControl?.rivalTeam ?? metrics?.possession.team2Pct ?? 0;
+  const mappedPossession = mapByColorAssignment(rawOwnPossession, rawRivalPossession, colorAssignment.isSwapped);
+  const ownPossession = mappedPossession.own;
+  const rivalPossession = mappedPossession.rival;
+  const rawOwnDistanceKm = getOwnDistanceKm(metrics);
+  const rawRivalDistanceKm = getRivalDistanceKm(metrics);
+  const mappedDistance = mapByColorAssignment(rawOwnDistanceKm, rawRivalDistanceKm, colorAssignment.isSwapped);
+  const ownDistanceKm = mappedDistance.own;
+  const rivalDistanceKm = mappedDistance.rival;
+  const hasCompletedMetrics = Boolean(featured && featured.status === "COMPLETED" && metrics);
+  const metricAnimationSeed = [
+    featured?.id ?? "no-video",
+    featured?.status ?? "no-status",
+    featured?.updatedAt ?? "no-updated-at",
+    ownTeamName,
+    rivalTeamName,
+    colorAssignment.ownTeamColor ?? "no-own-color",
+    colorAssignment.rivalTeamColor ?? "no-rival-color",
+    colorAssignment.isSwapped ? "swapped" : "normal",
+    ownPossession.toFixed(3),
+    rivalPossession.toFixed(3),
+    ownDistanceKm.toFixed(3),
+    rivalDistanceKm.toFixed(3),
+  ].join("|");
+  const matchMetrics: MatchMetricConfig[] = [
+    {
+      id: "own-control",
+      label: `Control ${ownTeamName}`,
+      unit: "%",
+      valueTarget: ownPossession,
+      barTarget: ownPossession,
+      color: colorAssignment.ownTeamColor ?? undefined,
+      formatValue: formatPercentMetric,
+    },
+    {
+      id: "rival-control",
+      label: `Control ${rivalTeamName}`,
+      unit: "%",
+      valueTarget: rivalPossession,
+      barTarget: rivalPossession,
+      color: colorAssignment.rivalTeamColor ?? undefined,
+      formatValue: formatPercentMetric,
+    },
+    {
+      id: "own-distance",
+      label: `Dist. ${ownTeamName}`,
+      unit: "km",
+      valueTarget: ownDistanceKm,
+      barTarget: Math.min(92, ownDistanceKm * 10),
+      color: colorAssignment.ownTeamColor ?? undefined,
+      formatValue: formatKm,
+    },
+    {
+      id: "rival-distance",
+      label: `Dist. ${rivalTeamName}`,
+      unit: "km",
+      valueTarget: rivalDistanceKm,
+      barTarget: Math.min(92, rivalDistanceKm * 10),
+      color: colorAssignment.rivalTeamColor ?? undefined,
+      formatValue: formatKm,
+    },
+  ];
+  const bottomStats = buildBottomStats(ownPossession, rivalPossession, ownDistanceKm, rivalDistanceKm);
+  const radarData = useMemo(
+    () => buildRadar(ownPossession, rivalPossession, ownDistanceKm, rivalDistanceKm),
+    [ownDistanceKm, ownPossession, rivalDistanceKm, rivalPossession],
+  );
   const stepIndex = getStepIndex(featured?.status, featured?.latestJob?.status);
   const activeProgress = getVideoProgress(featured);
   const hasProcessingVideo = items.some(isVideoProcessing);
@@ -264,13 +355,13 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
 
         <aside className="match-panel">
           <CornerMarks size={12} opacity={0.35} />
-          <div className="score-card" title={`${ownTeamName}: ${display.possession}% / ${rivalTeamName}: ${display.rivalPossession}%`}>
+          <div className="score-card" title={`${ownTeamName}: ${ownPossession.toFixed(1)}% / ${rivalTeamName}: ${rivalPossession.toFixed(1)}%`}>
             <div>
               <span className="score-card__team-label">
-                {matchInfo.ownTeamColor ? <i style={{ background: matchInfo.ownTeamColor }} /> : null}
+                {colorAssignment.ownTeamColor ? <i style={{ background: colorAssignment.ownTeamColor }} /> : null}
                 {ownTeamName}
               </span>
-              <strong>{display.possession}%</strong>
+              <strong>{ownPossession.toFixed(1)}%</strong>
             </div>
             <div className="score-card__score">
               <b>{ownGoals}</b>
@@ -279,44 +370,23 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
             </div>
             <div>
               <span className="score-card__team-label">
-                {matchInfo.rivalTeamColor ? <i style={{ background: matchInfo.rivalTeamColor }} /> : null}
+                {colorAssignment.rivalTeamColor ? <i style={{ background: colorAssignment.rivalTeamColor }} /> : null}
                 {rivalTeamName}
               </span>
-              <strong>{display.rivalPossession}%</strong>
+              <strong>{rivalPossession.toFixed(1)}%</strong>
             </div>
           </div>
 
           <div className="player-stat-list">
             <h2>Métricas del partido</h2>
-            {[
-              { label: `Control ${ownTeamName}`, value: display.possession, unit: "%", bar: Number(display.possession) },
-              { label: `Control ${rivalTeamName}`, value: display.rivalPossession, unit: "%", bar: Number(display.rivalPossession) },
-              {
-                label: `Dist. ${ownTeamName}`,
-                value: formatKm(ownDistanceKm),
-                unit: "km",
-                bar: Math.min(92, ownDistanceKm * 10),
-              },
-              {
-                label: `Dist. ${rivalTeamName}`,
-                value: formatKm(rivalDistanceKm),
-                unit: "km",
-                bar: Math.min(92, rivalDistanceKm * 10),
-              },
-            ].map((stat) => (
-              <article className="player-stat" key={stat.label} title={`${stat.label}: ${stat.value}${stat.unit}`} aria-label={`${stat.label}: ${stat.value}${stat.unit}`}>
-                <div>
-                  <span>{stat.label}</span>
-                  <small>{featured ? formatStatus(featured.status) : "sin video"}</small>
-                </div>
-                <strong>
-                  {stat.value}
-                  {stat.unit ? <small>{stat.unit}</small> : null}
-                </strong>
-                <span className="meter">
-                  <span style={{ width: `${Math.max(0, Math.min(100, stat.bar))}%` }} />
-                </span>
-              </article>
+            {matchMetrics.map((metric) => (
+              <AnimatedMatchMetric
+                key={metric.id}
+                animationKey={`${metricAnimationSeed}|player|${metric.id}|${metric.valueTarget.toFixed(3)}|${metric.barTarget.toFixed(3)}|${metric.color ?? "default"}`}
+                isLoading={!hasCompletedMetrics}
+                metric={metric}
+                statusLabel={featured ? formatStatus(featured.status) : "sin video"}
+              />
             ))}
           </div>
 
@@ -338,17 +408,13 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
 
       <section className="stat-strip" aria-label="métricas del partido">
         {bottomStats.map((stat, index) => (
-          <article className="stat-cell" key={stat.label} title={`${stat.label}: ${stat.value}${stat.unit}`} aria-label={`${stat.label}: ${stat.value}${stat.unit}`}>
-            <span>{stat.label}</span>
-            <strong>
-              {stat.value}
-              <small>{stat.unit}</small>
-            </strong>
-            <span className="meter">
-              <span style={{ width: `${stat.bar}%` }} />
-            </span>
-            <b>{String(index + 1).padStart(2, "0")}</b>
-          </article>
+          <AnimatedBottomStat
+            key={stat.id}
+            animationKey={`${metricAnimationSeed}|strip|${stat.id}|${stat.valueTarget.toFixed(3)}|${stat.barTarget.toFixed(3)}`}
+            index={index}
+            isLoading={!hasCompletedMetrics}
+            stat={stat}
+          />
         ))}
       </section>
 
@@ -446,6 +512,179 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
   );
 }
 
+function AnimatedMetricBar({
+  percent,
+  color,
+  reducedMotion,
+  isLoading = false,
+}: {
+  percent: number;
+  color?: string;
+  reducedMotion?: boolean;
+  isLoading?: boolean;
+}) {
+  const displayPercent = isLoading ? 0 : Math.max(0, Math.min(100, Number.isFinite(percent) ? percent : 0));
+
+  return (
+    <span className={`meter ${isLoading ? "meter--loading" : ""}`} aria-hidden="true">
+      <span
+        className="meter__fill"
+        style={{
+          width: `${displayPercent}%`,
+          background: color ?? undefined,
+          transition: reducedMotion ? undefined : "none",
+        }}
+      />
+    </span>
+  );
+}
+
+function AnimatedMatchMetric({
+  metric,
+  statusLabel,
+  animationKey,
+  isLoading,
+}: {
+  metric: MatchMetricConfig;
+  statusLabel: string;
+  animationKey: string;
+  isLoading: boolean;
+}) {
+  const reducedMotion = usePrefersReducedMotion();
+  const { animatedValue, animatedBar } = useAnimatedMetricDisplay({
+    animationKey,
+    isLoading,
+    reducedMotion,
+    targetValue: metric.valueTarget,
+    targetBar: metric.barTarget,
+  });
+  const displayValue = metric.formatValue(animatedValue);
+
+  return (
+    <article className="player-stat" title={`${metric.label}: ${displayValue}${metric.unit}`} aria-label={`${metric.label}: ${displayValue}${metric.unit}`}>
+      <div>
+        <span>{metric.label}</span>
+        <small>{statusLabel}</small>
+      </div>
+      <strong>
+        {displayValue}
+        {metric.unit ? <small>{metric.unit}</small> : null}
+      </strong>
+      <AnimatedMetricBar color={metric.color} isLoading={isLoading} percent={animatedBar} reducedMotion={reducedMotion} />
+    </article>
+  );
+}
+
+function AnimatedBottomStat({
+  stat,
+  index,
+  animationKey,
+  isLoading,
+}: {
+  stat: BottomStatConfig;
+  index: number;
+  animationKey: string;
+  isLoading: boolean;
+}) {
+  const reducedMotion = usePrefersReducedMotion();
+  const { animatedValue, animatedBar } = useAnimatedMetricDisplay({
+    animationKey,
+    isLoading,
+    reducedMotion,
+    targetValue: stat.valueTarget,
+    targetBar: stat.barTarget,
+  });
+  const displayValue = stat.formatValue(animatedValue);
+
+  return (
+    <article className="stat-cell" title={`${stat.label}: ${displayValue}${stat.unit}`} aria-label={`${stat.label}: ${displayValue}${stat.unit}`}>
+      <span>{stat.label}</span>
+      <strong>
+        {displayValue}
+        <small>{stat.unit}</small>
+      </strong>
+      <AnimatedMetricBar isLoading={isLoading} percent={animatedBar} reducedMotion={reducedMotion} />
+      <b>{String(index + 1).padStart(2, "0")}</b>
+    </article>
+  );
+}
+
+function useAnimatedMetricDisplay({
+  targetValue,
+  targetBar,
+  animationKey,
+  isLoading,
+  reducedMotion,
+}: {
+  targetValue: number;
+  targetBar: number;
+  animationKey: string;
+  isLoading: boolean;
+  reducedMotion: boolean;
+}) {
+  const safeValue = Math.max(0, Number.isFinite(targetValue) ? targetValue : 0);
+  const safeBar = Math.max(0, Math.min(100, Number.isFinite(targetBar) ? targetBar : 0));
+  const [state, setState] = useState<{ animatedValue: number; animatedBar: number }>({ animatedValue: 0, animatedBar: 0 });
+
+  useEffect(() => {
+    if (isLoading) {
+      setState({ animatedValue: 0, animatedBar: 0 });
+      return;
+    }
+
+    if (reducedMotion) {
+      setState({ animatedValue: safeValue, animatedBar: safeBar });
+      return;
+    }
+
+    const durationMs = 1100;
+    const start = performance.now();
+    let frame = 0;
+
+    setState({ animatedValue: 0, animatedBar: 0 });
+
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setState({
+        animatedValue: safeValue * eased,
+        animatedBar: safeBar * eased,
+      });
+      if (t < 1) {
+        frame = window.requestAnimationFrame(step);
+      }
+    };
+
+    frame = window.requestAnimationFrame(step);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [animationKey, isLoading, reducedMotion, safeBar, safeValue]);
+
+  return state;
+}
+
+function usePrefersReducedMotion() {
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(query.matches);
+    update();
+
+    if (typeof query.addEventListener === "function") {
+      query.addEventListener("change", update);
+      return () => query.removeEventListener("change", update);
+    }
+
+    query.addListener(update);
+    return () => query.removeListener(update);
+  }, []);
+
+  return reducedMotion;
+}
+
 function AnalysisProgressPanel({ video, progress }: { video: RecentVideo; progress: number }) {
   return (
     <div className="analysis-result-panel analysis-result-panel--processing">
@@ -528,30 +767,63 @@ function MissingProcessedOutputPanel({ video, onUploadAnother }: { video: Recent
   );
 }
 
-function buildBottomStats(metrics: AnalysisMetrics | null) {
-  const display = getMetricDisplay(metrics);
-  const ownDistanceKm = getOwnDistanceKm(metrics);
-  const rivalDistanceKm = getRivalDistanceKm(metrics);
-  const ownPossession = Number(display.possession) || 0;
-  const rivalPossession = Number(display.rivalPossession) || 0;
+function buildBottomStats(ownPossession: number, rivalPossession: number, ownDistanceKm: number, rivalDistanceKm: number): BottomStatConfig[] {
   const possessionGap = Math.abs(ownPossession - rivalPossession);
   const distanceGap = Math.abs(ownDistanceKm - rivalDistanceKm);
   return [
-    { label: "Posesión Eq. 1", value: display.possession, unit: "%", bar: Number(display.possession) || 0 },
-    { label: "Posesión Eq. 2", value: display.rivalPossession, unit: "%", bar: Number(display.rivalPossession) || 0 },
-    { label: "Dist. propio", value: formatKm(ownDistanceKm), unit: "km", bar: Math.min(100, ownDistanceKm * 10) },
-    { label: "Dist. rival", value: formatKm(rivalDistanceKm), unit: "km", bar: Math.min(100, rivalDistanceKm * 10) },
-    { label: "Dif. posesión", value: possessionGap.toFixed(1), unit: "pp", bar: Math.min(100, possessionGap) },
-    { label: "Dif. distancia", value: formatKm(distanceGap), unit: "km", bar: Math.min(100, distanceGap * 10) },
+    {
+      id: "strip-own-possession",
+      label: "Posesión Eq. 1",
+      unit: "%",
+      valueTarget: ownPossession,
+      barTarget: ownPossession || 0,
+      formatValue: formatPercentMetric,
+    },
+    {
+      id: "strip-rival-possession",
+      label: "Posesión Eq. 2",
+      unit: "%",
+      valueTarget: rivalPossession,
+      barTarget: rivalPossession || 0,
+      formatValue: formatPercentMetric,
+    },
+    {
+      id: "strip-own-distance",
+      label: "Dist. propio",
+      unit: "km",
+      valueTarget: ownDistanceKm,
+      barTarget: Math.min(100, ownDistanceKm * 10),
+      formatValue: formatKm,
+    },
+    {
+      id: "strip-rival-distance",
+      label: "Dist. rival",
+      unit: "km",
+      valueTarget: rivalDistanceKm,
+      barTarget: Math.min(100, rivalDistanceKm * 10),
+      formatValue: formatKm,
+    },
+    {
+      id: "strip-possession-gap",
+      label: "Dif. posesión",
+      unit: "pp",
+      valueTarget: possessionGap,
+      barTarget: Math.min(100, possessionGap),
+      formatValue: formatPercentMetric,
+    },
+    {
+      id: "strip-distance-gap",
+      label: "Dif. distancia",
+      unit: "km",
+      valueTarget: distanceGap,
+      barTarget: Math.min(100, distanceGap * 10),
+      formatValue: formatKm,
+    },
   ];
 }
 
-function buildRadar(metrics: AnalysisMetrics | null) {
-  if (!metrics) return radarFallback;
-  const ownPossession = metrics.ballControl?.ownTeam ?? metrics.possession.team1Pct;
-  const rivalPossession = metrics.ballControl?.rivalTeam ?? metrics.possession.team2Pct;
-  const ownDistanceKm = getOwnDistanceKm(metrics);
-  const rivalDistanceKm = getRivalDistanceKm(metrics);
+function buildRadar(ownPossession: number, rivalPossession: number, ownDistanceKm: number, rivalDistanceKm: number) {
+  if (!Number.isFinite(ownPossession) || !Number.isFinite(rivalPossession)) return radarFallback;
   const totalDistance = Math.max(ownDistanceKm + rivalDistanceKm, 1);
   const ownDistanceShare = (ownDistanceKm / totalDistance) * 100;
   const rivalDistanceShare = (rivalDistanceKm / totalDistance) * 100;
@@ -589,6 +861,45 @@ function buildRadar(metrics: AnalysisMetrics | null) {
       rivalValue: `${rivalTempo.toFixed(0)}/100`,
     },
   ];
+}
+
+function resolveTeamColorAssignment(matchInfo: MatchInfo, metrics: AnalysisMetrics | null): TeamColorAssignment {
+  const detectedOwn = normalizeHex(metrics?.match?.detectedTeamColors?.team1);
+  const detectedRival = normalizeHex(metrics?.match?.detectedTeamColors?.team2);
+  const configuredOwn = normalizeHex(matchInfo.ownTeamColor);
+  const configuredRival = normalizeHex(matchInfo.rivalTeamColor);
+
+  if (configuredOwn && configuredRival && detectedOwn && detectedRival) {
+    if (configuredOwn === detectedRival && configuredRival === detectedOwn) {
+      return { ownTeamColor: configuredOwn, rivalTeamColor: configuredRival, isSwapped: true };
+    }
+    return { ownTeamColor: configuredOwn, rivalTeamColor: configuredRival, isSwapped: false };
+  }
+
+  if (configuredOwn && configuredRival) {
+    return { ownTeamColor: configuredOwn, rivalTeamColor: configuredRival, isSwapped: false };
+  }
+
+  if (detectedOwn && detectedRival) {
+    return { ownTeamColor: detectedOwn, rivalTeamColor: detectedRival, isSwapped: false };
+  }
+
+  return {
+    ownTeamColor: normalizeHex(metrics?.match?.ownTeamColor) ?? null,
+    rivalTeamColor: normalizeHex(metrics?.match?.rivalTeamColor) ?? null,
+    isSwapped: false,
+  };
+}
+
+function normalizeHex(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : null;
+}
+
+function mapByColorAssignment(ownValue: number, rivalValue: number, isSwapped: boolean) {
+  if (!isSwapped) return { own: ownValue, rival: rivalValue };
+  return { own: rivalValue, rival: ownValue };
 }
 
 function GlobalRadarTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ dataKey?: string; payload?: Record<string, unknown> }>; label?: string }) {
@@ -737,6 +1048,11 @@ function pushCompletionStorageToast(
 function formatKm(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "0.00";
   return value >= 10 ? value.toFixed(1) : value.toFixed(2);
+}
+
+function formatPercentMetric(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0.0";
+  return value.toFixed(1);
 }
 
 function getStepIndex(videoStatus?: string, jobStatus?: string) {

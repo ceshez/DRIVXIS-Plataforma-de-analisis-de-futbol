@@ -1668,6 +1668,12 @@ svg {
   display: block;
   height: 100%;
   background: var(--accent);
+  transition: width 920ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: width;
+}
+
+.meter--loading {
+  background: rgba(242, 240, 238, 0.08);
 }
 
 .visual-section {
