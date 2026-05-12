@@ -288,8 +288,7 @@ export function DashboardExperience({ userName, videos, pollingEnabled = true }:
           <AnnotationLine label="módulo" value="DRIVXIS / ANÁLISIS IA" />
           <h1>Dashboard de análisis</h1>
           <p>
-            Hola, {userName}. Sube un partido desde la consola central y el worker generará video anotado,
-            control del balón y distancia agregada por equipo.
+            Bienvenido, {userName}.
           </p>
         </div>
         <div className="live-chip">

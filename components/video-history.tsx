@@ -6,7 +6,7 @@ import { BarChart3, Film, Loader2, MoreVertical, RotateCcw, Trash2 } from "lucid
 import { AnalysisVideoPlayer } from "@/components/analysis-video-player";
 import { ToastViewport, useAppToasts } from "@/components/app-toast";
 import { MatchColorEditor } from "@/components/match-color-editor";
-import { getMetricDisplay, type AnalysisMetrics } from "@/lib/analysis-metrics";
+import { type AnalysisMetrics } from "@/lib/analysis-metrics";
 
 export type HistoryVideo = {
   id: string;
@@ -31,6 +31,29 @@ type VideoHistoryProps = {
   initialVideos: HistoryVideo[];
 };
 
+type MatchInfo = {
+  ownTeam?: string;
+  rivalTeam?: string;
+  ownTeamColor?: string;
+  rivalTeamColor?: string;
+};
+
+type TeamColorAssignment = {
+  ownTeamColor: string | null;
+  rivalTeamColor: string | null;
+  isSwapped: boolean;
+};
+
+type HistoryMetricConfig = {
+  id: string;
+  label: string;
+  unit: string;
+  valueTarget: number;
+  barTarget: number;
+  color?: string;
+  formatValue: (value: number) => string;
+};
+
 export function VideoHistory({ initialVideos }: VideoHistoryProps) {
   const [videos, setVideos] = useState(initialVideos);
   const [selectedId, setSelectedId] = useState(initialVideos[0]?.id ?? "");
@@ -47,9 +70,74 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     () => videos.find((video) => video.id === deleteTargetId) ?? null,
     [deleteTargetId, videos],
   );
-  const display = getMetricDisplay(selected?.latestMetrics ?? null);
-  const ownDistanceKm = getOwnDistanceKm(selected?.latestMetrics ?? null);
-  const rivalDistanceKm = getRivalDistanceKm(selected?.latestMetrics ?? null);
+  const metrics = selected?.latestMetrics ?? null;
+  const matchInfo = getVideoMatchInfo(selected);
+  const colorAssignment = useMemo(() => resolveTeamColorAssignment(matchInfo, metrics), [matchInfo, metrics]);
+  const ownTeamName = metrics?.match?.ownTeam ?? matchInfo.ownTeam ?? "Equipo 1";
+  const rivalTeamName = metrics?.match?.rivalTeam ?? matchInfo.rivalTeam ?? "Equipo 2";
+  const rawOwnPossession = metrics?.ballControl?.ownTeam ?? metrics?.possession.team1Pct ?? 0;
+  const rawRivalPossession = metrics?.ballControl?.rivalTeam ?? metrics?.possession.team2Pct ?? 0;
+  const mappedPossession = mapByColorAssignment(rawOwnPossession, rawRivalPossession, colorAssignment.isSwapped);
+  const ownPossession = mappedPossession.own;
+  const rivalPossession = mappedPossession.rival;
+  const rawOwnDistanceKm = getOwnDistanceKm(metrics);
+  const rawRivalDistanceKm = getRivalDistanceKm(metrics);
+  const mappedDistance = mapByColorAssignment(rawOwnDistanceKm, rawRivalDistanceKm, colorAssignment.isSwapped);
+  const ownDistanceKm = mappedDistance.own;
+  const rivalDistanceKm = mappedDistance.rival;
+  const hasCompletedMetrics = Boolean(selected && selected.status === "COMPLETED" && metrics);
+  const metricAnimationSeed = [
+    selected?.id ?? "no-video",
+    selected?.status ?? "no-status",
+    selected?.updatedAt ?? "no-updated-at",
+    ownTeamName,
+    rivalTeamName,
+    colorAssignment.ownTeamColor ?? "no-own-color",
+    colorAssignment.rivalTeamColor ?? "no-rival-color",
+    colorAssignment.isSwapped ? "swapped" : "normal",
+    ownPossession.toFixed(3),
+    rivalPossession.toFixed(3),
+    ownDistanceKm.toFixed(3),
+    rivalDistanceKm.toFixed(3),
+  ].join("|");
+  const historyMetrics: HistoryMetricConfig[] = [
+    {
+      id: "own-control",
+      label: `Control ${ownTeamName}`,
+      unit: "%",
+      valueTarget: ownPossession,
+      barTarget: ownPossession,
+      color: colorAssignment.ownTeamColor ?? undefined,
+      formatValue: formatPercentMetric,
+    },
+    {
+      id: "rival-control",
+      label: `Control ${rivalTeamName}`,
+      unit: "%",
+      valueTarget: rivalPossession,
+      barTarget: rivalPossession,
+      color: colorAssignment.rivalTeamColor ?? undefined,
+      formatValue: formatPercentMetric,
+    },
+    {
+      id: "own-distance",
+      label: `Dist. ${ownTeamName}`,
+      unit: "km",
+      valueTarget: ownDistanceKm,
+      barTarget: Math.min(100, ownDistanceKm * 10),
+      color: colorAssignment.ownTeamColor ?? undefined,
+      formatValue: formatKm,
+    },
+    {
+      id: "rival-distance",
+      label: `Dist. ${rivalTeamName}`,
+      unit: "km",
+      valueTarget: rivalDistanceKm,
+      barTarget: Math.min(100, rivalDistanceKm * 10),
+      color: colorAssignment.rivalTeamColor ?? undefined,
+      formatValue: formatKm,
+    },
+  ];
 
   useEffect(() => {
     if (!selected && videos[0]) {
@@ -292,10 +380,14 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
               )}
 
               <div className="history-stat-grid">
-                <MetricTile label="Posesión Equipo 1" value={display.possession} unit="%" />
-                <MetricTile label="Posesión Equipo 2" value={display.rivalPossession} unit="%" />
-                <MetricTile label="Dist. equipo propio" value={formatKm(ownDistanceKm)} unit="km" />
-                <MetricTile label="Dist. equipo rival" value={formatKm(rivalDistanceKm)} unit="km" />
+                {historyMetrics.map((metric) => (
+                  <AnimatedMetricTile
+                    key={metric.id}
+                    animationKey={`${metricAnimationSeed}|history|${metric.id}|${metric.valueTarget.toFixed(3)}|${metric.barTarget.toFixed(3)}|${metric.color ?? "default"}`}
+                    isLoading={!hasCompletedMetrics}
+                    metric={metric}
+                  />
+                ))}
               </div>
 
               <button className="button ghost command-button" type="button" onClick={() => void retryAnalysis()} disabled={retrying}>
@@ -371,19 +463,137 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
   );
 }
 
-function MetricTile({ label, value, unit }: { label: string; value: string; unit: string }) {
+function AnimatedMetricTile({
+  metric,
+  animationKey,
+  isLoading,
+}: {
+  metric: HistoryMetricConfig;
+  animationKey: string;
+  isLoading: boolean;
+}) {
+  const reducedMotion = usePrefersReducedMotion();
+  const { animatedValue, animatedBar } = useAnimatedMetricDisplay({
+    animationKey,
+    isLoading,
+    reducedMotion,
+    targetValue: metric.valueTarget,
+    targetBar: metric.barTarget,
+  });
+  const displayValue = metric.formatValue(animatedValue);
+
   return (
-    <article className="stat-cell history-stat" title={`${label}: ${value}${unit}`} aria-label={`${label}: ${value}${unit}`}>
-      <span>{label}</span>
+    <article className="stat-cell history-stat" title={`${metric.label}: ${displayValue}${metric.unit}`} aria-label={`${metric.label}: ${displayValue}${metric.unit}`}>
+      <span>{metric.label}</span>
       <strong>
-        {value}
-        <small>{unit}</small>
+        {displayValue}
+        <small>{metric.unit}</small>
       </strong>
-      <span className="meter">
-        <span style={{ width: `${Math.min(100, Number(value) || 0)}%` }} />
-      </span>
+      <AnimatedMetricBar color={metric.color} isLoading={isLoading} percent={animatedBar} reducedMotion={reducedMotion} />
     </article>
   );
+}
+
+function AnimatedMetricBar({
+  percent,
+  color,
+  reducedMotion,
+  isLoading = false,
+}: {
+  percent: number;
+  color?: string;
+  reducedMotion?: boolean;
+  isLoading?: boolean;
+}) {
+  const displayPercent = isLoading ? 0 : Math.max(0, Math.min(100, Number.isFinite(percent) ? percent : 0));
+
+  return (
+    <span className={`meter ${isLoading ? "meter--loading" : ""}`} aria-hidden="true">
+      <span
+        style={{
+          width: `${displayPercent}%`,
+          background: color ?? undefined,
+          transition: reducedMotion ? undefined : "none",
+        }}
+      />
+    </span>
+  );
+}
+
+function useAnimatedMetricDisplay({
+  targetValue,
+  targetBar,
+  animationKey,
+  isLoading,
+  reducedMotion,
+}: {
+  targetValue: number;
+  targetBar: number;
+  animationKey: string;
+  isLoading: boolean;
+  reducedMotion: boolean;
+}) {
+  const safeValue = Math.max(0, Number.isFinite(targetValue) ? targetValue : 0);
+  const safeBar = Math.max(0, Math.min(100, Number.isFinite(targetBar) ? targetBar : 0));
+  const [state, setState] = useState<{ animatedValue: number; animatedBar: number }>({ animatedValue: 0, animatedBar: 0 });
+
+  useEffect(() => {
+    if (isLoading) {
+      setState({ animatedValue: 0, animatedBar: 0 });
+      return;
+    }
+
+    if (reducedMotion) {
+      setState({ animatedValue: safeValue, animatedBar: safeBar });
+      return;
+    }
+
+    const durationMs = 1100;
+    const start = performance.now();
+    let frame = 0;
+
+    setState({ animatedValue: 0, animatedBar: 0 });
+
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / durationMs);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setState({
+        animatedValue: safeValue * eased,
+        animatedBar: safeBar * eased,
+      });
+      if (t < 1) {
+        frame = window.requestAnimationFrame(step);
+      }
+    };
+
+    frame = window.requestAnimationFrame(step);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [animationKey, isLoading, reducedMotion, safeBar, safeValue]);
+
+  return state;
+}
+
+function usePrefersReducedMotion() {
+  const [reducedMotion, setReducedMotion] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(query.matches);
+    update();
+
+    if (typeof query.addEventListener === "function") {
+      query.addEventListener("change", update);
+      return () => query.removeEventListener("change", update);
+    }
+
+    query.addListener(update);
+    return () => query.removeListener(update);
+  }, []);
+
+  return reducedMotion;
 }
 
 function getOwnDistanceKm(metrics: AnalysisMetrics | null) {
@@ -411,12 +621,52 @@ function getProcessedVideoUrl(video: HistoryVideo) {
   return video.processedVideoUrl || null;
 }
 
-function getVideoMatchInfo(video: HistoryVideo) {
+function getVideoMatchInfo(video: HistoryVideo | null): MatchInfo {
+  if (!video) return {};
   const metadata = video.metadata;
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return {};
   const matchInfo = (metadata as { matchInfo?: unknown }).matchInfo;
   if (!matchInfo || typeof matchInfo !== "object" || Array.isArray(matchInfo)) return {};
-  return matchInfo as { ownTeam?: string; rivalTeam?: string };
+  return matchInfo as MatchInfo;
+}
+
+function resolveTeamColorAssignment(matchInfo: MatchInfo, metrics: AnalysisMetrics | null): TeamColorAssignment {
+  const detectedOwn = normalizeHex(metrics?.match?.detectedTeamColors?.team1);
+  const detectedRival = normalizeHex(metrics?.match?.detectedTeamColors?.team2);
+  const configuredOwn = normalizeHex(matchInfo.ownTeamColor);
+  const configuredRival = normalizeHex(matchInfo.rivalTeamColor);
+
+  if (configuredOwn && configuredRival && detectedOwn && detectedRival) {
+    if (configuredOwn === detectedRival && configuredRival === detectedOwn) {
+      return { ownTeamColor: configuredOwn, rivalTeamColor: configuredRival, isSwapped: true };
+    }
+    return { ownTeamColor: configuredOwn, rivalTeamColor: configuredRival, isSwapped: false };
+  }
+
+  if (configuredOwn && configuredRival) {
+    return { ownTeamColor: configuredOwn, rivalTeamColor: configuredRival, isSwapped: false };
+  }
+
+  if (detectedOwn && detectedRival) {
+    return { ownTeamColor: detectedOwn, rivalTeamColor: detectedRival, isSwapped: false };
+  }
+
+  return {
+    ownTeamColor: normalizeHex(metrics?.match?.ownTeamColor) ?? null,
+    rivalTeamColor: normalizeHex(metrics?.match?.rivalTeamColor) ?? null,
+    isSwapped: false,
+  };
+}
+
+function normalizeHex(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : null;
+}
+
+function mapByColorAssignment(ownValue: number, rivalValue: number, isSwapped: boolean) {
+  if (!isSwapped) return { own: ownValue, rival: rivalValue };
+  return { own: rivalValue, rival: ownValue };
 }
 
 function formatVideoOpponent(video: HistoryVideo) {
@@ -541,6 +791,11 @@ function formatBytes(bytes: number) {
 function formatKm(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "0.00";
   return value >= 10 ? value.toFixed(1) : value.toFixed(2);
+}
+
+function formatPercentMetric(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "0.0";
+  return value.toFixed(1);
 }
 
 
