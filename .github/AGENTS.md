@@ -23,4 +23,3 @@ This project is DRIVXIS, a web platform for analyzing football matches. It uses 
 - Handle various video formats and qualities
 
 For more details, see [README.md](../README.md)</content>
-<parameter name="filePath">c:\Users\carlo\DRIVXIS-Plataforma-de-analisis-de-futbol\.github\AGENTS.md
