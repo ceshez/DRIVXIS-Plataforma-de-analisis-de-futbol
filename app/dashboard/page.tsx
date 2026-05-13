@@ -7,10 +7,10 @@ import { serializeVideos } from "@/lib/video-serialization";
 
 export default async function DashboardPage() {
   const user = await requireUser();
-  const videos = await getRecentVideos(user.id);
+  const [videos, totalAnalyses] = await Promise.all([getRecentVideos(user.id), getTotalAnalyses(user.id)]);
 
   return (
-    <main className="app-frame">
+    <main className="app-frame app-frame--dashboard-main">
       <DashboardHeader
         navItems={[
           { href: "/dashboard", label: "Panel", exact: true },
@@ -26,8 +26,8 @@ export default async function DashboardPage() {
         }
       />
       <DashboardExperience
-        userName={user.name}
         videos={videos}
+        totalAnalyses={totalAnalyses}
       />
     </main>
   );
@@ -77,5 +77,15 @@ async function getRecentVideos(ownerId: string) {
     return serializeVideos(videos);
   } catch {
     return [];
+  }
+}
+
+async function getTotalAnalyses(ownerId: string) {
+  try {
+    return await prisma.video.count({
+      where: { ownerId },
+    });
+  } catch {
+    return 0;
   }
 }

@@ -15,9 +15,33 @@ export function AnalysisVideoPlayer({ src, title, className = "", onStreamError 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [streamError, setStreamError] = useState("");
 
+  async function tryLockLandscape() {
+    const orientation = window.screen?.orientation;
+    if (!orientation || typeof orientation.lock !== "function") return;
+    try {
+      await orientation.lock("landscape");
+    } catch {
+      // Some mobile browsers block orientation lock outside trusted fullscreen contexts.
+    }
+  }
+
+  async function tryUnlockOrientation() {
+    const orientation = window.screen?.orientation;
+    if (!orientation || typeof orientation.unlock !== "function") return;
+    try {
+      orientation.unlock();
+    } catch {
+      // Ignore unlock failures on unsupported/restricted browsers.
+    }
+  }
+
   useEffect(() => {
     function syncFullscreenState() {
-      setIsFullscreen(document.fullscreenElement === shellRef.current);
+      const isShellFullscreen = document.fullscreenElement === shellRef.current;
+      setIsFullscreen(isShellFullscreen);
+      if (!isShellFullscreen) {
+        void tryUnlockOrientation();
+      }
     }
 
     document.addEventListener("fullscreenchange", syncFullscreenState);
@@ -42,6 +66,7 @@ export function AnalysisVideoPlayer({ src, title, className = "", onStreamError 
     }
 
     await target.requestFullscreen();
+    await tryLockLandscape();
   }
 
   async function handlePlaybackError() {

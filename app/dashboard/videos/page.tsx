@@ -1,6 +1,5 @@
 import { DashboardHeader } from "@/components/dashboard-header";
 import { VideoHistory } from "@/components/video-history";
-import { AnnotationLine, MicroGrid } from "@/components/micro-graphics";
 import { UserProfileMenu } from "@/components/user-profile-menu";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -11,7 +10,7 @@ export default async function VideosPage() {
   const videos = await getVideos(user.id);
 
   return (
-    <main className="app-frame">
+    <main className="app-frame app-frame--videos-watch">
       <DashboardHeader
         navItems={[
           { href: "/dashboard", label: "Panel", exact: true },
@@ -26,17 +25,6 @@ export default async function VideosPage() {
           />
         }
       />
-
-      <section className="dashboard-command dashboard-command--compact">
-        <MicroGrid />
-        <div className="dashboard-command__copy">
-          <AnnotationLine label="historial" value="PARTIDOS / MÉTRICAS IA" />
-          <h1>Historial de videos</h1>
-          <p>
-            Revisa cada partido subido, su estado de cola y las estadísticas creadas por el modelo.
-          </p>
-        </div>
-      </section>
 
       <VideoHistory initialVideos={videos} />
     </main>

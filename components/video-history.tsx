@@ -267,12 +267,92 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
   return (
     <>
       <section className="history-workspace">
-        <div className="history-list lab-panel">
-          <div className="panel-heading">
+        <article className="history-main">
+          <div className="history-detail lab-panel">
+            <div className="panel-heading history-detail__heading">
+              <div>
+                <span>Detalle del partido</span>
+                <h2>{selected?.originalFilename ?? "Sin selección"}</h2>
+                {selected ? <StorageStatusInline video={selected} /> : null}
+              </div>
+              {selected ? <span className={`status-pill ${selected.status.toLowerCase()}`}>{formatStatus(selected.status)}</span> : null}
+            </div>
+
+            {selected ? (
+              <div className="history-main__content">
+                <div className="history-player-stack">
+                  <div className="history-player-sticky">
+                    <div className="history-player-surface">
+                      {selected.status === "COMPLETED" && getProcessedVideoUrl(selected) ? (
+                        <AnalysisVideoPlayer
+                          src={getProcessedVideoUrl(selected) ?? `/api/videos/${selected.id}/stream?variant=processed`}
+                          title={selected.originalFilename}
+                          onStreamError={(message) => pushToast(message, { tone: "warning", durationMs: 9000 })}
+                        />
+                      ) : (
+                        <div className="analysis-placeholder">
+                          {isVideoProcessing(selected) ? <Loader2 className="spin" size={24} /> : <BarChart3 size={24} />}
+                          <strong>{selected.latestJob ? `análisis ${formatStatus(selected.latestJob.status)}` : "análisis en espera"}</strong>
+                          <span>{getVideoPlaceholderMessage(selected)}</span>
+                          {isVideoProcessing(selected) ? (
+                            <span className="analysis-upload__progress" aria-label={`Progreso ${getVideoProgress(selected)}%`}>
+                              <span style={{ width: `${getVideoProgress(selected)}%` }} />
+                            </span>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {selected.status === "COMPLETED" && getProcessedVideoUrl(selected) ? (
+                    <MatchColorEditor
+                      video={selected}
+                      onToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
+                      onSaved={(nextVideo) => {
+                        setVideos((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)));
+                      }}
+                    />
+                  ) : null}
+                </div>
+
+                <div className="history-insights">
+                  <div className="history-insights__header">
+                    <span>Métricas del análisis</span>
+                    <button className="button ghost command-button" type="button" onClick={() => void retryAnalysis()} disabled={retrying}>
+                      {retrying ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
+                      Reanalizar
+                    </button>
+                  </div>
+
+                  <div className="history-stat-grid">
+                    {historyMetrics.map((metric) => (
+                      <AnimatedMetricTile
+                        key={metric.id}
+                        animationKey={`${metricAnimationSeed}|history|${metric.id}|${metric.valueTarget.toFixed(3)}|${metric.barTarget.toFixed(3)}|${metric.color ?? "default"}`}
+                        isLoading={!hasCompletedMetrics}
+                        metric={metric}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="empty-state">
+                <BarChart3 size={24} />
+                <strong>Sin partido seleccionado.</strong>
+                <span>El historial mostrará las métricas específicas de cada video.</span>
+              </div>
+            )}
+          </div>
+        </article>
+
+        <aside className="history-list lab-panel">
+          <div className="panel-heading history-list__heading">
             <div>
               <span>Historial</span>
               <h2>Partidos subidos</h2>
             </div>
+            <span className="history-list__count">{videos.length}</span>
           </div>
 
           {videos.length === 0 ? (
@@ -282,30 +362,29 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
               <span>Sube un video desde el panel principal para activar el análisis.</span>
             </div>
           ) : (
-            <div className="video-list">
+            <div className="video-list history-list__scroll">
               {videos.map((video) => (
                 <article
                   className={`video-row video-row--shell ${video.id === selected?.id ? "is-selected" : ""}`}
                   key={video.id}
                 >
-                  <button
-                    className="video-row__select"
-                    type="button"
-                    onClick={() => setSelectedId(video.id)}
-                  >
+                  <button className="video-row__select" type="button" onClick={() => setSelectedId(video.id)}>
                     <span className="video-row__icon">
                       <Film size={17} />
                     </span>
-                    <div className="video-row__copy">
-                      <strong>{video.originalFilename}</strong>
-                      <span>{formatVideoOpponent(video)}</span>
+                    <div className="video-row__body">
+                      <strong className="video-row__title" title={video.originalFilename}>
+                        {video.originalFilename}
+                      </strong>
+                      <span className="video-row__description" title={formatVideoOpponent(video)}>
+                        {formatVideoOpponent(video)}
+                      </span>
+                      <span className="video-row__meta-inline">
+                        <span>{formatDate(video.createdAt)}</span>
+                        <span>{formatBytes(Number(video.sizeBytes))}</span>
+                      </span>
                       <StorageStatusInline video={video} />
                     </div>
-                    <span className="video-row__meta">
-                      {formatDate(video.createdAt)}
-                      <br />
-                      {formatBytes(Number(video.sizeBytes))}
-                    </span>
                     <span className={`status-pill ${video.status.toLowerCase()}`}>{formatStatus(video.status)}</span>
                   </button>
 
@@ -333,73 +412,6 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
                   </div>
                 </article>
               ))}
-            </div>
-          )}
-        </div>
-
-        <aside className="history-detail lab-panel">
-          <div className="panel-heading">
-            <div>
-              <span>Detalle del partido</span>
-              <h2>{selected?.originalFilename ?? "Sin selección"}</h2>
-              {selected ? <StorageStatusInline video={selected} /> : null}
-            </div>
-            {selected ? <span className={`status-pill ${selected.status.toLowerCase()}`}>{formatStatus(selected.status)}</span> : null}
-          </div>
-
-          {selected ? (
-            <>
-              {selected.status === "COMPLETED" && getProcessedVideoUrl(selected) ? (
-                <>
-                  <AnalysisVideoPlayer
-                    src={getProcessedVideoUrl(selected) ?? `/api/videos/${selected.id}/stream?variant=processed`}
-                    title={selected.originalFilename}
-                    onStreamError={(message) => pushToast(message, { tone: "warning", durationMs: 9000 })}
-                  />
-                  <MatchColorEditor
-                    video={selected}
-                    onToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
-                    onSaved={(nextVideo) => {
-                      setVideos((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)));
-                    }}
-                  />
-                </>
-              ) : (
-                <div className="analysis-placeholder">
-                  {isVideoProcessing(selected) ? <Loader2 className="spin" size={24} /> : <BarChart3 size={24} />}
-                  <strong>{selected.latestJob ? `análisis ${formatStatus(selected.latestJob.status)}` : "análisis en espera"}</strong>
-                  <span>
-                    {getVideoPlaceholderMessage(selected)}
-                  </span>
-                  {isVideoProcessing(selected) ? (
-                    <span className="analysis-upload__progress" aria-label={`Progreso ${getVideoProgress(selected)}%`}>
-                      <span style={{ width: `${getVideoProgress(selected)}%` }} />
-                    </span>
-                  ) : null}
-                </div>
-              )}
-
-              <div className="history-stat-grid">
-                {historyMetrics.map((metric) => (
-                  <AnimatedMetricTile
-                    key={metric.id}
-                    animationKey={`${metricAnimationSeed}|history|${metric.id}|${metric.valueTarget.toFixed(3)}|${metric.barTarget.toFixed(3)}|${metric.color ?? "default"}`}
-                    isLoading={!hasCompletedMetrics}
-                    metric={metric}
-                  />
-                ))}
-              </div>
-
-              <button className="button ghost command-button" type="button" onClick={() => void retryAnalysis()} disabled={retrying}>
-                {retrying ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
-                Reanalizar
-              </button>
-            </>
-          ) : (
-            <div className="empty-state">
-              <BarChart3 size={24} />
-              <strong>Sin partido seleccionado.</strong>
-              <span>El historial mostrará las métricas específicas de cada video.</span>
             </div>
           )}
         </aside>
