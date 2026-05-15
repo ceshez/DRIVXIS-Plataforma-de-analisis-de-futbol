@@ -1,6 +1,6 @@
 import { DashboardHeader } from "@/components/dashboard-header";
+import { DashboardHeaderUserAction } from "@/components/dashboard-header-user-action";
 import { VideoHistory } from "@/components/video-history";
-import { UserProfileMenu } from "@/components/user-profile-menu";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { serializeVideos } from "@/lib/video-serialization";
@@ -17,7 +17,7 @@ export default async function VideosPage() {
           { href: "/dashboard/videos", label: "Historial" },
         ]}
         action={
-          <UserProfileMenu
+          <DashboardHeaderUserAction
             name={user.name}
             email={user.email}
             hasAvatar={Boolean(user.avatarObjectKey)}

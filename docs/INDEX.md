@@ -21,6 +21,7 @@ Usa este indice para saber que documento leer antes de pedirle una tarea a Codex
 
 - `docs/ROADMAP.md` - mejoras futuras y prioridades.
 - `docs/UI_GUIDE.md` - reglas visuales y de UI para mantener consistencia.
+- `docs/CHATBOT_DEMO.md` - comportamiento y estados del chatbot demo del dashboard.
 
 ## Que leer segun la tarea
 

@@ -1,6 +1,6 @@
 import { Bot, Clock3, Gauge, HardDrive, TriangleAlert, Video, Activity } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard-header";
-import { UserProfileMenu } from "@/components/user-profile-menu";
+import { DashboardHeaderUserAction } from "@/components/dashboard-header-user-action";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { buildStorageUsagePayload } from "@/lib/storage-usage";
@@ -17,7 +17,7 @@ export default async function UsagePage() {
           { href: "/dashboard/videos", label: "Historial" },
         ]}
         action={
-          <UserProfileMenu
+          <DashboardHeaderUserAction
             name={user.name}
             email={user.email}
             hasAvatar={Boolean(user.avatarObjectKey)}

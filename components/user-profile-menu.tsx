@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Gauge, LogOut, UserRound } from "lucide-react";
+import { BarChart3, Gauge, LogOut, Settings, UserRound } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type UserProfileMenuProps = {
@@ -10,6 +10,9 @@ type UserProfileMenuProps = {
   email?: string | null;
   hasAvatar?: boolean;
   avatarVersion?: string | null;
+  dropdownDirection?: "down" | "up";
+  triggerVariant?: "icon" | "sidebar-card";
+  showSidebarSettingsIcon?: boolean;
 };
 
 const menuItems = [
@@ -18,7 +21,15 @@ const menuItems = [
   { href: "/dashboard/profile", label: "Perfil", icon: UserRound },
 ];
 
-export function UserProfileMenu({ name, email, hasAvatar = false, avatarVersion = null }: UserProfileMenuProps) {
+export function UserProfileMenu({
+  name,
+  email,
+  hasAvatar = false,
+  avatarVersion = null,
+  dropdownDirection = "down",
+  triggerVariant = "icon",
+  showSidebarSettingsIcon = false,
+}: UserProfileMenuProps) {
   const pathname = usePathname();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -98,27 +109,43 @@ export function UserProfileMenu({ name, email, hasAvatar = false, avatarVersion 
   }
 
   return (
-    <div className="profile-menu" ref={rootRef}>
+    <div
+      className={`profile-menu ${dropdownDirection === "up" ? "profile-menu--up" : ""} ${
+        triggerVariant === "sidebar-card" ? "profile-menu--sidebar-card" : ""
+      }`}
+      ref={rootRef}
+    >
       <button
-        className="profile-menu__trigger"
+        className={`profile-menu__trigger ${triggerVariant === "sidebar-card" ? "profile-menu__trigger--sidebar-card" : ""}`}
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Abrir men\u00fa de usuario"
         onClick={() => setOpen((value) => !value)}
       >
-        {avatarVisible ? (
-          <img
-            src={`/api/profile/avatar?v=${encodeURIComponent(avatarNonce)}`}
-            alt="Avatar de usuario"
-            className="profile-menu__avatar-image"
-            onError={() => setAvatarVisible(false)}
-          />
-        ) : (
-          <span className="profile-menu__avatar" aria-hidden="true">
-            {avatarLetter}
-          </span>
-        )}
+        <span className="profile-menu__trigger-avatar-wrap">
+          {avatarVisible ? (
+            <img
+              src={`/api/profile/avatar?v=${encodeURIComponent(avatarNonce)}`}
+              alt="Avatar de usuario"
+              className="profile-menu__avatar-image"
+              onError={() => setAvatarVisible(false)}
+            />
+          ) : (
+            <span className="profile-menu__avatar" aria-hidden="true">
+              {avatarLetter}
+            </span>
+          )}
+        </span>
+        {triggerVariant === "sidebar-card" ? (
+          <>
+            <span className="profile-menu__trigger-copy">
+              <strong>{safeName || "Usuario DRIVXIS"}</strong>
+              <span>{safeEmail || "sin correo"}</span>
+            </span>
+            {showSidebarSettingsIcon ? <Settings size={14} className="profile-menu__trigger-settings" /> : null}
+          </>
+        ) : null}
       </button>
 
       {open ? (

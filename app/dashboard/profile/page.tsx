@@ -1,6 +1,6 @@
 import { DashboardHeader } from "@/components/dashboard-header";
+import { DashboardHeaderUserAction } from "@/components/dashboard-header-user-action";
 import { ProfileAvatarUploader } from "@/components/profile-avatar-uploader";
-import { UserProfileMenu } from "@/components/user-profile-menu";
 import { requireUser } from "@/lib/session";
 
 export default async function ProfilePage() {
@@ -14,7 +14,7 @@ export default async function ProfilePage() {
           { href: "/dashboard/videos", label: "Historial" },
         ]}
         action={
-          <UserProfileMenu
+          <DashboardHeaderUserAction
             name={user.name}
             email={user.email}
             hasAvatar={Boolean(user.avatarObjectKey)}
