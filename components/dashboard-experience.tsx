@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { CheckCircle2, Eye, Film, History, Loader2, ScanLine, Upload } from "lucide-react";
+import { CheckCircle2, Film, History, ScanLine, Upload } from "lucide-react";
+import { AnalysisProcessingPanel } from "@/components/analysis-processing-panel";
 import { type AnalysisMetrics } from "@/lib/analysis-metrics";
 import { AnalysisVideoPlayer } from "@/components/analysis-video-player";
 import { ToastViewport, useAppToasts } from "@/components/app-toast";
@@ -107,7 +108,8 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
   const [uploadOpen, setUploadOpen] = useState(videos.length === 0);
   const [storageUsage, setStorageUsage] = useState<StorageUsagePayload | null>(null);
   const { toasts, pushToast, dismissToast } = useAppToasts();
-  const featured = items.find((video) => video.id === activeId) ?? items[0] ?? null;
+  const selectedVideo = items.find((video) => video.id === activeId) ?? items[0] ?? null;
+  const featured = uploadOpen ? null : selectedVideo;
   const metrics = featured?.latestMetrics ?? null;
   const matchInfo = getVideoMatchInfo(featured);
   const colorAssignment = useMemo(() => resolveTeamColorAssignment(matchInfo, metrics), [matchInfo, metrics]);
@@ -193,14 +195,15 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
   const hasNoRemainingStorage = storageUsage ? parseStorageBigInt(storageUsage.remainingBytes) <= 0n : false;
   const canUpload = !hasProcessingVideo && !hasNoRemainingStorage;
   const totalAnalysisLabel = Math.max(totalAnalyses, items.length);
-  const showCompletedPanel = Boolean(featured && featured.status === "COMPLETED" && !uploadOpen && getProcessedVideoUrl(featured));
-  const showColorEditor = showCompletedPanel;
+  const showCompletedPanel = Boolean(featured && featured.status === "COMPLETED" && getProcessedVideoUrl(featured));
+  const analysisStageState = uploadOpen ? "fresh" : isFeaturedProcessing ? "processing" : showCompletedPanel ? "completed" : "idle";
 
   useEffect(() => {
+    if (uploadOpen) return;
     if (!featured && items[0]) {
       setActiveId(items[0].id);
     }
-  }, [featured, items]);
+  }, [featured, items, uploadOpen]);
 
   useEffect(() => {
     void refreshStorageUsage();
@@ -273,6 +276,7 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
 
   function openUploader() {
     if (!canUpload) return;
+    setActiveId("");
     setUploadOpen(true);
   }
 
@@ -303,27 +307,35 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
       </section>
 
       <section className="analysis-console" aria-label="Consola de análisis">
-        <div className="analysis-console__stage">
+        <div className="analysis-console__stage" data-analysis-state={analysisStageState}>
           <CornerMarks size={14} opacity={0.45} />
-          <div className="console-toolbar">
-            <div>
-              <span>{featured ? "Último partido" : "Entrada de video"}</span>
-              <strong>{featured?.originalFilename ?? "Sube tu primer partido"}</strong>
-            </div>
-            <a className="icon-button" href="/dashboard/videos" aria-label="Ver historial">
-              <Film size={15} />
-            </a>
-          </div>
-
-          <div className="video-radar video-radar--upload">
+          <div className="video-radar video-radar--upload" data-analysis-state={analysisStageState}>
             {isFeaturedProcessing ? (
-              <AnalysisProgressPanel video={featured} progress={activeProgress} />
+              <AnalysisProcessingPanel
+                filename={featured?.originalFilename ?? "Video en análisis"}
+                progress={activeProgress}
+                note="Subir otro video está bloqueado hasta terminar el tracking y la generación del video anotado."
+              />
+            ) : featured?.status === "FAILED" ? (
+              <AnalysisProcessingPanel
+                variant="failed"
+                filename={featured.originalFilename}
+                note={featured.latestJob?.error || "El análisis se interrumpió antes de generar el video anotado."}
+                actionLabel="Reintentar análisis"
+                onAction={() => {
+                  window.location.href = "/dashboard/videos";
+                }}
+              />
             ) : featured?.status === "COMPLETED" && !uploadOpen ? (
               getProcessedVideoUrl(featured) ? (
                 <AnalyzedVideoPanel
                   video={featured}
                   onStreamError={(message) => pushToast(message, { tone: "warning", durationMs: 9000 })}
                   onUploadAnother={openUploader}
+                  onColorSaved={(video) => {
+                    setItems((current) => current.map((item) => (item.id === video.id ? video : item)));
+                  }}
+                  onColorToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
                   stepIndex={stepIndex}
                 />
               ) : (
@@ -355,17 +367,9 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
             </div>
           ) : null}
 
-          {showColorEditor && featured ? (
-            <MatchColorEditor
-              video={featured}
-              onSaved={(video) => {
-                setItems((current) => current.map((item) => (item.id === video.id ? video : item)));
-              }}
-              onToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
-            />
-          ) : null}
         </div>
 
+        {!uploadOpen ? (
         <aside className="match-panel">
           <CornerMarks size={12} opacity={0.35} />
           <div className="score-card" title={`${ownTeamName}: ${ownPossession.toFixed(1)}% / ${rivalTeamName}: ${rivalPossession.toFixed(1)}%`}>
@@ -417,8 +421,10 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
             </ResponsiveContainer>
           </div>
         </aside>
+        ) : null}
       </section>
 
+      {!uploadOpen ? (
       <section className="stat-strip" aria-label="métricas del partido">
         {bottomStats.map((stat, index) => (
           <AnimatedBottomStat
@@ -430,7 +436,9 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
           />
         ))}
       </section>
+      ) : null}
 
+      {!uploadOpen ? (
       <section className="chart-grid">
         <article className="chart-panel chart-panel--wide">
           <Crosshair className="chart-crosshair" size={15} opacity={0.16} />
@@ -468,6 +476,7 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
           <svg fill="none" aria-hidden="true" viewBox="0 0 240 130"><defs><radialGradient id="heat-hot" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="rgba(255,146,67,0.9)"/><stop offset="35%" stopColor="rgba(244,223,72,0.78)"/><stop offset="62%" stopColor="rgba(117,241,77,0.58)"/><stop offset="100%" stopColor="rgba(33,110,255,0)"/></radialGradient><filter id="heat-blur"><feGaussianBlur stdDeviation="7"/></filter></defs><path stroke="rgba(255,107,43,0.24)" strokeWidth=".75" d="M2 2h236v126H2z"/><path stroke="rgba(255,255,255,0.25)" strokeWidth=".75" d="M120 2v126"/><circle cx="120" cy="65" r="20" stroke="rgba(255,255,255,0.24)" strokeWidth=".75"/><path stroke="rgba(255,255,255,0.22)" strokeWidth=".75" d="M2 44h38v42H2zm198 0h38v42h-38z"/><g fill="url(#heat-hot)" filter="url(#heat-blur)"><circle cx="55" cy="40" r="24"/><circle cx="80" cy="95" r="30"/><circle cx="105" cy="58" r="20"/><circle cx="140" cy="70" r="22"/><circle cx="165" cy="40" r="18"/><circle cx="186" cy="88" r="16"/></g><path fill="url(#heat-hot)" d="M2 2h236v126H2z" opacity=".08"/></svg>
         </article>
       </section>
+      ) : null}
 
       <section className="recent-videos lab-panel">
         <div className="panel-heading recent-videos__heading">
@@ -494,58 +503,44 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
             <span>Sube tu primer partido desde la consola central.</span>
           </div>
         ) : (
-          <div className="recent-videos__grid">
-            {items.slice(0, 4).map((video, index) => {
-              const metricSummary = getVideoMetricSummary(video);
-              const resultSummary = getVideoResultSummary(video);
-              const hasMatchResult = resultSummary !== "--";
-              const resultValue = hasMatchResult ? resultSummary : formatStatus(video.status);
+          <div className="video-list recent-videos__grid">
+            {items.slice(0, 4).map((video) => {
               return (
-                <button
-                  className={`history-video-card ${video.id === featured?.id ? "is-selected" : ""}`}
+                <article
+                  className={`video-row video-row--shell ${video.id === featured?.id ? "is-selected" : ""}`}
                   key={video.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveId(video.id);
-                    setUploadOpen(false);
-                  }}
                 >
-                  <div className="history-video-card__thumb" aria-hidden="true">
-                    <span className="history-video-card__index">{String(index + 1).padStart(2, "0")}</span>
-                    <div className="history-video-card__thumb-center">
-                      <Film size={20} />
-                      <span className="history-video-card__time">{getVideoDurationLabel(video)}</span>
-                    </div>
-                  </div>
-
-                  <div className="history-video-card__info">
-                    <div className="history-video-card__match">
-                      <span className="history-video-card__label">Partido</span>
-                      <strong className="history-video-card__title">{formatVideoOpponent(video)}</strong>
-                    </div>
-
-                    <div className="history-video-card__result-row">
-                      <div className="history-video-card__result">
-                        <span>Resultado</span>
-                        <strong className={hasMatchResult ? "" : "history-video-card__status-value"}>{resultValue}</strong>
-                      </div>
-                      <div className="history-video-card__date">
-                        <span>Fecha</span>
-                        <strong>{formatDate(video.createdAt)}</strong>
-                      </div>
-                    </div>
-
-                    <div className="history-video-card__metric-row">
-                      <span>{metricSummary.label}</span>
-                      <strong>{metricSummary.value}</strong>
-                    </div>
-
-                    <span className="history-video-card__cta">
-                      <Eye size={14} />
-                      Ver análisis
+                  <button
+                    className="video-row__select"
+                    type="button"
+                    onClick={() => {
+                      setActiveId(video.id);
+                      setUploadOpen(false);
+                    }}
+                  >
+                    <span className="video-row__icon">
+                      <Film size={17} />
                     </span>
-                  </div>
-                </button>
+                    <div className="video-row__body">
+                      <strong className="video-row__title" title={video.originalFilename}>
+                        {video.originalFilename}
+                      </strong>
+                      <span className="video-row__description" title={formatVideoOpponent(video)}>
+                        {formatVideoOpponent(video)}
+                      </span>
+                      <span className="video-row__meta-inline">
+                        <span>Fecha de subida: {formatDate(video.createdAt)}</span>
+                      </span>
+                      <span className="video-row__meta-inline">
+                        <span>Duración: {getVideoDurationLabel(video)}</span>
+                      </span>
+                    </div>
+                    <span className="video-row__status-group">
+                      <span className="video-row__status-label">Estado</span>
+                      <span className={`status-pill ${video.status.toLowerCase()}`}>{formatStatus(video.status)}</span>
+                    </span>
+                  </button>
+                </article>
               );
             })}
           </div>
@@ -730,43 +725,42 @@ function usePrefersReducedMotion() {
   return reducedMotion;
 }
 
-function AnalysisProgressPanel({ video, progress }: { video: RecentVideo; progress: number }) {
-  return (
-    <div className="analysis-result-panel analysis-result-panel--processing">
-      <MicroGrid />
-      <div className="analysis-result-panel__inner">
-        <span className="analysis-upload__icon">
-          <Loader2 className="spin" size={30} />
-        </span>
-        <div>
-          <strong>{video.originalFilename}</strong>
-          <small>Analizando video... ({progress}%)</small>
-        </div>
-        <span className="analysis-upload__progress" aria-label={`Progreso ${progress}%`}>
-          <span style={{ width: `${progress}%` }} />
-        </span>
-        <span className="analysis-result-panel__meta">
-          Subir otro video está bloqueado hasta terminar el tracking y la generación del video anotado.
-        </span>
-      </div>
-    </div>
-  );
-}
-
 function AnalyzedVideoPanel({
   video,
   onUploadAnother,
   onStreamError,
+  onColorSaved,
+  onColorToast,
   stepIndex,
 }: {
   video: RecentVideo;
   onUploadAnother: () => void;
   onStreamError: (message: string) => void;
+  onColorSaved: (video: RecentVideo) => void;
+  onColorToast: (message: string) => void;
   stepIndex: number;
 }) {
   const videoUrl = getProcessedVideoUrl(video) ?? `/api/videos/${video.id}/stream?variant=processed`;
   return (
     <div className="analysis-result-panel">
+      <div className="analysis-result-panel__header">
+        <div className="analysis-result-panel__header-copy">
+          <span>Resultado listo</span>
+          <strong>{video.originalFilename}</strong>
+        </div>
+        <div className="analysis-result-panel__header-actions">
+          <MatchColorEditor
+            mode="header"
+            video={video}
+            onSaved={onColorSaved}
+            onToast={onColorToast}
+          />
+          <button className="button primary command-button analysis-result-panel__header-cta" type="button" onClick={onUploadAnother}>
+            <Upload size={14} />
+            Analizar otro partido
+          </button>
+        </div>
+      </div>
       <AnalysisVideoPlayer
         src={videoUrl}
         title={video.originalFilename}
@@ -782,16 +776,6 @@ function AnalyzedVideoPanel({
             {step}
           </div>
         ))}
-      </div>
-      <div className="analysis-result-panel__footer">
-        <div>
-          <span>Resultado listo</span>
-          <strong>{video.originalFilename}</strong>
-        </div>
-        <button className="button primary command-button" type="button" onClick={onUploadAnother}>
-          <Upload size={14} />
-          Analizar otro partido
-        </button>
       </div>
     </div>
   );
@@ -1023,43 +1007,6 @@ function getVideoDurationLabel(video: RecentVideo) {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
-function getVideoMetricSummary(video: RecentVideo) {
-  const metrics = video.latestMetrics;
-  if (!metrics) return { label: "Sin métricas", value: "--" };
-  const matchInfo = getVideoMatchInfo(video);
-  const colorAssignment = resolveTeamColorAssignment(matchInfo, metrics);
-  const rawOwnControl = metrics.ballControl?.ownTeam ?? metrics.possession.team1Pct ?? 0;
-  const rawRivalControl = metrics.ballControl?.rivalTeam ?? metrics.possession.team2Pct ?? 0;
-  const mappedControl = mapByColorAssignment(rawOwnControl, rawRivalControl, colorAssignment.isSwapped);
-  if (mappedControl.own > 0 || mappedControl.rival > 0) {
-    return { label: "Posesión", value: `${formatPercentMetric(mappedControl.own)}%` };
-  }
-
-  const rawOwnDistanceKm = getOwnDistanceKm(metrics);
-  const rawRivalDistanceKm = getRivalDistanceKm(metrics);
-  const mappedDistance = mapByColorAssignment(rawOwnDistanceKm, rawRivalDistanceKm, colorAssignment.isSwapped);
-  if (mappedDistance.own > 0 || mappedDistance.rival > 0) {
-    return { label: "Distancia recorrida", value: `${formatKm(mappedDistance.own)} km` };
-  }
-
-  return { label: "Sin métricas", value: "--" };
-}
-
-function getVideoResultSummary(video: RecentVideo) {
-  const metrics = video.latestMetrics;
-  if (!metrics?.match) return "--";
-  const ownGoalsRaw = metrics.match.ownGoals;
-  const rivalGoalsRaw = metrics.match.rivalGoals;
-  const ownGoals = typeof ownGoalsRaw === "number" && Number.isFinite(ownGoalsRaw) ? ownGoalsRaw : null;
-  const rivalGoals = typeof rivalGoalsRaw === "number" && Number.isFinite(rivalGoalsRaw) ? rivalGoalsRaw : null;
-  if (ownGoals === null || rivalGoals === null) return "--";
-
-  const matchInfo = getVideoMatchInfo(video);
-  const colorAssignment = resolveTeamColorAssignment(matchInfo, metrics);
-  const mappedGoals = mapByColorAssignment(ownGoals, rivalGoals, colorAssignment.isSwapped);
-  return `${Math.round(mappedGoals.own)} - ${Math.round(mappedGoals.rival)}`;
 }
 
 function getStorageLabels(video: RecentVideo) {

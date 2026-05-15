@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart3, Film, Loader2, MoreVertical, RotateCcw, Trash2 } from "lucide-react";
+import { AnalysisProcessingPanel } from "@/components/analysis-processing-panel";
 import { AnalysisVideoPlayer } from "@/components/analysis-video-player";
 import { ToastViewport, useAppToasts } from "@/components/app-toast";
 import { MatchColorEditor } from "@/components/match-color-editor";
@@ -85,6 +86,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
   const mappedDistance = mapByColorAssignment(rawOwnDistanceKm, rawRivalDistanceKm, colorAssignment.isSwapped);
   const ownDistanceKm = mappedDistance.own;
   const rivalDistanceKm = mappedDistance.rival;
+  const showColorEditor = Boolean(selected && selected.status === "COMPLETED" && getProcessedVideoUrl(selected));
   const hasCompletedMetrics = Boolean(selected && selected.status === "COMPLETED" && metrics);
   const metricAnimationSeed = [
     selected?.id ?? "no-video",
@@ -275,7 +277,21 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
                 <h2>{selected?.originalFilename ?? "Sin selección"}</h2>
                 {selected ? <StorageStatusInline video={selected} /> : null}
               </div>
-              {selected ? <span className={`status-pill ${selected.status.toLowerCase()}`}>{formatStatus(selected.status)}</span> : null}
+              {selected ? (
+                <div className="history-detail__heading-actions">
+                  {showColorEditor ? (
+                    <MatchColorEditor
+                      mode="header"
+                      video={selected}
+                      onToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
+                      onSaved={(nextVideo) => {
+                        setVideos((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)));
+                      }}
+                    />
+                  ) : null}
+                  <span className={`status-pill ${selected.status.toLowerCase()}`}>{formatStatus(selected.status)}</span>
+                </div>
+              ) : null}
             </div>
 
             {selected ? (
@@ -289,30 +305,32 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
                           title={selected.originalFilename}
                           onStreamError={(message) => pushToast(message, { tone: "warning", durationMs: 9000 })}
                         />
+                      ) : isVideoProcessing(selected) ? (
+                        <AnalysisProcessingPanel
+                          filename={selected.originalFilename}
+                          progress={getVideoProgress(selected)}
+                          note="Subir otro video está bloqueado hasta terminar el tracking y la generación del video anotado."
+                        />
+                      ) : isVideoFailed(selected) ? (
+                        <AnalysisProcessingPanel
+                          variant="failed"
+                          filename={selected.originalFilename}
+                          note={selected.latestJob?.error || "El análisis se interrumpió antes de generar el video anotado."}
+                          actionLabel={retrying ? "Reintentando..." : "Reintentar análisis"}
+                          onAction={() => {
+                            if (retrying) return;
+                            void retryAnalysis();
+                          }}
+                        />
                       ) : (
                         <div className="analysis-placeholder">
-                          {isVideoProcessing(selected) ? <Loader2 className="spin" size={24} /> : <BarChart3 size={24} />}
+                          <BarChart3 size={24} />
                           <strong>{selected.latestJob ? `análisis ${formatStatus(selected.latestJob.status)}` : "análisis en espera"}</strong>
                           <span>{getVideoPlaceholderMessage(selected)}</span>
-                          {isVideoProcessing(selected) ? (
-                            <span className="analysis-upload__progress" aria-label={`Progreso ${getVideoProgress(selected)}%`}>
-                              <span style={{ width: `${getVideoProgress(selected)}%` }} />
-                            </span>
-                          ) : null}
                         </div>
                       )}
                     </div>
                   </div>
-
-                  {selected.status === "COMPLETED" && getProcessedVideoUrl(selected) ? (
-                    <MatchColorEditor
-                      video={selected}
-                      onToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
-                      onSaved={(nextVideo) => {
-                        setVideos((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)));
-                      }}
-                    />
-                  ) : null}
                 </div>
 
                 <div className="history-insights">
@@ -627,6 +645,10 @@ function isVideoProcessing(video: HistoryVideo) {
     video.latestJob?.status === "QUEUED" ||
     video.latestJob?.status === "RUNNING"
   );
+}
+
+function isVideoFailed(video: HistoryVideo) {
+  return video.status === "FAILED" || video.latestJob?.status === "FAILED";
 }
 
 function getProcessedVideoUrl(video: HistoryVideo) {

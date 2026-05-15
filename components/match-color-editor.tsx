@@ -8,6 +8,7 @@ type MatchColorEditorProps<TVideo> = {
   video: TVideo;
   onSaved: (video: TVideo) => void;
   onToast?: (message: string) => void;
+  mode?: "default" | "header";
 };
 
 type VideoWithMatch = {
@@ -32,6 +33,7 @@ export function MatchColorEditor<TVideo extends VideoWithMatch>({
   video,
   onSaved,
   onToast,
+  mode = "default",
 }: MatchColorEditorProps<TVideo>) {
   const matchInfo = getVideoMatchInfo(video);
   const detectedColors = video.latestMetrics?.match?.detectedTeamColors;
@@ -73,8 +75,8 @@ export function MatchColorEditor<TVideo extends VideoWithMatch>({
   }
 
   return (
-    <div className="match-color-editor" aria-label="Colores de equipos detectados">
-      <div className="match-color-editor__copy">
+    <div className={`match-color-editor ${mode === "header" ? "match-color-editor--header" : ""}`} aria-label="Colores de equipos detectados">
+      <div className={`match-color-editor__copy ${mode === "header" ? "match-color-editor__copy--compact" : ""}`}>
         <span>Colores del partido</span>
         <strong>
           {matchInfo.ownTeam ?? "Equipo propio"} / {matchInfo.rivalTeam ?? "Equipo rival"}
@@ -105,7 +107,9 @@ export function MatchColorEditor<TVideo extends VideoWithMatch>({
           <ColorSwatch label="Equipo rival" color={pair.rivalTeamColor} />
         </>
       ) : (
-        <div className="match-color-empty">El análisis debe detectar dos colores antes de permitir intercambio.</div>
+        <div className={`match-color-empty ${mode === "header" ? "match-color-empty--header" : ""}`}>
+          {mode === "header" ? "Sin colores detectados" : "El análisis debe detectar dos colores antes de permitir intercambio."}
+        </div>
       )}
 
       <button
