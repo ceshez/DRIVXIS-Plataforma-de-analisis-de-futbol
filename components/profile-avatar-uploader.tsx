@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 
 type ProfileAvatarUploaderProps = {
   name: string;
@@ -18,15 +19,13 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [nonce, setNonce] = useState(avatarVersion || "0");
-  const [hasServerAvatar, setHasServerAvatar] = useState(hasAvatar);
+  const [localAvatarVersion, setLocalAvatarVersion] = useState<string | null>(null);
+  const [hasLocalAvatar, setHasLocalAvatar] = useState(false);
   const initials = useMemo(() => (name.trim() || email.trim() || "U").charAt(0).toUpperCase(), [email, name]);
   const fileInputId = "profile-avatar-input";
-
-  const currentAvatarUrl = useMemo(
-    () => (hasServerAvatar ? `/api/profile/avatar?v=${encodeURIComponent(nonce)}` : ""),
-    [hasServerAvatar, nonce],
-  );
+  const avatarNonce = localAvatarVersion ?? avatarVersion ?? "0";
+  const hasCurrentAvatar = hasAvatar || hasLocalAvatar;
+  const currentAvatarUrl = hasCurrentAvatar ? `/api/profile/avatar?v=${encodeURIComponent(avatarNonce)}` : "";
 
   useEffect(() => {
     return () => {
@@ -86,8 +85,8 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
       }
 
       const updatedAt = data.avatar?.updatedAt || String(Date.now());
-      setNonce(updatedAt);
-      setHasServerAvatar(true);
+      setLocalAvatarVersion(updatedAt);
+      setHasLocalAvatar(true);
       setSelectedFile(null);
       setPreviewUrl((current) => {
         if (current) URL.revokeObjectURL(current);
@@ -107,9 +106,9 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
       <div className="profile-editor__avatar-wrap">
         <label className="profile-editor__avatar-button" htmlFor={fileInputId} aria-label="Actualizar foto de perfil">
           {previewUrl ? (
-            <img src={previewUrl} alt="Vista previa del avatar" />
+            <Image src={previewUrl} alt="Vista previa del avatar" width={172} height={172} unoptimized />
           ) : currentAvatarUrl ? (
-            <img src={currentAvatarUrl} alt="Avatar actual" />
+            <Image src={currentAvatarUrl} alt="Avatar actual" width={172} height={172} unoptimized />
           ) : (
             <span>{initials}</span>
           )}

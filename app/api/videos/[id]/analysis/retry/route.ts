@@ -11,8 +11,7 @@ type RouteContext = {
 export const runtime = "nodejs";
 
 export async function POST(_request: Request, context: RouteContext) {
-  const user = await requireUser();
-  const { id } = await context.params;
+  const [user, { id }] = await Promise.all([requireUser(), context.params]);
 
   const video = await prisma.video.findFirst({
     where: { id, ownerId: user.id },

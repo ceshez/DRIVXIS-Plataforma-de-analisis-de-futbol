@@ -12,8 +12,7 @@ const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 export async function POST(request: Request) {
-  const user = await requireUser();
-  const formData = await request.formData().catch(() => null);
+  const [user, formData] = await Promise.all([requireUser(), request.formData().catch(() => null)]);
   const file = formData?.get("file");
 
   if (!(file instanceof File)) {

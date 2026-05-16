@@ -19,8 +19,3 @@ export function buildStorageUsagePayload(usedBytes: bigint, limitBytes: bigint):
     percentUsed,
   };
 }
-
-export function clampStorageUsed(usedBytes: bigint, deltaBytes: bigint) {
-  const next = usedBytes + deltaBytes;
-  return next < 0n ? 0n : next;
-}

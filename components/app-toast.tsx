@@ -81,7 +81,7 @@ function ToastItem({ toast, onDismiss }: { toast: AppToast; onDismiss: (id: stri
   );
 }
 
-export function playConfirmationSound() {
+function playConfirmationSound() {
   if (typeof window === "undefined") return;
   try {
     const AudioContext = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof window.AudioContext }).webkitAudioContext;

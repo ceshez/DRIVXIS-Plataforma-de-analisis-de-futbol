@@ -19,8 +19,7 @@ type RouteContext = {
 };
 
 export async function GET(_request: Request, context: RouteContext) {
-  const user = await requireUser();
-  const { id } = await context.params;
+  const [user, { id }] = await Promise.all([requireUser(), context.params]);
 
   const video = await prisma.video.findFirst({
     where: { id, ownerId: user.id },
@@ -68,8 +67,7 @@ export async function GET(_request: Request, context: RouteContext) {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const user = await requireUser();
-  const { id } = await context.params;
+  const [user, { id }] = await Promise.all([requireUser(), context.params]);
   const parsed = updateVideoMatchSchema.safeParse(await request.json().catch(() => null));
 
   if (!parsed.success) {
@@ -167,8 +165,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
-  const user = await requireUser();
-  const { id } = await context.params;
+  const [user, { id }] = await Promise.all([requireUser(), context.params]);
 
   const video = await prisma.video.findFirst({
     where: { id, ownerId: user.id },

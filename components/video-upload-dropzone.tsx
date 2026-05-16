@@ -48,7 +48,7 @@ export function VideoUploadDropzone({
   const [dragOver, setDragOver] = useState(false);
   const [state, setState] = useState<UploadState>("idle");
   const [message, setMessage] = useState("Click para abrir archivos");
-  const [presignDiagnostic, setPresignDiagnostic] = useState("");
+  const presignDiagnosticRef = useRef("");
   const [fileName, setFileName] = useState("");
   const [ownTeam, setOwnTeam] = useState("");
   const [rivalTeam, setRivalTeam] = useState("");
@@ -89,7 +89,7 @@ export function VideoUploadDropzone({
     setState("uploading");
     setFileName(file.name);
     setMessage("Preparando carga");
-    setPresignDiagnostic("");
+    presignDiagnosticRef.current = "";
     const matchInfo = {
       ownTeam: normalizedOwnTeam,
       rivalTeam: normalizedRivalTeam,
@@ -130,9 +130,8 @@ export function VideoUploadDropzone({
       const isRequestedMimeMatch = putContentType === metadata.mimeType;
       const isSignedMimeMatch = putContentType === signedMimeType;
 
-      setPresignDiagnostic(
-        `Presign: configured=${String(Boolean(presign.configured))} | uploadMode=${presign.uploadMode || "unknown"} | uploadUrl=${String(Boolean(presign.uploadUrl))} | host=${uploadUrlHost || "null"}`,
-      );
+      presignDiagnosticRef.current =
+        `Presign: configured=${String(Boolean(presign.configured))} | uploadMode=${presign.uploadMode || "unknown"} | uploadUrl=${String(Boolean(presign.uploadUrl))} | host=${uploadUrlHost || "null"}`;
 
       if (process.env.NODE_ENV === "development") {
         console.info("[DRIVXIS upload diagnostics]", {

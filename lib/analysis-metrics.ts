@@ -288,21 +288,3 @@ function parseTeamDistance(value: unknown, fallbackName: string) {
         totalKm: 0,
       };
 }
-
-export function getMetricDisplay(metrics: AnalysisMetrics | null) {
-  const possession = metrics?.ballControl?.ownTeam ?? metrics?.possession.team1Pct ?? 0;
-  const ownDistanceKm = metrics?.distance.teams?.own.totalKm ?? (metrics?.teamDistances?.ownTeam ?? 0) / 1000;
-  const rivalDistanceKm = metrics?.distance.teams?.rival.totalKm ?? (metrics?.teamDistances?.rivalTeam ?? 0) / 1000;
-  const totalDistanceKm = ownDistanceKm + rivalDistanceKm;
-
-  return {
-    possession: possession.toFixed(1),
-    rivalPossession: (metrics?.ballControl?.rivalTeam ?? metrics?.possession.team2Pct ?? 0).toFixed(1),
-    maxSpeed: (metrics?.speed.maxKmh ?? 0).toFixed(1),
-    avgSpeed: (metrics?.speed.avgKmh ?? 0).toFixed(1),
-    distanceKm: totalDistanceKm.toFixed(totalDistanceKm >= 10 ? 1 : 2),
-    ownDistanceKm: ownDistanceKm.toFixed(ownDistanceKm >= 10 ? 1 : 2),
-    rivalDistanceKm: rivalDistanceKm.toFixed(rivalDistanceKm >= 10 ? 1 : 2),
-    frameCount: String(metrics?.video.frameCount ?? 0),
-  };
-}

@@ -15,8 +15,7 @@ type RouteContext = {
 export const runtime = "nodejs";
 
 export async function GET(request: Request, context: RouteContext) {
-  const user = await requireUser();
-  const { id } = await context.params;
+  const [user, { id }] = await Promise.all([requireUser(), context.params]);
   const { searchParams } = new URL(request.url);
   const requestedVariant = searchParams.get("variant");
   const variant = requestedVariant === "source" ? "source" : "processed";

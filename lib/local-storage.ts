@@ -1,21 +1,21 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
-export function getLocalStorageRoot() {
+function getLocalStorageRoot() {
   return path.resolve(
     /*turbopackIgnore: true*/ process.cwd(),
     process.env.LOCAL_STORAGE_ROOT || ".drivxis/uploads",
   );
 }
 
-export function getAnalysisStorageRoot() {
+function getAnalysisStorageRoot() {
   return path.resolve(
     /*turbopackIgnore: true*/ process.cwd(),
     process.env.ANALYSIS_STORAGE_ROOT || ".drivxis/analysis",
   );
 }
 
-export function assertSafeObjectKey(objectKey: string) {
+function assertSafeObjectKey(objectKey: string) {
   if (!objectKey || objectKey.includes("\\") || objectKey.includes("\0")) {
     throw new Error("Llave de storage invalida.");
   }
@@ -51,15 +51,15 @@ export function getAnalysisOutputDirectory(videoId: string) {
   return path.resolve(getAnalysisStorageRoot(), videoId);
 }
 
-export function getAnnotatedVideoPath(videoId: string) {
+function getAnnotatedVideoPath(videoId: string) {
   return path.join(getAnalysisOutputDirectory(videoId), "annotated.mp4");
 }
 
-export function getMetricsJsonPath(videoId: string) {
+function getMetricsJsonPath(videoId: string) {
   return path.join(getAnalysisOutputDirectory(videoId), "metrics.json");
 }
 
-export function isPathInsideDirectory(root: string, candidatePath: string) {
+function isPathInsideDirectory(root: string, candidatePath: string) {
   const resolvedRoot = path.resolve(root);
   const resolvedCandidate = path.resolve(candidatePath);
   const rootWithSep = resolvedRoot.endsWith(path.sep) ? resolvedRoot : `${resolvedRoot}${path.sep}`;

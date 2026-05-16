@@ -8,8 +8,8 @@ export type StorageInput = {
   mimeType: string;
 };
 
-export type UploadMode = "s3" | "local";
-export type StorageProvider = "local" | "r2" | "s3-compatible";
+type UploadMode = "s3" | "local";
+type StorageProvider = "local" | "r2" | "s3-compatible";
 
 export type StorageConfigStatus = {
   configured: boolean;
@@ -47,11 +47,6 @@ export function createVideoObjectKey({ userId, filename }: StorageInput) {
   const date = new Date().toISOString().slice(0, 10);
   const random = crypto.randomUUID();
   return `users/${userId}/videos/${date}/${random}-${cleanFilename(filename) || "match-video"}`;
-}
-
-export function createAnalysisObjectKey({ userId, videoId, filename }: { userId: string; videoId: string; filename: string }) {
-  const safeVideoId = videoId.replace(/[^\w-]+/g, "-").slice(0, 120) || crypto.randomUUID();
-  return `users/${userId}/analysis/${safeVideoId}/${cleanFilename(filename) || "analysis-output"}`;
 }
 
 function assertSafeRemoteObjectKey(objectKey: string) {
@@ -222,10 +217,6 @@ export async function checkStorageConnectivity() {
   }
 }
 
-export function getConfiguredStorageClient() {
-  return getStorageClient();
-}
-
 export async function getStorageObject(objectKey: string, range?: string | null) {
   assertSafeRemoteObjectKey(objectKey);
   if (!isStorageConfigured()) {
@@ -306,25 +297,37 @@ export async function deleteStorageObjects(objectKeys: string[]) {
   const deleted: string[] = [];
   const warnings: Array<{ objectKey: string; code: "INVALID_KEY" | "NOT_FOUND" | "DELETE_FAILED" | "STORAGE_NOT_CONFIGURED"; message?: string }> = [];
 
-  for (const objectKey of uniqueKeys) {
-    try {
-      const result = await deleteStorageObject(objectKey);
-      if (result.ok) {
-        deleted.push(objectKey);
-        continue;
+  const deletionResults = await Promise.all(
+    uniqueKeys.map(async (objectKey) => {
+      try {
+        const result = await deleteStorageObject(objectKey);
+        return { objectKey, result } as const;
+      } catch (error) {
+        return { objectKey, error } as const;
       }
+    }),
+  );
+
+  for (const entry of deletionResults) {
+    if ("error" in entry) {
       warnings.push({
-        objectKey,
-        code: result.code,
-        ...(result && "message" in result && result.message ? { message: result.message } : {}),
-      });
-    } catch (error) {
-      warnings.push({
-        objectKey,
+        objectKey: entry.objectKey,
         code: "INVALID_KEY",
-        message: error instanceof Error ? error.message.slice(0, 300) : "Llave invalida para borrar en storage remoto.",
+        message: entry.error instanceof Error ? entry.error.message.slice(0, 300) : "Llave invalida para borrar en storage remoto.",
       });
+      continue;
     }
+
+    if (entry.result.ok) {
+      deleted.push(entry.objectKey);
+      continue;
+    }
+
+    warnings.push({
+      objectKey: entry.objectKey,
+      code: entry.result.code,
+      ...(entry.result && "message" in entry.result && entry.result.message ? { message: entry.result.message } : {}),
+    });
   }
 
   return {

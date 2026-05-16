@@ -10,8 +10,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request, context: RouteContext) {
-  const user = await requireUser();
-  const { id } = await context.params;
+  const [user, { id }] = await Promise.all([requireUser(), context.params]);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({

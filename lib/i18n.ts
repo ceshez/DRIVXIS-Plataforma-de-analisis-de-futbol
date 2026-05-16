@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
 export type Dictionary = Record<string, string>;
@@ -13,11 +12,6 @@ export function pickLocale(acceptLanguage: string | null | undefined) {
     .filter(Boolean);
 
   return preferred[0]?.split("-")[0] || "es";
-}
-
-export async function getRequestLocale() {
-  const headerStore = await headers();
-  return pickLocale(headerStore.get("accept-language"));
 }
 
 function sourceHash(text: string) {

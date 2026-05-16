@@ -153,7 +153,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     if (!selected || !shouldPollSelected) return;
 
     const eventSource = new EventSource(`/api/videos/${selected.id}/events`);
-    eventSource.addEventListener("video", (event) => {
+    const handleVideoEvent = (event: Event) => {
       const nextVideo = JSON.parse((event as MessageEvent).data) as HistoryVideo;
       setVideos((current) => {
         const previous = current.find((video) => video.id === nextVideo.id);
@@ -170,13 +170,17 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
       if (nextVideo.status === "COMPLETED" || nextVideo.status === "FAILED") {
         eventSource.close();
       }
-    });
-    eventSource.onerror = () => {
+    };
+    const handleError = () => {
       eventSource.close();
       void refreshVideo(selected.id);
     };
+    eventSource.addEventListener("video", handleVideoEvent);
+    eventSource.addEventListener("error", handleError);
 
     return () => {
+      eventSource.removeEventListener("video", handleVideoEvent);
+      eventSource.removeEventListener("error", handleError);
       eventSource.close();
     };
   }, [selected?.id, shouldPollSelected, pushToast]);
@@ -462,7 +466,19 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
         : null}
 
       {deleteTarget ? (
-        <div className="history-modal-backdrop" role="presentation" onClick={() => setDeleteTargetId(null)}>
+        <div
+          className="history-modal-backdrop"
+          role="button"
+          tabIndex={0}
+          aria-label="Cerrar confirmación de eliminación"
+          onClick={() => setDeleteTargetId(null)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setDeleteTargetId(null);
+            }
+          }}
+        >
           <div
             className="history-modal"
             role="dialog"

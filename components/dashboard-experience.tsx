@@ -1,7 +1,8 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import dynamic from "next/dynamic";
+import Link from "next/link";
 import { CheckCircle2, Film, History, ScanLine, Upload } from "lucide-react";
 import { AnalysisProcessingPanel } from "@/components/analysis-processing-panel";
 import { type AnalysisMetrics } from "@/lib/analysis-metrics";
@@ -10,6 +11,22 @@ import { ToastViewport, useAppToasts } from "@/components/app-toast";
 import { MatchColorEditor } from "@/components/match-color-editor";
 import { AnnotationLine, CornerMarks, Crosshair, MicroGrid } from "@/components/micro-graphics";
 import { VideoUploadDropzone, type UploadedVideo } from "@/components/video-upload-dropzone";
+
+const Bar = dynamic(async () => (await import("recharts")).Bar, { ssr: false });
+const BarChart = dynamic(async () => (await import("recharts")).BarChart, { ssr: false });
+const CartesianGrid = dynamic(async () => (await import("recharts")).CartesianGrid, { ssr: false });
+const Cell = dynamic(async () => (await import("recharts")).Cell, { ssr: false });
+const Line = dynamic(async () => (await import("recharts")).Line, { ssr: false });
+const LineChart = dynamic(async () => (await import("recharts")).LineChart, { ssr: false });
+const PolarAngleAxis = dynamic(async () => (await import("recharts")).PolarAngleAxis, { ssr: false });
+const PolarGrid = dynamic(async () => (await import("recharts")).PolarGrid, { ssr: false });
+const PolarRadiusAxis = dynamic(async () => (await import("recharts")).PolarRadiusAxis, { ssr: false });
+const Radar = dynamic(async () => (await import("recharts")).Radar, { ssr: false });
+const RadarChart = dynamic(async () => (await import("recharts")).RadarChart, { ssr: false });
+const ResponsiveContainer = dynamic(async () => (await import("recharts")).ResponsiveContainer, { ssr: false });
+const Tooltip = dynamic(async () => (await import("recharts")).Tooltip, { ssr: false });
+const XAxis = dynamic(async () => (await import("recharts")).XAxis, { ssr: false });
+const YAxis = dynamic(async () => (await import("recharts")).YAxis, { ssr: false });
 
 type RecentVideo = {
   id: string;
@@ -213,7 +230,7 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
     if (!pollingEnabled || !pollTarget) return;
 
     const eventSource = new EventSource(`/api/videos/${pollTarget.id}/events`);
-    eventSource.addEventListener("video", (event) => {
+    const handleVideoEvent = (event: Event) => {
       const nextVideo = JSON.parse((event as MessageEvent).data) as RecentVideo;
       setItems((current) => {
         const previous = current.find((video) => video.id === nextVideo.id);
@@ -232,13 +249,17 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
         setActiveId(nextVideo.id);
         eventSource.close();
       }
-    });
-    eventSource.onerror = () => {
+    };
+    const handleError = () => {
       eventSource.close();
       void refreshVideo(pollTarget.id);
     };
+    eventSource.addEventListener("video", handleVideoEvent);
+    eventSource.addEventListener("error", handleError);
 
     return () => {
+      eventSource.removeEventListener("video", handleVideoEvent);
+      eventSource.removeEventListener("error", handleError);
       eventSource.close();
     };
   }, [pollTarget?.id, pollingEnabled, pushToast]);
@@ -463,8 +484,8 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
               <YAxis tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 9 }} axisLine={false} tickLine={false} />
               <Tooltip cursor={{ fill: "rgba(255,107,43,0.04)" }} contentStyle={{ background: "#0b0b0b", border: "1px solid rgba(255,107,43,0.25)", color: "#f2f0ee" }} />
               <Bar dataKey="value">
-                {zoneData.map((_, index) => (
-                  <Cell key={index} fill={`rgba(255,107,43,${0.25 + index * 0.16})`} stroke="#ff6b2b" strokeWidth={0.5} />
+                {zoneData.map((zoneItem, index) => (
+                  <Cell key={zoneItem.zone} fill={`rgba(255,107,43,${0.25 + index * 0.16})`} stroke="#ff6b2b" strokeWidth={0.5} />
                 ))}
               </Bar>
             </BarChart>
@@ -490,10 +511,10 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
               Historial <em>de videos</em>
             </h2>
           </div>
-          <a href="/dashboard/videos" className="text-command">
+          <Link href="/dashboard/videos" className="text-command">
             <History size={13} />
             {totalAnalysisLabel} análisis
-          </a>
+          </Link>
         </div>
 
         {items.length === 0 ? (

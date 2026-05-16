@@ -1,4 +1,5 @@
 ﻿import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight, BarChart2, ChevronRight, Cpu, FileVideo, TrendingUp } from "lucide-react";
 import { AnnotationLine, CornerMarks, Crosshair, MicroGrid } from "@/components/micro-graphics";
 import { SiteHeader } from "@/components/site-header";
@@ -280,11 +281,11 @@ export default function HomePage() {
             <span className="field-measure field-measure--right">54 m</span>
             <span className="field-measure field-measure--bottom">52.5 m</span>
             <span className="ball-marker" style={{ left: "57%", top: "50%" }} />
-            {tacticalPlayers.map((player, index) => (
+            {tacticalPlayers.map((player) => (
               <span
                 className={`player-marker ${player.team}`}
                 data-label={player.label}
-                key={`${player.team}-${index}`}
+                key={`${player.team}-${player.left}-${player.top}-${player.label || "none"}`}
                 style={{ left: player.left, top: player.top }}
               />
             ))}
@@ -313,7 +314,7 @@ export default function HomePage() {
 
       <footer className="site-footer">
         <span className="footer-brand">
-          <img src="/logos/drivxis-logo-claro.svg" alt="DRIVXIS" />
+          <Image src="/logos/drivxis-logo-claro.svg" alt="DRIVXIS" width={86} height={21} />
         </span>
         <span>2026 / Football intelligence system</span>
         <div>

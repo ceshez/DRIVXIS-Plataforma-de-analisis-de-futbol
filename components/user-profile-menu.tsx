@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { BarChart3, Gauge, LogOut, Settings, UserRound } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -35,10 +36,13 @@ export function UserProfileMenu({
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
-  const [avatarVisible, setAvatarVisible] = useState(hasAvatar);
-  const [avatarNonce, setAvatarNonce] = useState(() => avatarVersion || "0");
+  const [hasLocalAvatar, setHasLocalAvatar] = useState(false);
+  const [avatarNonceOverride, setAvatarNonceOverride] = useState<string | null>(null);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const safeName = (name || "").trim();
   const safeEmail = (email || "").trim();
+  const avatarNonce = avatarNonceOverride ?? avatarVersion ?? "0";
+  const showAvatar = (hasAvatar || hasLocalAvatar) && !avatarLoadFailed;
 
   const avatarLetter = useMemo(() => {
     const source = safeName || safeEmail || "U";
@@ -51,13 +55,8 @@ export function UserProfileMenu({
   }, [pathname]);
 
   useEffect(() => {
-    setAvatarVisible(hasAvatar);
-  }, [hasAvatar]);
-
-  useEffect(() => {
-    if (!avatarVersion) return;
-    setAvatarNonce(avatarVersion);
-  }, [avatarVersion]);
+    setAvatarLoadFailed(false);
+  }, [avatarNonce]);
 
   useEffect(() => {
     if (!open) return;
@@ -83,8 +82,9 @@ export function UserProfileMenu({
   useEffect(() => {
     function handleAvatarUpdated(event: Event) {
       const detail = (event as CustomEvent<{ updatedAt?: string }>).detail;
-      setAvatarVisible(true);
-      setAvatarNonce(detail?.updatedAt || String(Date.now()));
+      setHasLocalAvatar(true);
+      setAvatarNonceOverride(detail?.updatedAt || String(Date.now()));
+      setAvatarLoadFailed(false);
     }
 
     window.addEventListener("drivxis:avatar-updated", handleAvatarUpdated);
@@ -124,12 +124,15 @@ export function UserProfileMenu({
         onClick={() => setOpen((value) => !value)}
       >
         <span className="profile-menu__trigger-avatar-wrap">
-          {avatarVisible ? (
-            <img
+          {showAvatar ? (
+            <Image
               src={`/api/profile/avatar?v=${encodeURIComponent(avatarNonce)}`}
               alt="Avatar de usuario"
               className="profile-menu__avatar-image"
-              onError={() => setAvatarVisible(false)}
+              width={44}
+              height={44}
+              unoptimized
+              onError={() => setAvatarLoadFailed(true)}
             />
           ) : (
             <span className="profile-menu__avatar" aria-hidden="true">
@@ -152,11 +155,14 @@ export function UserProfileMenu({
         <div className="profile-menu__dropdown" role="menu" aria-label="Men\u00fa de usuario">
           <div className="profile-menu__identity">
             <span className="profile-menu__identity-avatar" aria-hidden="true">
-              {avatarVisible ? (
-                <img
+              {showAvatar ? (
+                <Image
                   src={`/api/profile/avatar?v=${encodeURIComponent(avatarNonce)}`}
                   alt=""
                   className="profile-menu__identity-avatar-image"
+                  width={40}
+                  height={40}
+                  unoptimized
                 />
               ) : (
                 avatarLetter

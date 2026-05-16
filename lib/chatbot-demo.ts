@@ -17,14 +17,6 @@ const footballKeywords = [
   "presion",
 ];
 
-export const chatbotStarterPrompts = [
-  "Análisis táctico",
-  "Rendimiento físico",
-  "Presión y posesión",
-  "Comparar equipos",
-  "Plan de juego",
-  "Resumen del partido",
-];
 
 export function getDemoAssistantResponse(message: string) {
   const normalized = normalizeText(message);

@@ -13,7 +13,7 @@ type AnalysisVideoPlayerProps = {
 export function AnalysisVideoPlayer({ src, title, className = "", onStreamError }: AnalysisVideoPlayerProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [streamError, setStreamError] = useState("");
+  const [streamError, setStreamError] = useState<{ src: string; message: string } | null>(null);
 
   async function tryLockLandscape() {
     const orientation = window.screen?.orientation;
@@ -48,10 +48,6 @@ export function AnalysisVideoPlayer({ src, title, className = "", onStreamError 
     return () => document.removeEventListener("fullscreenchange", syncFullscreenState);
   }, []);
 
-  useEffect(() => {
-    setStreamError("");
-  }, [src]);
-
   async function toggleFullscreen() {
     const target = shellRef.current;
     if (!target) return;
@@ -78,7 +74,7 @@ export function AnalysisVideoPlayer({ src, title, className = "", onStreamError 
         cache: "no-store",
       });
       if (response.ok) {
-        setStreamError(fallbackMessage);
+        setStreamError({ src, message: fallbackMessage });
         onStreamError?.(fallbackMessage);
         return;
       }
@@ -92,14 +88,16 @@ export function AnalysisVideoPlayer({ src, title, className = "", onStreamError 
       const message = payload.error
         ? `${payload.error}${payload.code ? ` [${payload.code}]` : ""}${detail}`
         : `${fallbackMessage}${detail}`;
-      setStreamError(message);
+      setStreamError({ src, message });
       onStreamError?.(message);
     } catch {
       const networkMessage = "No se pudo cargar el stream. Verifica red, sesion o configuracion de storage.";
-      setStreamError(networkMessage);
+      setStreamError({ src, message: networkMessage });
       onStreamError?.(networkMessage);
     }
   }
+
+  const activeStreamError = streamError?.src === src ? streamError.message : "";
 
   return (
     <div className={`analysis-video-shell ${isFullscreen ? "is-fullscreen" : ""} ${className}`} ref={shellRef}>
@@ -122,7 +120,7 @@ export function AnalysisVideoPlayer({ src, title, className = "", onStreamError 
       >
         {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
       </button>
-      {streamError ? <p className="history-muted">{streamError}</p> : null}
+      {activeStreamError ? <p className="history-muted">{activeStreamError}</p> : null}
     </div>
   );
 }
