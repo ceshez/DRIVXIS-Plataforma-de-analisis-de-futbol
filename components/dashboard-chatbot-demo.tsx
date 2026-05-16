@@ -10,10 +10,10 @@ import {
   CalendarDays,
   ChevronDown,
   Clock3,
+  Ellipsis,
   FileText,
   GitBranch,
   Menu,
-  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import { UserProfileMenu } from "@/components/user-profile-menu";
-import { chatbotStarterPrompts, getDemoAssistantResponse } from "@/lib/chatbot-demo";
+import { getDemoAssistantResponse } from "@/lib/chatbot-demo";
 import styles from "./dashboard-chatbot-demo.module.css";
 
 type DashboardChatbotDemoProps = {
@@ -51,22 +51,29 @@ type AssistantPhase = "idle" | "thinking" | "typing";
 
 const navItems = [
   { id: "new", label: "Nuevo chat", icon: Plus },
-  { id: "search", label: "Buscar", icon: Search },
-  { id: "chats", label: "Chats", icon: MessageSquare, active: true },
-  { id: "seasons", label: "Temporadas", icon: CalendarDays },
+  { id: "search", label: "Buscar chat", icon: Search },
+  { id: "season", label: "Temporadas", icon: CalendarDays },
   { id: "custom", label: "Personalizar", icon: SlidersHorizontal },
 ];
 
 const recentItems = [
-  "Análisis táctico jornada 3",
-  "Patrones de presión alta",
-  "Transiciones defensivas vs Real",
-  "Rendimiento mediocampo Q1",
-  "Errores defensivos vs Saprissa",
-  "Comparación entre extremos",
-];
+  { id: "recent-1", label: "Análisis táctico jornada 3" },
+  { id: "recent-2", label: "Patrones de presión alta" },
+  { id: "recent-3", label: "Transiciones defensivas vs Real" },
+  { id: "recent-4", label: "Rendimiento mediocampo Q1" },
+  { id: "recent-5", label: "Errores defensivos vs Saprissa" },
+  { id: "recent-6", label: "Comparación entre extremos" },
+] as const;
 
 const starterPromptIcons = [Target, Activity, Bot, Users, GitBranch, FileText];
+const starterPrompts = [
+  "Análisis táctico",
+  "Rendimiento físico",
+  "Presión y posesión",
+  "Comparar equipos",
+  "Plan de juego",
+  "Resumen del partido",
+];
 
 function BrandWordmark({ compact = false }: { compact?: boolean }) {
   return (
@@ -94,24 +101,31 @@ export function DashboardChatbotDemo({
   const [selectedPrompt, setSelectedPrompt] = useState("");
   const [replyQueue, setReplyQueue] = useState<PendingReply[]>([]);
   const [activeReply, setActiveReply] = useState<PendingReply | null>(null);
+  const [activeNavItem, setActiveNavItem] = useState<(typeof navItems)[number]["id"]>("new");
+  const [openRecentMenuId, setOpenRecentMenuId] = useState<string | null>(null);
+  const [isMobileLayout, setIsMobileLayout] = useState(false);
 
   const messageCounterRef = useRef(0);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const autoScrollEnabledRef = useRef(true);
+  const previousAssistantPhaseRef = useRef<AssistantPhase>("idle");
 
   const trimmedDraft = draft.trim();
-  const showEmptyIntro = !hasSentFirstMessage && trimmedDraft.length === 0;
+  const isAssistantResponding = assistantPhase !== "idle" || activeReply !== null || replyQueue.length > 0;
+  const showEmptyIntro = !hasSentFirstMessage && (!isMobileLayout || trimmedDraft.length === 0);
   const showStarterPrompts = !hasSentFirstMessage;
   const isAssistantThinking = assistantPhase === "thinking";
   const isAssistantTyping = assistantPhase === "typing";
   const isConversationMode = hasSentFirstMessage || messages.length > 0 || assistantPhase !== "idle";
+  const isDesktopSidebarCollapsed = sidebarCollapsed && !isMobileLayout;
 
-  const rootClassName = [styles.shell, sidebarCollapsed ? styles.sidebarCollapsed : ""].filter(Boolean).join(" ");
+  const rootClassName = [styles.shell, isDesktopSidebarCollapsed ? styles.sidebarCollapsed : ""].filter(Boolean).join(" ");
   const sidebarClassName = [styles.sidebar, mobileSidebarOpen ? styles.sidebarMobileOpen : ""].filter(Boolean).join(" ");
+  const landingClassName = [styles.landing, showEmptyIntro ? styles.landingIntro : styles.landingCompact].join(" ");
 
   const starterPromptEntries = useMemo(() => {
-    return chatbotStarterPrompts.map((prompt, index) => ({
+    return starterPrompts.map((prompt, index) => ({
       prompt,
       Icon: starterPromptIcons[index % starterPromptIcons.length],
     }));
@@ -143,7 +157,7 @@ export function DashboardChatbotDemo({
       setAssistantPhase("typing");
 
       typingInterval = setInterval(() => {
-        const chunk = Math.max(1, Math.min(3, Math.floor(Math.random() * 3) + 1));
+        const chunk = Math.max(1, Math.min(4, Math.floor(Math.random() * 4) + 1));
         cursor = Math.min(activeReply.content.length, cursor + chunk);
         setTypingText(activeReply.content.slice(0, cursor));
 
@@ -165,8 +179,8 @@ export function DashboardChatbotDemo({
         setTypingText("");
         setAssistantPhase("idle");
         setActiveReply(null);
-      }, 34);
-    }, 360);
+      }, 26);
+    }, 320);
 
     return () => {
       if (thinkingTimeout) clearTimeout(thinkingTimeout);
@@ -198,6 +212,53 @@ export function DashboardChatbotDemo({
     };
   }, [mobileSidebarOpen]);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 760px)");
+    const updateIsMobile = (event?: MediaQueryListEvent) => {
+      setIsMobileLayout(event ? event.matches : mediaQuery.matches);
+    };
+    updateIsMobile();
+    mediaQuery.addEventListener("change", updateIsMobile);
+    return () => mediaQuery.removeEventListener("change", updateIsMobile);
+  }, []);
+
+  useEffect(() => {
+    if (!isMobileLayout && mobileSidebarOpen) {
+      setMobileSidebarOpen(false);
+    }
+  }, [isMobileLayout, mobileSidebarOpen]);
+
+  useEffect(() => {
+    const previousPhase = previousAssistantPhaseRef.current;
+    previousAssistantPhaseRef.current = assistantPhase;
+
+    const finishedTyping = previousPhase === "typing" && assistantPhase === "idle" && !isAssistantResponding;
+    if (!finishedTyping || isMobileLayout) return;
+    if (window.matchMedia("(pointer: coarse)").matches) return;
+
+    window.requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, [assistantPhase, isAssistantResponding, isMobileLayout]);
+
+  useEffect(() => {
+    if (!openRecentMenuId) return;
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as HTMLElement;
+      if (target.closest("[data-recent-menu-root='true']")) return;
+      setOpenRecentMenuId(null);
+    }
+    function handleEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") setOpenRecentMenuId(null);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [openRecentMenuId]);
+
   function nextMessageId(role: ChatMessage["role"]) {
     messageCounterRef.current += 1;
     return `${role}-${Date.now()}-${messageCounterRef.current}`;
@@ -216,7 +277,7 @@ export function DashboardChatbotDemo({
   }
 
   function sendMessage() {
-    if (trimmedDraft.length === 0) return;
+    if (trimmedDraft.length === 0 || isAssistantResponding) return;
 
     const outbound = trimmedDraft;
     setMessages((current) => [
@@ -241,6 +302,10 @@ export function DashboardChatbotDemo({
   }
 
   function handleInputKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (isAssistantResponding) {
+      event.preventDefault();
+      return;
+    }
     if (event.key !== "Enter" || event.shiftKey) return;
     event.preventDefault();
     sendMessage();
@@ -250,6 +315,20 @@ export function DashboardChatbotDemo({
     setSelectedPrompt(prompt);
     setDraft(prompt);
     setMobileSidebarOpen(false);
+  }
+
+  function handleNavAction(itemId: (typeof navItems)[number]["id"]) {
+    setActiveNavItem(itemId);
+    if (itemId !== "new") return;
+    setMessages([]);
+    setReplyQueue([]);
+    setActiveReply(null);
+    setTypingText("");
+    setAssistantPhase("idle");
+    setDraft("");
+    setSelectedPrompt("");
+    setHasSentFirstMessage(false);
+    autoScrollEnabledRef.current = true;
   }
 
   return (
@@ -271,17 +350,20 @@ export function DashboardChatbotDemo({
                 </Link>
                 <button
                   type="button"
-                  className={styles.collapseButton}
+                  className={`${styles.collapseButton} ${styles.collapsedTooltipTrigger}`}
                   onClick={() => setSidebarCollapsed((value) => !value)}
                   aria-label={sidebarCollapsed ? "Expandir sidebar" : "Colapsar sidebar"}
+                  data-tooltip={sidebarCollapsed ? "Abrir barra lateral" : "Cerrar barra lateral"}
                 >
                   {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
                 </button>
               </div>
 
-              <Link href="/dashboard" className={styles.backLink}>
-                <ArrowLeft size={12} />
-                <span>Volver al dashboard</span>
+              <Link href="/dashboard" className={`${styles.backLink} ${styles.collapsedTooltipTrigger}`} data-tooltip="Volver al dashboard">
+                <span className={styles.backLinkIcon} aria-hidden="true">
+                  <ArrowLeft size={12} />
+                </span>
+                <span className={styles.backLinkLabel}>Volver al dashboard</span>
               </Link>
             </div>
 
@@ -289,12 +371,18 @@ export function DashboardChatbotDemo({
               <ul className={styles.navList}>
                 {navItems.map((item) => {
                   const Icon = item.icon;
+                  const isActive = activeNavItem === item.id;
                   return (
                     <li key={item.id}>
-                      <div className={`${styles.navItem} ${item.active ? styles.navItemActive : ""}`}>
+                      <button
+                        type="button"
+                        className={`${styles.navItem} ${styles.collapsedTooltipTrigger} ${isActive ? styles.navItemActive : ""}`}
+                        onClick={() => handleNavAction(item.id)}
+                        data-tooltip={item.label}
+                      >
                         <Icon size={14} />
                         <span className={styles.navText}>{item.label}</span>
-                      </div>
+                      </button>
                     </li>
                   );
                 })}
@@ -304,9 +392,40 @@ export function DashboardChatbotDemo({
                 <p className={styles.recentTitle}>Recientes</p>
                 <ul className={styles.recentList}>
                   {recentItems.map((item) => (
-                    <li key={item} className={styles.recentItem}>
-                      <Clock3 size={10} />
-                      <span>{item}</span>
+                    <li key={item.id} className={styles.recentItem} data-recent-menu-root="true">
+                      <button type="button" className={styles.recentRow}>
+                        <Clock3 size={10} />
+                        <span>{item.label}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.recentMenuButton}
+                        aria-label={`Opciones para ${item.label}`}
+                        aria-haspopup="menu"
+                        aria-expanded={openRecentMenuId === item.id}
+                        onClick={() => setOpenRecentMenuId((current) => (current === item.id ? null : item.id))}
+                      >
+                        <Ellipsis size={12} />
+                      </button>
+                      {openRecentMenuId === item.id ? (
+                        <ul className={styles.recentMenu} role="menu" aria-label={`Acciones para ${item.label}`}>
+                          <li>
+                            <button type="button" role="menuitem" onClick={() => setOpenRecentMenuId(null)}>
+                              Editar nombre
+                            </button>
+                          </li>
+                          <li>
+                            <button type="button" role="menuitem" onClick={() => setOpenRecentMenuId(null)}>
+                              Eliminar
+                            </button>
+                          </li>
+                          <li>
+                            <button type="button" role="menuitem" onClick={() => setOpenRecentMenuId(null)}>
+                              Agregar a temporada
+                            </button>
+                          </li>
+                        </ul>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
@@ -391,6 +510,7 @@ export function DashboardChatbotDemo({
                       rows={2}
                       className={styles.composerTextarea}
                       value={draft}
+                      disabled={isAssistantResponding}
                       onChange={(event) => {
                         setDraft(event.target.value);
                         if (selectedPrompt) setSelectedPrompt("");
@@ -408,7 +528,12 @@ export function DashboardChatbotDemo({
                         </button>
                       </div>
 
-                      <button className={styles.sendButton} type="submit" disabled={trimmedDraft.length === 0} aria-label="Enviar mensaje">
+                      <button
+                        className={styles.sendButton}
+                        type="submit"
+                        disabled={trimmedDraft.length === 0 || isAssistantResponding}
+                        aria-label="Enviar mensaje"
+                      >
                         <ArrowUp size={14} />
                       </button>
                     </div>
@@ -417,7 +542,7 @@ export function DashboardChatbotDemo({
               </div>
             </div>
           ) : (
-            <div className={styles.landing}>
+            <div className={landingClassName}>
               <div className={styles.centerStack}>
                 {showEmptyIntro ? (
                   <div className={styles.hero}>
@@ -437,6 +562,7 @@ export function DashboardChatbotDemo({
                       rows={3}
                       className={styles.composerTextarea}
                       value={draft}
+                      disabled={isAssistantResponding}
                       onChange={(event) => {
                         setDraft(event.target.value);
                         if (selectedPrompt) setSelectedPrompt("");
@@ -454,7 +580,7 @@ export function DashboardChatbotDemo({
                         </button>
                       </div>
 
-                      {trimmedDraft.length === 0 ? (
+                      {trimmedDraft.length === 0 || isAssistantResponding ? (
                         <div className={styles.assistantPicker} aria-label="Seleccionar asistente">
                           <strong>Asistente táctico</strong>
                           <ChevronDown size={15} />
