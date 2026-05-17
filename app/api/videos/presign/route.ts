@@ -45,6 +45,17 @@ export async function POST(request: Request) {
       filename: parsed.data.filename,
       mimeType: parsed.data.mimeType,
     });
+    if (process.env.NODE_ENV === "development") {
+      const uploadUrlHost = getUploadUrlHost(presign.uploadUrl);
+      console.info("[DRIVXIS presign diagnostics]", {
+        userId: user.id,
+        requestedMimeType: parsed.data.mimeType,
+        signedContentType: presign.signedContentType || null,
+        uploadMode: presign.uploadMode,
+        provider: presign.provider,
+        uploadUrlHost,
+      });
+    }
     return NextResponse.json(presign);
   } catch (error) {
     const message = error instanceof Error ? error.message : "No se pudo preparar la carga en storage remoto.";
@@ -55,5 +66,14 @@ export async function POST(request: Request) {
       },
       { status: 500 },
     );
+  }
+}
+
+function getUploadUrlHost(uploadUrl?: string | null) {
+  if (!uploadUrl) return null;
+  try {
+    return new URL(uploadUrl).host;
+  } catch {
+    return null;
   }
 }

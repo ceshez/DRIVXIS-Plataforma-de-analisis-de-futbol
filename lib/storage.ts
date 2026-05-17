@@ -90,6 +90,16 @@ function getEndpointHost(endpoint: string) {
   }
 }
 
+function isCloudflareR2S3ApiHost(endpointHost: string | null) {
+  if (!endpointHost) return false;
+  return endpointHost.includes("r2.cloudflarestorage.com");
+}
+
+function isCloudflareR2DevHost(endpointHost: string | null) {
+  if (!endpointHost) return false;
+  return endpointHost.endsWith(".r2.dev");
+}
+
 function endpointIncludesBucketName(endpoint: string, bucket: string) {
   if (!endpoint || !bucket) return false;
   const safeBucket = bucket.toLowerCase();
@@ -120,6 +130,9 @@ export function getStorageConfigStatus(): StorageConfigStatus {
   if (!bucket) errors.push("Missing STORAGE_BUCKET");
   if (!accessKey) errors.push("Missing STORAGE_ACCESS_KEY_ID");
   if (!secretKey) errors.push("Missing STORAGE_SECRET_ACCESS_KEY");
+  if (isCloudflareR2DevHost(endpointHost)) {
+    errors.push("STORAGE_ENDPOINT is using an r2.dev public domain. Use the S3 API endpoint: https://<ACCOUNT_ID>.r2.cloudflarestorage.com");
+  }
 
   const configured = errors.length === 0;
   return {
@@ -152,8 +165,14 @@ export function getStorageDebugStatus(): StorageDebugStatus {
   if (bucketName && endpointIncludesBucketName(endpoint, bucketName)) {
     warnings.push("Endpoint appears to include bucket name. Keep bucket only in STORAGE_BUCKET.");
   }
+  if (isCloudflareR2DevHost(endpointHost)) {
+    warnings.push("Endpoint points to an r2.dev public domain. Presigned PUT uploads require the S3 API endpoint.");
+  }
   if (endpointHost && !endpointHost.includes("r2.cloudflarestorage.com")) {
     warnings.push("Endpoint does not look like Cloudflare R2.");
+  }
+  if (endpointHost && endpointHost.includes("cloudflare") && !isCloudflareR2S3ApiHost(endpointHost)) {
+    warnings.push("Cloudflare endpoint is not the R2 S3 API domain. Presigned PUT URLs will fail on custom/public domains.");
   }
   if (status.region !== "auto") {
     warnings.push('Region should usually be "auto" for Cloudflare R2.');

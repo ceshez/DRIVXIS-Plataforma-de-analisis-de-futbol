@@ -34,6 +34,14 @@ type VideoUploadDropzoneProps = {
 };
 
 type UploadState = "idle" | "uploading" | "queued" | "error";
+type UploadDiagnostics = {
+  uploadUrlHost: string | null;
+  uploadMode: "s3" | "local" | "unknown";
+  provider: "local" | "r2" | "s3-compatible" | "unknown";
+  signedMimeType: string;
+  uploadMimeType: string;
+  uploadHeaderNames: string[];
+};
 
 export function VideoUploadDropzone({
   onUploaded,
@@ -48,7 +56,14 @@ export function VideoUploadDropzone({
   const [dragOver, setDragOver] = useState(false);
   const [state, setState] = useState<UploadState>("idle");
   const [message, setMessage] = useState("Click para abrir archivos");
-  const presignDiagnosticRef = useRef("");
+  const uploadDiagnosticsRef = useRef<UploadDiagnostics>({
+    uploadUrlHost: null,
+    uploadMode: "unknown",
+    provider: "unknown",
+    signedMimeType: "",
+    uploadMimeType: "",
+    uploadHeaderNames: [],
+  });
   const [fileName, setFileName] = useState("");
   const [ownTeam, setOwnTeam] = useState("");
   const [rivalTeam, setRivalTeam] = useState("");
@@ -89,7 +104,14 @@ export function VideoUploadDropzone({
     setState("uploading");
     setFileName(file.name);
     setMessage("Preparando carga");
-    presignDiagnosticRef.current = "";
+    uploadDiagnosticsRef.current = {
+      uploadUrlHost: null,
+      uploadMode: "unknown",
+      provider: "unknown",
+      signedMimeType: "",
+      uploadMimeType: file.type.trim(),
+      uploadHeaderNames: [],
+    };
     const matchInfo = {
       ownTeam: normalizedOwnTeam,
       rivalTeam: normalizedRivalTeam,
@@ -130,8 +152,14 @@ export function VideoUploadDropzone({
       const isRequestedMimeMatch = putContentType === metadata.mimeType;
       const isSignedMimeMatch = putContentType === signedMimeType;
 
-      presignDiagnosticRef.current =
-        `Presign: configured=${String(Boolean(presign.configured))} | uploadMode=${presign.uploadMode || "unknown"} | uploadUrl=${String(Boolean(presign.uploadUrl))} | host=${uploadUrlHost || "null"}`;
+      uploadDiagnosticsRef.current = {
+        uploadUrlHost,
+        uploadMode: presign.uploadMode || "unknown",
+        provider: presign.provider || "unknown",
+        signedMimeType,
+        uploadMimeType: putContentType,
+        uploadHeaderNames: [],
+      };
 
       if (process.env.NODE_ENV === "development") {
         console.info("[DRIVXIS upload diagnostics]", {
@@ -161,13 +189,39 @@ export function VideoUploadDropzone({
       }
 
       if (presign.uploadMode === "s3" && presign.uploadUrl) {
+        if (!uploadUrlHost) {
+          throw new Error("Presigned upload URL is malformed and could not be parsed.");
+        }
+        if (!presign.uploadUrl.startsWith("https://")) {
+          throw new Error("Presigned upload URL must use HTTPS.");
+        }
+        if (isCloudflareR2DevHost(uploadUrlHost)) {
+          throw new Error(
+            "Presigned URL host points to r2.dev. Configure STORAGE_ENDPOINT with https://<ACCOUNT_ID>.r2.cloudflarestorage.com for direct browser PUT uploads.",
+          );
+        }
         if (!isRequestedMimeMatch || !isSignedMimeMatch) {
           throw new Error("Content-Type mismatch: the signed Content-Type must match the upload Content-Type.");
         }
+        const remotePutHeaders: Record<string, string> = { "Content-Type": signedMimeType };
+        uploadDiagnosticsRef.current = {
+          ...uploadDiagnosticsRef.current,
+          uploadHeaderNames: Object.keys(remotePutHeaders),
+          uploadMimeType: remotePutHeaders["Content-Type"],
+        };
         attemptedRemotePut = true;
+        if (process.env.NODE_ENV === "development") {
+          console.info("[DRIVXIS upload request]", {
+            presignedHost: uploadUrlHost,
+            signedContentType: signedMimeType,
+            browserUploadContentType: remotePutHeaders["Content-Type"],
+            uploadHeaderNames: Object.keys(remotePutHeaders),
+            hasUnexpectedExtraHeaders: Object.keys(remotePutHeaders).some((header) => header.toLowerCase() !== "content-type"),
+          });
+        }
         const uploadResponse = await fetch(presign.uploadUrl, {
           method: "PUT",
-          headers: { "Content-Type": putContentType },
+          headers: remotePutHeaders,
           body: file,
         });
         if (!uploadResponse.ok) {
@@ -211,7 +265,7 @@ export function VideoUploadDropzone({
       onUploaded?.(created.video);
       if (inputRef.current) inputRef.current.value = "";
     } catch (error) {
-      const reason = normalizeUploadError(error, attemptedRemotePut);
+      const reason = normalizeUploadError(error, attemptedRemotePut, uploadDiagnosticsRef.current);
       const prefixed = `Upload failed: ${reason}`;
       setState("error");
       setMessage(prefixed);
@@ -317,9 +371,13 @@ async function describeRemoteUploadFailure(response: Response) {
   return safeText ? `Cloudflare R2 upload failed (${status}). ${safeText}` : `Cloudflare R2 upload failed with status ${status}.`;
 }
 
-function normalizeUploadError(error: unknown, attemptedRemotePut: boolean) {
+function normalizeUploadError(error: unknown, attemptedRemotePut: boolean, diagnostics: UploadDiagnostics) {
   if (attemptedRemotePut && error instanceof TypeError) {
-    return "Browser network error during R2 PUT. This can be CORS, wrong endpoint, or blocked request.";
+    const hostLabel = diagnostics.uploadUrlHost ? `host=${diagnostics.uploadUrlHost}` : "host=unknown";
+    const signedType = diagnostics.signedMimeType || "unknown";
+    const browserType = diagnostics.uploadMimeType || "unknown";
+    const sentHeaders = diagnostics.uploadHeaderNames.length ? diagnostics.uploadHeaderNames.join(",") : "none";
+    return `Browser network error during presigned PUT (${hostLabel}). signedContentType=${signedType}; uploadContentType=${browserType}; headers=${sentHeaders}. Next check in Network tab: OPTIONS preflight should succeed, then PUT should return a concrete status (403 usually means SignatureDoesNotMatch or signed-header mismatch).`;
   }
   if (error instanceof Error) {
     return error.message;
@@ -334,6 +392,10 @@ function getUploadUrlHost(uploadUrl?: string | null) {
   } catch {
     return null;
   }
+}
+
+function isCloudflareR2DevHost(host: string) {
+  return host.endsWith(".r2.dev");
 }
 
 async function readSafeResponseText(response: Response) {

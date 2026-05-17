@@ -1088,7 +1088,7 @@ function pushCompletionStorageToast(
 
   const labels = getStorageLabels(video);
   if (labels.includes("Processed: R2")) {
-    pushToast("Análisis completado. Video guardado en el dispositivo.", {
+    pushToast("Análisis completado. Video guardado en la nube.", {
       tone: "success",
       dedupeKey: `${video.id}:processed-r2`,
       durationMs: 9000,

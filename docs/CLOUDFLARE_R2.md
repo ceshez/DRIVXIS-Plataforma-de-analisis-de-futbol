@@ -51,35 +51,42 @@ No pongas `/bucket-name` al final del endpoint. El bucket va separado en `STORAG
 
 ## 4. CORS del bucket
 
-Como el navegador sube el video directo usando una presigned URL, el bucket necesita CORS.
+Como el navegador sube el video directo usando una presigned URL (`PUT`), el bucket necesita CORS.
 
-Configuracion recomendada para desarrollo:
+Configuracion recomendada:
 
 ```json
 [
   {
-    "AllowedOrigins": ["http://localhost:3000"],
-    "AllowedMethods": ["GET", "PUT", "HEAD"],
-    "AllowedHeaders": ["*"],
+    "AllowedOrigins": [
+      "http://localhost:3000",
+      "https://YOUR-PRODUCTION-DOMAIN"
+    ],
+    "AllowedMethods": ["PUT", "GET", "HEAD"],
+    "AllowedHeaders": ["Content-Type"],
     "ExposeHeaders": ["ETag"],
     "MaxAgeSeconds": 3600
   }
 ]
 ```
 
-Para produccion, agregar tambien tu dominio:
+Notas importantes:
 
-```json
-[
-  {
-    "AllowedOrigins": ["http://localhost:3000", "https://tu-dominio.com"],
-    "AllowedMethods": ["GET", "PUT", "HEAD"],
-    "AllowedHeaders": ["*"],
-    "ExposeHeaders": ["ETag"],
-    "MaxAgeSeconds": 3600
-  }
-]
-```
+- Si usas headers extra en el `PUT` (por ejemplo checksums o metadata), debes agregarlos en `AllowedHeaders`.
+- Los presigned URLs de R2 deben usar el dominio S3 API `<ACCOUNT_ID>.r2.cloudflarestorage.com`.
+- No usar `r2.dev` ni custom domains para firmar/usar presigned `PUT` de R2.
+
+## 4.1 Debug rapido en navegador (cuando aparece "Browser network error during presigned PUT")
+
+En DevTools -> Network:
+
+1. Buscar la request `OPTIONS` al presigned URL:
+   - Debe responder `2xx`.
+   - Si falla o no responde, el problema suele ser CORS/politica del bucket.
+2. Si `OPTIONS` pasa, revisar la request `PUT`:
+   - `403` suele indicar `SignatureDoesNotMatch` o mismatch de headers firmados (incluyendo `Content-Type`).
+   - `400` suele indicar request mal formada o endpoint/config incorrecta.
+3. Confirmar que el `Content-Type` enviado en `PUT` coincide exactamente con el `signedContentType` devuelto por `/api/videos/presign`.
 
 ## 5. Flujo esperado despues del cambio
 

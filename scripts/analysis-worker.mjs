@@ -34,6 +34,9 @@ const modelPath = path.resolve(root, process.env.ANALYSIS_MODEL_PATH || "analysi
 const localStorageRoot = path.resolve(root, process.env.LOCAL_STORAGE_ROOT || ".drivxis/uploads");
 const analysisRoot = path.resolve(root, process.env.ANALYSIS_STORAGE_ROOT || ".drivxis/analysis");
 const progressWriteState = new Map();
+const analysisUploadMaxAttempts = clampEnvInteger(process.env.ANALYSIS_UPLOAD_MAX_ATTEMPTS, 4, { min: 1, max: 8 });
+const analysisUploadBaseDelayMs = clampEnvInteger(process.env.ANALYSIS_UPLOAD_BASE_DELAY_MS, 800, { min: 100, max: 15000 });
+const analysisUploadMaxDelayMs = clampEnvInteger(process.env.ANALYSIS_UPLOAD_MAX_DELAY_MS, 6000, { min: 500, max: 30000 });
 
 function log(message) {
   console.log(`[${new Date().toISOString()}] ${message}`);
@@ -269,23 +272,23 @@ async function uploadAnalysisOutputsIfConfigured({ video, processedPath, metrics
   });
   const client = getStorageClient();
 
-  await client.send(
-    new PutObjectCommand({
-      Bucket: process.env.STORAGE_BUCKET,
-      Key: processedObjectKey,
-      Body: createReadStream(processedPath),
-      ContentType: "video/mp4",
-    }),
-  );
+  await uploadFileToStorageWithRetry({
+    client,
+    objectKey: processedObjectKey,
+    filePath: processedPath,
+    contentType: "video/mp4",
+    contentLength: toSafeContentLength(processedSizeBytes),
+    label: "processed analysis video",
+  });
 
-  await client.send(
-    new PutObjectCommand({
-      Bucket: process.env.STORAGE_BUCKET,
-      Key: metricsObjectKey,
-      Body: createReadStream(metricsPath),
-      ContentType: "application/json",
-    }),
-  );
+  await uploadFileToStorageWithRetry({
+    client,
+    objectKey: metricsObjectKey,
+    filePath: metricsPath,
+    contentType: "application/json",
+    contentLength: toSafeContentLength(metricsSizeBytes),
+    label: "analysis metrics JSON",
+  });
 
   log(`Uploaded processed analysis to storage: ${processedObjectKey}`);
   log(`Uploaded metrics JSON to storage: ${metricsObjectKey}`);
@@ -302,9 +305,14 @@ async function uploadAnalysisOutputsIfConfigured({ video, processedPath, metrics
 
 async function resolveSourcePath(video, outputDir) {
   const metadata = isRecord(video.metadata) ? video.metadata : {};
-  if (typeof metadata.sourceLocalPath === "string") {
-    await stat(metadata.sourceLocalPath);
-    return metadata.sourceLocalPath;
+  if (typeof metadata.sourceLocalPath === "string" && metadata.sourceLocalPath.trim()) {
+    try {
+      await stat(metadata.sourceLocalPath);
+      return metadata.sourceLocalPath;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log(`Source local path unavailable (${metadata.sourceLocalPath}): ${message}. Falling back to remote/local key resolution.`);
+    }
   }
 
   const localPath = path.resolve(localStorageRoot, ...video.objectKey.split("/"));
@@ -487,6 +495,78 @@ function parseMetadataBigInt(value) {
   return 0n;
 }
 
+async function uploadFileToStorageWithRetry({
+  client,
+  objectKey,
+  filePath,
+  contentType,
+  contentLength,
+  label,
+}) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= analysisUploadMaxAttempts; attempt += 1) {
+    const readStream = createReadStream(filePath);
+    try {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: process.env.STORAGE_BUCKET,
+          Key: objectKey,
+          Body: readStream,
+          ContentType: contentType,
+          ...(contentLength !== undefined ? { ContentLength: contentLength } : {}),
+        }),
+      );
+      if (attempt > 1) {
+        log(`Upload recovered for ${label} (${objectKey}) on attempt ${attempt}/${analysisUploadMaxAttempts}.`);
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+      readStream.destroy();
+
+      const transient = isTransientUploadError(error);
+      const canRetry = transient && attempt < analysisUploadMaxAttempts;
+      const message = error instanceof Error ? error.message : String(error);
+      log(
+        `Upload attempt ${attempt}/${analysisUploadMaxAttempts} failed for ${label} (${objectKey}). transient=${transient}. error=${message}`,
+      );
+
+      if (!canRetry) break;
+      await wait(getUploadBackoffDelayMs(attempt));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError ?? "Unknown upload error"));
+}
+
+function isTransientUploadError(error) {
+  if (!error) return false;
+  const candidate = error;
+  const code = String(candidate?.code || candidate?.Code || "").toUpperCase();
+  const name = String(candidate?.name || "").toUpperCase();
+  const message = String(candidate?.message || error).toLowerCase();
+  const status = Number(candidate?.$metadata?.httpStatusCode || 0);
+
+  if (code === "ECONNRESET" || code === "ETIMEDOUT" || code === "EPIPE" || code === "ECONNABORTED") return true;
+  if (name === "TIMEOUTERROR" || name === "NETWORKINGERROR" || name === "REQUESTTIMEOUT") return true;
+  if (status >= 500 && status <= 599) return true;
+  return /socket hang up|connection reset|connection aborted|broken pipe|timed out|timeout/.test(message);
+}
+
+function getUploadBackoffDelayMs(attempt) {
+  const exponential = analysisUploadBaseDelayMs * Math.pow(2, Math.max(0, attempt - 1));
+  const jitter = Math.floor(Math.random() * 200);
+  return Math.min(analysisUploadMaxDelayMs, exponential + jitter);
+}
+
+function toSafeContentLength(sizeBytes) {
+  if (typeof sizeBytes !== "bigint" || sizeBytes < 0n) return undefined;
+  const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
+  if (sizeBytes > maxSafe) return undefined;
+  return Number(sizeBytes);
+}
+
 function isStorageConfigured() {
   return Boolean(
     process.env.STORAGE_ENDPOINT &&
@@ -527,6 +607,12 @@ function createAnalysisObjectKey({ userId, videoId, filename }) {
 
 function wait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function clampEnvInteger(rawValue, fallback, { min, max }) {
+  const parsed = Number.parseInt(String(rawValue ?? ""), 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
 }
 
 function loadDotEnv(envPath) {
