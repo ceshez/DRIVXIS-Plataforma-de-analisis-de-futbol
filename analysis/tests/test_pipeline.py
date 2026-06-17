@@ -152,6 +152,42 @@ class AnalysisPipelineTests(unittest.TestCase):
         self.assertGreaterEqual(quality["players"][1], 5)
         self.assertTrue(any(player_info.get("display_speed_sample") for frame in tracks["players"] for player_info in frame.values()))
 
+    def test_speed_overlay_suppresses_recent_reappearance_after_interpolated_gap(self) -> None:
+        frames = []
+        for index in range(41):
+            item = player([0, 0, 10, 20], [index * 0.08, 0], 1)
+            if index == 15:
+                item["interpolated"] = True
+            frames.append({1: item})
+        tracks = {
+            "players": frames,
+            "referees": [{} for _ in frames],
+            "ball": [{} for _ in frames],
+        }
+
+        quality = add_speed_and_distance(tracks, fps=25, calibration={"calibrationStatus": "test", "confidence": 0.9})
+
+        self.assertGreater(quality["rejectionReasons"].get("recent_reappearance", 0), 0)
+        self.assertFalse(tracks["players"][20][1].get("display_speed_sample"))
+        self.assertTrue(tracks["players"][40][1].get("display_speed_sample"))
+
+    def test_speed_overlay_rejects_source_track_fragment_without_stable_streak(self) -> None:
+        frames = []
+        for index in range(36):
+            item = player([0, 0, 10, 20], [index * 0.08, 0], 1)
+            item["source_track_id"] = 101 if index < 18 else 202
+            frames.append({1: item})
+        tracks = {
+            "players": frames,
+            "referees": [{} for _ in frames],
+            "ball": [{} for _ in frames],
+        }
+
+        quality = add_speed_and_distance(tracks, fps=25, calibration={"calibrationStatus": "test", "confidence": 0.9})
+
+        self.assertGreater(quality["rejectionReasons"].get("source_track_fragment", 0), 0)
+        self.assertFalse(any(player_info.get("display_speed_sample") for frame in tracks["players"] for player_info in frame.values()))
+
     def test_ball_interpolation_fills_short_gaps_only(self) -> None:
         tracks = {
             "players": [{} for _ in range(12)],

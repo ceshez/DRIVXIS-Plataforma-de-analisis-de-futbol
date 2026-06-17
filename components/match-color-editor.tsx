@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowLeftRight, Loader2, Save } from "lucide-react";
 import type { AnalysisMetrics } from "@/lib/analysis-metrics";
 
@@ -31,6 +31,23 @@ type ColorPair = {
 
 export function MatchColorEditor<TVideo extends VideoWithMatch>({
   video,
+  ...props
+}: MatchColorEditorProps<TVideo>) {
+  const matchInfo = getVideoMatchInfo(video);
+  const detectedPair = getDetectedPair(video.latestMetrics?.match?.detectedTeamColors);
+  const resetKey = [
+    video.id,
+    matchInfo.ownTeamColor ?? "",
+    matchInfo.rivalTeamColor ?? "",
+    detectedPair?.ownTeamColor ?? "",
+    detectedPair?.rivalTeamColor ?? "",
+  ].join("|");
+
+  return <MatchColorEditorContent key={resetKey} video={video} {...props} />;
+}
+
+function MatchColorEditorContent<TVideo extends VideoWithMatch>({
+  video,
   onSaved,
   onToast,
   mode = "default",
@@ -41,11 +58,6 @@ export function MatchColorEditor<TVideo extends VideoWithMatch>({
   const initialPair = getInitialPair(matchInfo, detectedPair);
   const [pair, setPair] = useState<ColorPair | null>(initialPair);
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-
-  useEffect(() => {
-    setPair(initialPair);
-    setState("idle");
-  }, [video.id, initialPair?.ownTeamColor, initialPair?.rivalTeamColor]);
 
   async function saveColors(nextPair: ColorPair) {
     setState("saving");

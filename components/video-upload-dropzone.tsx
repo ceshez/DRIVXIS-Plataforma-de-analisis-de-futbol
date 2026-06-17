@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { CheckCircle2, Film, Loader2, Upload, XCircle } from "lucide-react";
 import { MicroGrid } from "@/components/micro-graphics";
 import type { AnalysisMetrics } from "@/lib/analysis-metrics";
@@ -43,6 +43,67 @@ type UploadDiagnostics = {
   uploadHeaderNames: string[];
 };
 
+type UploadFormState = {
+  status: UploadState;
+  message: string;
+  fileName: string;
+  ownTeam: string;
+  rivalTeam: string;
+};
+
+type UploadFormAction =
+  | { type: "patch"; changes: Partial<UploadFormState> }
+  | { type: "teamChanged"; team: "ownTeam" | "rivalTeam"; value: string };
+
+type MatchSetupProps = {
+  ownTeam: string;
+  rivalTeam: string;
+  uploading: boolean;
+  onTeamChanged: (team: "ownTeam" | "rivalTeam", value: string) => void;
+};
+
+const INITIAL_UPLOAD_FORM_STATE: UploadFormState = {
+  status: "idle",
+  message: "Click para abrir archivos",
+  fileName: "",
+  ownTeam: "",
+  rivalTeam: "",
+};
+
+function uploadFormReducer(state: UploadFormState, action: UploadFormAction): UploadFormState {
+  if (action.type === "teamChanged") {
+    return { ...state, [action.team]: action.value };
+  }
+  return { ...state, ...action.changes };
+}
+
+function MatchSetup({ ownTeam, rivalTeam, uploading, onTeamChanged }: MatchSetupProps) {
+  return (
+    <div className="match-setup" aria-label="Datos del partido">
+      <label>
+        <span>Tu equipo</span>
+        <input
+          type="text"
+          value={ownTeam}
+          onChange={(event) => onTeamChanged("ownTeam", event.target.value)}
+          placeholder="Ej. DRIVXIS FC"
+          disabled={uploading}
+        />
+      </label>
+      <label>
+        <span>Rival</span>
+        <input
+          type="text"
+          value={rivalTeam}
+          onChange={(event) => onTeamChanged("rivalTeam", event.target.value)}
+          placeholder="Ej. Academia Norte"
+          disabled={uploading}
+        />
+      </label>
+    </div>
+  );
+}
+
 export function VideoUploadDropzone({
   onUploaded,
   onNotify,
@@ -54,8 +115,8 @@ export function VideoUploadDropzone({
 }: VideoUploadDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [state, setState] = useState<UploadState>("idle");
-  const [message, setMessage] = useState("Click para abrir archivos");
+  const [uploadForm, dispatchUploadForm] = useReducer(uploadFormReducer, INITIAL_UPLOAD_FORM_STATE);
+  const { status, message, fileName, ownTeam, rivalTeam } = uploadForm;
   const uploadDiagnosticsRef = useRef<UploadDiagnostics>({
     uploadUrlHost: null,
     uploadMode: "unknown",
@@ -64,16 +125,13 @@ export function VideoUploadDropzone({
     uploadMimeType: "",
     uploadHeaderNames: [],
   });
-  const [fileName, setFileName] = useState("");
-  const [ownTeam, setOwnTeam] = useState("");
-  const [rivalTeam, setRivalTeam] = useState("");
 
   useEffect(() => {
     const saved = window.localStorage.getItem("drivxis:primary-team");
     if (!saved) return;
     try {
       const parsed = JSON.parse(saved) as { name?: string };
-      if (parsed.name) setOwnTeam(parsed.name);
+      if (parsed.name) dispatchUploadForm({ type: "teamChanged", team: "ownTeam", value: parsed.name });
     } catch {
       window.localStorage.removeItem("drivxis:primary-team");
     }
@@ -81,7 +139,7 @@ export function VideoUploadDropzone({
 
   async function handleFiles(files: FileList | null) {
     const file = files?.[0];
-    if (!file || state === "uploading" || disabled) return;
+    if (!file || status === "uploading" || disabled) return;
     await uploadVideo(file);
   }
 
@@ -89,21 +147,26 @@ export function VideoUploadDropzone({
     const normalizedOwnTeam = ownTeam.trim();
     const normalizedRivalTeam = rivalTeam.trim();
     if (normalizedOwnTeam.length < 2 || normalizedRivalTeam.length < 2) {
-      setState("error");
-      setMessage("Indica tu equipo y el rival antes de subir el partido.");
+      dispatchUploadForm({
+        type: "patch",
+        changes: { status: "error", message: "Indica tu equipo y el rival antes de subir el partido." },
+      });
       return;
     }
 
     const requestedMimeType = file.type.trim();
     if (!requestedMimeType || !requestedMimeType.startsWith("video/")) {
-      setState("error");
-      setMessage("El archivo no tiene un MIME type de video válido.");
+      dispatchUploadForm({
+        type: "patch",
+        changes: { status: "error", message: "El archivo no tiene un MIME type de video válido." },
+      });
       return;
     }
 
-    setState("uploading");
-    setFileName(file.name);
-    setMessage("Preparando carga");
+    dispatchUploadForm({
+      type: "patch",
+      changes: { status: "uploading", fileName: file.name, message: "Preparando carga" },
+    });
     uploadDiagnosticsRef.current = {
       uploadUrlHost: null,
       uploadMode: "unknown",
@@ -179,12 +242,12 @@ export function VideoUploadDropzone({
 
       if (presign.uploadMode === "s3" && presign.uploadUrl) {
         const uploadStartMessage = "Subiendo a la nube... Esto puede tardar varios minutos"
-        setMessage(uploadStartMessage);
+        dispatchUploadForm({ type: "patch", changes: { message: uploadStartMessage } });
         onNotify?.(uploadStartMessage, "info");
       } else {
         const fallbackReason = presign.configErrors?.[0] || "Almacenamiento remoto no configurado";
         const fallbackMessage = `Using local fallback. ${fallbackReason}`;
-        setMessage(fallbackMessage);
+        dispatchUploadForm({ type: "patch", changes: { message: fallbackMessage } });
         onNotify?.(fallbackMessage, "warning");
       }
 
@@ -228,7 +291,7 @@ export function VideoUploadDropzone({
           throw new Error(await describeRemoteUploadFailure(uploadResponse));
         }
         const successMessage = "Video original subido a la nube.";
-        setMessage(successMessage);
+        dispatchUploadForm({ type: "patch", changes: { message: successMessage } });
         onNotify?.(successMessage, "success");
       } else {
         const localUploadResponse = await fetch(`/api/videos/local-upload?objectKey=${encodeURIComponent(presign.objectKey)}`, {
@@ -241,11 +304,11 @@ export function VideoUploadDropzone({
           throw new Error(localUpload.error || "No se pudo guardar el archivo local.");
         }
         const localSuccessMessage = "Video original guardado localmente. No se subió a la nube.";
-        setMessage(localSuccessMessage);
+        dispatchUploadForm({ type: "patch", changes: { message: localSuccessMessage } });
         onNotify?.(localSuccessMessage, "warning");
       }
 
-      setMessage("Registrando metadata");
+      dispatchUploadForm({ type: "patch", changes: { message: "Registrando metadata" } });
       const createResponse = await fetch("/api/videos", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -256,8 +319,10 @@ export function VideoUploadDropzone({
         throw new Error(created.error || "No se pudo registrar el video.");
       }
 
-      setState("queued");
-      setMessage("Video en cola de análisis");
+      dispatchUploadForm({
+        type: "patch",
+        changes: { status: "queued", message: "Video en cola de análisis" },
+      });
       window.localStorage.setItem(
         "drivxis:primary-team",
         JSON.stringify({ name: normalizedOwnTeam }),
@@ -267,40 +332,23 @@ export function VideoUploadDropzone({
     } catch (error) {
       const reason = normalizeUploadError(error, attemptedRemotePut, uploadDiagnosticsRef.current);
       const prefixed = `Upload failed: ${reason}`;
-      setState("error");
-      setMessage(prefixed);
+      dispatchUploadForm({ type: "patch", changes: { status: "error", message: prefixed } });
       onNotify?.(prefixed, "warning");
     }
   }
 
-  const isBusy = state === "uploading" || disabled;
+  const isBusy = status === "uploading" || disabled;
   const displayProgress = typeof progress === "number" ? Math.max(0, Math.min(100, Math.round(progress))) : null;
 
   return (
     <div className="analysis-upload">
       {!disabled ? (
-        <div className="match-setup" aria-label="Datos del partido">
-          <label>
-            <span>Tu equipo</span>
-            <input
-              type="text"
-              value={ownTeam}
-              onChange={(event) => setOwnTeam(event.target.value)}
-              placeholder="Ej. DRIVXIS FC"
-              disabled={state === "uploading"}
-            />
-          </label>
-          <label>
-            <span>Rival</span>
-            <input
-              type="text"
-              value={rivalTeam}
-              onChange={(event) => setRivalTeam(event.target.value)}
-              placeholder="Ej. Academia Norte"
-              disabled={state === "uploading"}
-            />
-          </label>
-        </div>
+        <MatchSetup
+          ownTeam={ownTeam}
+          rivalTeam={rivalTeam}
+          uploading={status === "uploading"}
+          onTeamChanged={(team, value) => dispatchUploadForm({ type: "teamChanged", team, value })}
+        />
       ) : null}
       <button
         className={`analysis-upload__target ${dragOver ? "is-dragging" : ""}`}
@@ -322,18 +370,18 @@ export function VideoUploadDropzone({
       >
         <MicroGrid />
         <span className="analysis-upload__icon">
-          {state === "uploading" || disabled ? <Loader2 className="spin" size={30} /> : state === "queued" ? <CheckCircle2 size={30} /> : state === "error" ? <XCircle size={30} /> : <Upload size={30} />}
+          {status === "uploading" || disabled ? <Loader2 className="spin" size={30} /> : status === "queued" ? <CheckCircle2 size={30} /> : status === "error" ? <XCircle size={30} /> : <Upload size={30} />}
         </span>
         <strong>{disabled ? "análisis en curso" : fileName || label}</strong>
-        <small>{disabled ? disabledMessage : state === "idle" ? description : message}</small>
+        <small>{disabled ? disabledMessage : status === "idle" ? description : message}</small>
         {displayProgress !== null ? (
           <span className="analysis-upload__progress" aria-label={`Progreso ${displayProgress}%`}>
             <span style={{ width: `${displayProgress}%` }} />
           </span>
         ) : null}
-        <span className={`live-chip live-chip--small ${state === "uploading" || disabled ? "" : "live-chip--muted"}`}>
+        <span className={`live-chip live-chip--small ${status === "uploading" || disabled ? "" : "live-chip--muted"}`}>
           <span />
-          {disabled ? `${displayProgress ?? 0}%` : state === "uploading" ? "Subiendo" : state === "queued" ? "En cola" : state === "error" ? "Error" : "Listo"}
+          {disabled ? `${displayProgress ?? 0}%` : status === "uploading" ? "Subiendo" : status === "queued" ? "En cola" : status === "error" ? "Error" : "Listo"}
         </span>
       </button>
       <input
@@ -341,9 +389,10 @@ export function VideoUploadDropzone({
         type="file"
         accept="video/*"
         className="visually-hidden"
+        aria-label="Seleccionar archivo de video"
         onChange={(event) => void handleFiles(event.target.files)}
       />
-      {state !== "idle" ? (
+      {status !== "idle" ? (
         <div className="analysis-upload__note">
           <Film size={14} />
           <span>{message}</span>

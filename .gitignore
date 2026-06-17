@@ -13,3 +13,5 @@ analysis/models/*.pt
 analysis/models/*.onnx
 analysis/models/*.engine
 .claude
+.unlighthouse
+.kiro

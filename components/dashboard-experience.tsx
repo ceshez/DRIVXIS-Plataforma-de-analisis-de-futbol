@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useReducer, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { CheckCircle2, Film, History, ScanLine, Upload } from "lucide-react";
@@ -10,6 +10,8 @@ import { AnalysisVideoPlayer } from "@/components/analysis-video-player";
 import { ToastViewport, useAppToasts } from "@/components/app-toast";
 import { MatchColorEditor } from "@/components/match-color-editor";
 import { AnnotationLine, CornerMarks, Crosshair, MicroGrid } from "@/components/micro-graphics";
+import { usePrefersReducedMotion } from "@/components/use-prefers-reduced-motion";
+import { VideoEventSubscription } from "@/components/video-event-subscription";
 import { VideoUploadDropzone, type UploadedVideo } from "@/components/video-upload-dropzone";
 
 const Bar = dynamic(async () => (await import("recharts")).Bar, { ssr: false });
@@ -80,6 +82,17 @@ type BottomStatConfig = {
   formatValue: (value: number) => string;
 };
 
+type AnimatedMetricState = {
+  animatedValue: number;
+  animatedBar: number;
+};
+
+type AnimatedMetricAction = {
+  type: "set";
+  value: number;
+  bar: number;
+};
+
 type DashboardExperienceProps = {
   videos: RecentVideo[];
   totalAnalyses: number;
@@ -92,6 +105,13 @@ type StorageUsagePayload = {
   remainingBytes: string;
   percentUsed: number;
 };
+
+function animatedMetricReducer(_state: AnimatedMetricState, action: AnimatedMetricAction): AnimatedMetricState {
+  return {
+    animatedValue: action.value,
+    animatedBar: action.bar,
+  };
+}
 
 const radarFallback = [
   { subject: "Control", local: 52, rival: 48, localValue: "52.0%", rivalValue: "48.0%" },
@@ -120,7 +140,7 @@ const zoneData = [
 const analysisSteps = ["Subida validada", "Cola IA", "Tracking YOLO", "métricas", "Reporte"];
 
 export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = true }: DashboardExperienceProps) {
-  const [items, setItems] = useState(videos);
+  const [items, setItems] = useState(() => videos);
   const [activeId, setActiveId] = useState(videos[0]?.id ?? "");
   const [uploadOpen, setUploadOpen] = useState(videos.length === 0);
   const [storageUsage, setStorageUsage] = useState<StorageUsagePayload | null>(null);
@@ -216,53 +236,8 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
   const analysisStageState = uploadOpen ? "fresh" : isFeaturedProcessing ? "processing" : showCompletedPanel ? "completed" : "idle";
 
   useEffect(() => {
-    if (uploadOpen) return;
-    if (!featured && items[0]) {
-      setActiveId(items[0].id);
-    }
-  }, [featured, items, uploadOpen]);
-
-  useEffect(() => {
     void refreshStorageUsage();
   }, []);
-
-  useEffect(() => {
-    if (!pollingEnabled || !pollTarget) return;
-
-    const eventSource = new EventSource(`/api/videos/${pollTarget.id}/events`);
-    const handleVideoEvent = (event: Event) => {
-      const nextVideo = JSON.parse((event as MessageEvent).data) as RecentVideo;
-      setItems((current) => {
-        const previous = current.find((video) => video.id === nextVideo.id);
-        if (previous?.status !== "COMPLETED" && nextVideo.status === "COMPLETED") {
-          pushToast("análisis terminado. El video ya está listo para revisarse.", {
-            dedupeKey: `${nextVideo.id}:completed`,
-            durationMs: 8500,
-            sound: true,
-          });
-          pushCompletionStorageToast(nextVideo, pushToast);
-          void refreshStorageUsage();
-        }
-        return current.map((video) => (video.id === nextVideo.id ? nextVideo : video));
-      });
-      if (nextVideo.status === "COMPLETED" || nextVideo.status === "FAILED") {
-        setActiveId(nextVideo.id);
-        eventSource.close();
-      }
-    };
-    const handleError = () => {
-      eventSource.close();
-      void refreshVideo(pollTarget.id);
-    };
-    eventSource.addEventListener("video", handleVideoEvent);
-    eventSource.addEventListener("error", handleError);
-
-    return () => {
-      eventSource.removeEventListener("video", handleVideoEvent);
-      eventSource.removeEventListener("error", handleError);
-      eventSource.close();
-    };
-  }, [pollTarget?.id, pollingEnabled, pushToast]);
 
   function handleUploaded(video: UploadedVideo) {
     setItems((current) => [video as RecentVideo, ...current.filter((item) => item.id !== video.id)]);
@@ -295,6 +270,25 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
     });
   }
 
+  function receiveVideoEvent(nextVideo: RecentVideo) {
+    setItems((current) => {
+      const previous = current.find((video) => video.id === nextVideo.id);
+      if (previous?.status !== "COMPLETED" && nextVideo.status === "COMPLETED") {
+        pushToast("análisis terminado. El video ya está listo para revisarse.", {
+          dedupeKey: `${nextVideo.id}:completed`,
+          durationMs: 8500,
+          sound: true,
+        });
+        pushCompletionStorageToast(nextVideo, pushToast);
+        void refreshStorageUsage();
+      }
+      return current.map((video) => (video.id === nextVideo.id ? nextVideo : video));
+    });
+    if (nextVideo.status === "COMPLETED" || nextVideo.status === "FAILED") {
+      setActiveId(nextVideo.id);
+    }
+  }
+
   function openUploader() {
     if (!canUpload) return;
     setActiveId("");
@@ -311,6 +305,14 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
 
   return (
     <div className="dashboard-lab dashboard-lab--figma">
+      {pollingEnabled && pollTarget ? (
+        <VideoEventSubscription
+          key={pollTarget.id}
+          videoId={pollTarget.id}
+          onVideo={receiveVideoEvent}
+          onError={() => void refreshVideo(pollTarget.id)}
+        />
+      ) : null}
       <section className="dashboard-command dashboard-command--hero">
         <MicroGrid />
         <div className="dashboard-command__copy">
@@ -391,61 +393,141 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
         </div>
 
         {!uploadOpen ? (
-        <aside className="match-panel">
-          <CornerMarks size={12} opacity={0.35} />
-          <div className="score-card" title={`${ownTeamName}: ${ownPossession.toFixed(1)}% / ${rivalTeamName}: ${rivalPossession.toFixed(1)}%`}>
-            <div>
-              <span className="score-card__team-label">
-                {colorAssignment.ownTeamColor ? <i style={{ background: colorAssignment.ownTeamColor }} /> : null}
-                {ownTeamName}
-              </span>
-              <strong>{ownPossession.toFixed(1)}%</strong>
-            </div>
-            <div className="score-card__score">
-              <b>{ownGoals}</b>
-              <span>/</span>
-              <b>{rivalGoals}</b>
-            </div>
-            <div>
-              <span className="score-card__team-label">
-                {colorAssignment.rivalTeamColor ? <i style={{ background: colorAssignment.rivalTeamColor }} /> : null}
-                {rivalTeamName}
-              </span>
-              <strong>{rivalPossession.toFixed(1)}%</strong>
-            </div>
-          </div>
-
-          <div className="player-stat-list">
-            <h2>Métricas del partido</h2>
-            {matchMetrics.map((metric) => (
-              <AnimatedMatchMetric
-                key={metric.id}
-                animationKey={`${metricAnimationSeed}|player|${metric.id}|${metric.valueTarget.toFixed(3)}|${metric.barTarget.toFixed(3)}|${metric.color ?? "default"}`}
-                isLoading={!hasCompletedMetrics}
-                metric={metric}
-                statusLabel={featured ? formatStatus(featured.status) : "sin video"}
-              />
-            ))}
-          </div>
-
-          <div className="radar-card">
-            <h2>Rendimiento global</h2>
-            <ResponsiveContainer width="100%" height={170}>
-              <RadarChart data={radarData}>
-                <PolarGrid stroke="rgba(255,107,43,0.13)" strokeDasharray="3 3" />
-                <PolarAngleAxis dataKey="subject" tick={{ fill: "rgba(255,255,255,0.34)", fontSize: 8 }} />
-                <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-                <Radar dataKey="local" stroke="#ff6b2b" strokeWidth={1.6} fill="#ff6b2b" fillOpacity={0.12} />
-                <Radar dataKey="rival" stroke="rgba(255,255,255,0.26)" strokeWidth={1} fill="none" />
-                <Tooltip content={<GlobalRadarTooltip />} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        </aside>
+          <DashboardInsights
+            featured={featured}
+            ownTeamName={ownTeamName}
+            rivalTeamName={rivalTeamName}
+            ownGoals={ownGoals}
+            rivalGoals={rivalGoals}
+            ownPossession={ownPossession}
+            rivalPossession={rivalPossession}
+            colorAssignment={colorAssignment}
+            matchMetrics={matchMetrics}
+            metricAnimationSeed={metricAnimationSeed}
+            hasCompletedMetrics={hasCompletedMetrics}
+            radarData={radarData}
+          />
         ) : null}
       </section>
 
       {!uploadOpen ? (
+        <DashboardCharts
+          bottomStats={bottomStats}
+          metricAnimationSeed={metricAnimationSeed}
+          hasCompletedMetrics={hasCompletedMetrics}
+        />
+      ) : null}
+
+      <DashboardRecentVideos
+        items={items}
+        featuredId={featured?.id ?? null}
+        totalAnalysisLabel={totalAnalysisLabel}
+        onSelect={(videoId) => {
+          setActiveId(videoId);
+          setUploadOpen(false);
+        }}
+      />
+
+      <ToastViewport toasts={toasts} onDismiss={dismissToast} />
+    </div>
+  );
+}
+
+type DashboardInsightsProps = {
+  featured: RecentVideo | null;
+  ownTeamName: string;
+  rivalTeamName: string;
+  ownGoals: number;
+  rivalGoals: number;
+  ownPossession: number;
+  rivalPossession: number;
+  colorAssignment: TeamColorAssignment;
+  matchMetrics: MatchMetricConfig[];
+  metricAnimationSeed: string;
+  hasCompletedMetrics: boolean;
+  radarData: ReturnType<typeof buildRadar>;
+};
+
+function DashboardInsights({
+  featured,
+  ownTeamName,
+  rivalTeamName,
+  ownGoals,
+  rivalGoals,
+  ownPossession,
+  rivalPossession,
+  colorAssignment,
+  matchMetrics,
+  metricAnimationSeed,
+  hasCompletedMetrics,
+  radarData,
+}: DashboardInsightsProps) {
+  return (
+    <aside className="match-panel">
+      <CornerMarks size={12} opacity={0.35} />
+      <div className="score-card" title={`${ownTeamName}: ${ownPossession.toFixed(1)}% / ${rivalTeamName}: ${rivalPossession.toFixed(1)}%`}>
+        <div>
+          <span className="score-card__team-label">
+            {colorAssignment.ownTeamColor ? <i style={{ background: colorAssignment.ownTeamColor }} /> : null}
+            {ownTeamName}
+          </span>
+          <strong>{ownPossession.toFixed(1)}%</strong>
+        </div>
+        <div className="score-card__score">
+          <b>{ownGoals}</b>
+          <span>/</span>
+          <b>{rivalGoals}</b>
+        </div>
+        <div>
+          <span className="score-card__team-label">
+            {colorAssignment.rivalTeamColor ? <i style={{ background: colorAssignment.rivalTeamColor }} /> : null}
+            {rivalTeamName}
+          </span>
+          <strong>{rivalPossession.toFixed(1)}%</strong>
+        </div>
+      </div>
+
+      <div className="player-stat-list">
+        <h2>Métricas del partido</h2>
+        {matchMetrics.map((metric) => (
+          <AnimatedMatchMetric
+            key={metric.id}
+            animationKey={`${metricAnimationSeed}|player|${metric.id}|${metric.valueTarget.toFixed(3)}|${metric.barTarget.toFixed(3)}|${metric.color ?? "default"}`}
+            isLoading={!hasCompletedMetrics}
+            metric={metric}
+            statusLabel={featured ? formatStatus(featured.status) : "sin video"}
+          />
+        ))}
+      </div>
+
+      <div className="radar-card">
+        <h2>Rendimiento global</h2>
+        <ResponsiveContainer width="100%" height={170}>
+          <RadarChart data={radarData}>
+            <PolarGrid stroke="rgba(255,107,43,0.13)" strokeDasharray="3 3" />
+            <PolarAngleAxis dataKey="subject" tick={{ fill: "rgba(255,255,255,0.34)", fontSize: 8 }} />
+            <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
+            <Radar dataKey="local" stroke="#ff6b2b" strokeWidth={1.6} fill="#ff6b2b" fillOpacity={0.12} />
+            <Radar dataKey="rival" stroke="rgba(255,255,255,0.26)" strokeWidth={1} fill="none" />
+            <Tooltip content={<GlobalRadarTooltip />} />
+          </RadarChart>
+        </ResponsiveContainer>
+      </div>
+    </aside>
+  );
+}
+
+function DashboardCharts({
+  bottomStats,
+  metricAnimationSeed,
+  hasCompletedMetrics,
+}: {
+  bottomStats: BottomStatConfig[];
+  metricAnimationSeed: string;
+  hasCompletedMetrics: boolean;
+}) {
+  return (
+    <>
       <section className="stat-strip" aria-label="métricas del partido">
         {bottomStats.map((stat, index) => (
           <AnimatedBottomStat
@@ -457,9 +539,7 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
           />
         ))}
       </section>
-      ) : null}
 
-      {!uploadOpen ? (
       <section className="chart-grid">
         <article className="chart-panel chart-panel--wide">
           <Crosshair className="chart-crosshair" size={15} opacity={0.16} />
@@ -497,79 +577,81 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
           <svg fill="none" aria-hidden="true" viewBox="0 0 240 130"><defs><radialGradient id="heat-hot" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="rgba(255,146,67,0.9)"/><stop offset="35%" stopColor="rgba(244,223,72,0.78)"/><stop offset="62%" stopColor="rgba(117,241,77,0.58)"/><stop offset="100%" stopColor="rgba(33,110,255,0)"/></radialGradient><filter id="heat-blur"><feGaussianBlur stdDeviation="7"/></filter></defs><path stroke="rgba(255,107,43,0.24)" strokeWidth=".75" d="M2 2h236v126H2z"/><path stroke="rgba(255,255,255,0.25)" strokeWidth=".75" d="M120 2v126"/><circle cx="120" cy="65" r="20" stroke="rgba(255,255,255,0.24)" strokeWidth=".75"/><path stroke="rgba(255,255,255,0.22)" strokeWidth=".75" d="M2 44h38v42H2zm198 0h38v42h-38z"/><g fill="url(#heat-hot)" filter="url(#heat-blur)"><circle cx="55" cy="40" r="24"/><circle cx="80" cy="95" r="30"/><circle cx="105" cy="58" r="20"/><circle cx="140" cy="70" r="22"/><circle cx="165" cy="40" r="18"/><circle cx="186" cy="88" r="16"/></g><path fill="url(#heat-hot)" d="M2 2h236v126H2z" opacity=".08"/></svg>
         </article>
       </section>
-      ) : null}
+    </>
+  );
+}
 
-      <section className="recent-videos lab-panel">
-        <div className="panel-heading recent-videos__heading">
-          <div>
-            <div className="recent-videos__eyebrow">
-              <span>Archivo</span>
-              <span className="recent-videos__eyebrow-line" aria-hidden="true" />
-              <span>Partidos analizados</span>
-            </div>
-            <h2>
-              Historial <em>de videos</em>
-            </h2>
+function DashboardRecentVideos({
+  items,
+  featuredId,
+  totalAnalysisLabel,
+  onSelect,
+}: {
+  items: RecentVideo[];
+  featuredId: string | null;
+  totalAnalysisLabel: number;
+  onSelect: (videoId: string) => void;
+}) {
+  return (
+    <section className="recent-videos lab-panel">
+      <div className="panel-heading recent-videos__heading">
+        <div>
+          <div className="recent-videos__eyebrow">
+            <span>Archivo</span>
+            <span className="recent-videos__eyebrow-line" aria-hidden="true" />
+            <span>Partidos analizados</span>
           </div>
-          <Link href="/dashboard/videos" className="text-command">
-            <History size={13} />
-            {totalAnalysisLabel} análisis
-          </Link>
+          <h2>
+            Historial <em>de videos</em>
+          </h2>
         </div>
+        <Link href="/dashboard/videos" className="text-command">
+          <History size={13} />
+          {totalAnalysisLabel} análisis
+        </Link>
+      </div>
 
-        {items.length === 0 ? (
-          <div className="empty-state">
-            <ScanLine size={24} />
-            <strong>No hay videos registrados todavía.</strong>
-            <span>Sube tu primer partido desde la consola central.</span>
-          </div>
-        ) : (
-          <div className="video-list recent-videos__grid">
-            {items.slice(0, 4).map((video) => {
-              return (
-                <article
-                  className={`video-row video-row--shell ${video.id === featured?.id ? "is-selected" : ""}`}
-                  key={video.id}
-                >
-                  <button
-                    className="video-row__select"
-                    type="button"
-                    onClick={() => {
-                      setActiveId(video.id);
-                      setUploadOpen(false);
-                    }}
-                  >
-                    <span className="video-row__icon">
-                      <Film size={17} />
-                    </span>
-                    <div className="video-row__body">
-                      <strong className="video-row__title" title={video.originalFilename}>
-                        {video.originalFilename}
-                      </strong>
-                      <span className="video-row__description" title={formatVideoOpponent(video)}>
-                        {formatVideoOpponent(video)}
-                      </span>
-                      <span className="video-row__meta-inline">
-                        <span>Fecha de subida: {formatDate(video.createdAt)}</span>
-                      </span>
-                      <span className="video-row__meta-inline">
-                        <span>Duración: {getVideoDurationLabel(video)}</span>
-                      </span>
-                    </div>
-                    <span className="video-row__status-group">
-                      <span className="video-row__status-label">Estado</span>
-                      <span className={`status-pill ${video.status.toLowerCase()}`}>{formatStatus(video.status)}</span>
-                    </span>
-                  </button>
-                </article>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      <ToastViewport toasts={toasts} onDismiss={dismissToast} />
-    </div>
+      {items.length === 0 ? (
+        <div className="empty-state">
+          <ScanLine size={24} />
+          <strong>No hay videos registrados todavía.</strong>
+          <span>Sube tu primer partido desde la consola central.</span>
+        </div>
+      ) : (
+        <div className="video-list recent-videos__grid">
+          {items.slice(0, 4).map((video) => (
+            <article
+              className={`video-row video-row--shell ${video.id === featuredId ? "is-selected" : ""}`}
+              key={video.id}
+            >
+              <button className="video-row__select" type="button" onClick={() => onSelect(video.id)}>
+                <span className="video-row__icon">
+                  <Film size={17} />
+                </span>
+                <div className="video-row__body">
+                  <strong className="video-row__title" title={video.originalFilename}>
+                    {video.originalFilename}
+                  </strong>
+                  <span className="video-row__description" title={formatVideoOpponent(video)}>
+                    {formatVideoOpponent(video)}
+                  </span>
+                  <span className="video-row__meta-inline">
+                    <span>Fecha de subida: {formatDate(video.createdAt)}</span>
+                  </span>
+                  <span className="video-row__meta-inline">
+                    <span>Duración: {getVideoDurationLabel(video)}</span>
+                  </span>
+                </div>
+                <span className="video-row__status-group">
+                  <span className="video-row__status-label">Estado</span>
+                  <span className={`status-pill ${video.status.toLowerCase()}`}>{formatStatus(video.status)}</span>
+                </span>
+              </button>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -685,16 +767,16 @@ function useAnimatedMetricDisplay({
 }) {
   const safeValue = Math.max(0, Number.isFinite(targetValue) ? targetValue : 0);
   const safeBar = Math.max(0, Math.min(100, Number.isFinite(targetBar) ? targetBar : 0));
-  const [state, setState] = useState<{ animatedValue: number; animatedBar: number }>({ animatedValue: 0, animatedBar: 0 });
+  const [state, dispatch] = useReducer(animatedMetricReducer, { animatedValue: 0, animatedBar: 0 });
 
   useEffect(() => {
     if (isLoading) {
-      setState({ animatedValue: 0, animatedBar: 0 });
+      dispatch({ type: "set", value: 0, bar: 0 });
       return;
     }
 
     if (reducedMotion) {
-      setState({ animatedValue: safeValue, animatedBar: safeBar });
+      dispatch({ type: "set", value: safeValue, bar: safeBar });
       return;
     }
 
@@ -702,15 +784,12 @@ function useAnimatedMetricDisplay({
     const start = performance.now();
     let frame = 0;
 
-    setState({ animatedValue: 0, animatedBar: 0 });
+    dispatch({ type: "set", value: 0, bar: 0 });
 
     const step = (now: number) => {
       const t = Math.min(1, (now - start) / durationMs);
       const eased = 1 - Math.pow(1 - t, 3);
-      setState({
-        animatedValue: safeValue * eased,
-        animatedBar: safeBar * eased,
-      });
+      dispatch({ type: "set", value: safeValue * eased, bar: safeBar * eased });
       if (t < 1) {
         frame = window.requestAnimationFrame(step);
       }
@@ -723,27 +802,6 @@ function useAnimatedMetricDisplay({
   }, [animationKey, isLoading, reducedMotion, safeBar, safeValue]);
 
   return state;
-}
-
-function usePrefersReducedMotion() {
-  const [reducedMotion, setReducedMotion] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReducedMotion(query.matches);
-    update();
-
-    if (typeof query.addEventListener === "function") {
-      query.addEventListener("change", update);
-      return () => query.removeEventListener("change", update);
-    }
-
-    query.addListener(update);
-    return () => query.removeListener(update);
-  }, []);
-
-  return reducedMotion;
 }
 
 function AnalyzedVideoPanel({

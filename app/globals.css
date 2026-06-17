@@ -433,13 +433,19 @@ svg {
 }
 
 .mobile-menu {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 100%;
+  position: fixed;
+  inset: 0;
   z-index: 70;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  padding: 0;
   opacity: 0;
   pointer-events: none;
+  color: var(--text);
   background:
     linear-gradient(180deg, rgba(8, 8, 8, 0.98), rgba(8, 8, 8, 0.94)),
     rgba(0, 0, 0, 0.72);
@@ -448,6 +454,14 @@ svg {
   transition:
     opacity 220ms ease,
     transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.mobile-menu:not([open]) {
+  display: none;
+}
+
+.mobile-menu::backdrop {
+  background: rgba(0, 0, 0, 0.72);
 }
 
 .mobile-menu.is-open {
@@ -477,7 +491,7 @@ svg {
 }
 
 .mobile-menu__top {
-  display: none;
+  display: flex;
   align-items: center;
   justify-content: space-between;
   padding: var(--space-lg);
@@ -2712,20 +2726,21 @@ svg {
   color: var(--danger);
 }
 
-.auth-toast strong,
-.auth-toast span {
+.auth-toast__copy > strong,
+.auth-toast__copy > span {
   display: block;
 }
 
-.auth-toast strong {
+.auth-toast__copy > strong {
   margin-bottom: 0.25rem;
+  color: var(--text);
   font-family: var(--font-display);
   font-size: 0.72rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
-.auth-toast span {
+.auth-toast__copy > span {
   color: rgba(242, 240, 238, 0.44);
   font-size: 0.82rem;
   line-height: 1.55;
@@ -4849,12 +4864,38 @@ svg {
   z-index: 140;
   display: grid;
   place-items: center;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  border: 0;
   padding: 1.25rem;
+  color: var(--text);
   background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(10px);
 }
 
+.history-modal-backdrop:not([open]) {
+  display: none;
+}
+
+.history-modal-backdrop::backdrop {
+  background: transparent;
+}
+
+.history-modal-backdrop__dismiss {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
 .history-modal {
+  position: relative;
+  z-index: 1;
+  grid-area: 1 / 1;
   width: min(520px, calc(100vw - 2rem));
   border: 1px solid rgba(255, 107, 43, 0.3);
   background:

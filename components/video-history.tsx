@@ -1,12 +1,14 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BarChart3, Film, Loader2, MoreVertical, RotateCcw, Trash2 } from "lucide-react";
 import { AnalysisProcessingPanel } from "@/components/analysis-processing-panel";
 import { AnalysisVideoPlayer } from "@/components/analysis-video-player";
 import { ToastViewport, useAppToasts } from "@/components/app-toast";
 import { MatchColorEditor } from "@/components/match-color-editor";
+import { usePrefersReducedMotion } from "@/components/use-prefers-reduced-motion";
+import { VideoEventSubscription } from "@/components/video-event-subscription";
 import { type AnalysisMetrics } from "@/lib/analysis-metrics";
 
 export type HistoryVideo = {
@@ -55,13 +57,58 @@ type HistoryMetricConfig = {
   formatValue: (value: number) => string;
 };
 
+type AnimatedMetricState = {
+  animatedValue: number;
+  animatedBar: number;
+};
+
+type AnimatedMetricAction = {
+  type: "set";
+  value: number;
+  bar: number;
+};
+
+type HistoryUiState = {
+  retrying: boolean;
+  openMenu: { id: string; x: number; y: number } | null;
+  deleteTargetId: string | null;
+  deleting: boolean;
+};
+
+type HistoryUiAction =
+  | { type: "patch"; changes: Partial<HistoryUiState> }
+  | { type: "toggleMenu"; menu: NonNullable<HistoryUiState["openMenu"]> };
+
+const INITIAL_HISTORY_UI_STATE: HistoryUiState = {
+  retrying: false,
+  openMenu: null,
+  deleteTargetId: null,
+  deleting: false,
+};
+
+function historyUiReducer(state: HistoryUiState, action: HistoryUiAction): HistoryUiState {
+  if (action.type === "toggleMenu") {
+    return {
+      ...state,
+      openMenu: state.openMenu?.id === action.menu.id ? null : action.menu,
+    };
+  }
+  return { ...state, ...action.changes };
+}
+
+function animatedMetricReducer(_state: AnimatedMetricState, action: AnimatedMetricAction): AnimatedMetricState {
+  return {
+    animatedValue: action.value,
+    animatedBar: action.bar,
+  };
+}
+
 export function VideoHistory({ initialVideos }: VideoHistoryProps) {
   const [videos, setVideos] = useState(initialVideos);
   const [selectedId, setSelectedId] = useState(initialVideos[0]?.id ?? "");
-  const [retrying, setRetrying] = useState(false);
-  const [openMenu, setOpenMenu] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [uiState, dispatchUi] = useReducer(historyUiReducer, INITIAL_HISTORY_UI_STATE);
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
+  const { retrying, openMenu, deleteTargetId, deleting } = uiState;
   const { toasts, pushToast, dismissToast } = useAppToasts();
   const selected = useMemo(
     () => videos.find((video) => video.id === selectedId) ?? videos[0] ?? null,
@@ -71,6 +118,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     () => videos.find((video) => video.id === deleteTargetId) ?? null,
     [deleteTargetId, videos],
   );
+
   const metrics = selected?.latestMetrics ?? null;
   const matchInfo = getVideoMatchInfo(selected);
   const colorAssignment = useMemo(() => resolveTeamColorAssignment(matchInfo, metrics), [matchInfo, metrics]);
@@ -141,49 +189,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     },
   ];
 
-  useEffect(() => {
-    if (!selected && videos[0]) {
-      setSelectedId(videos[0].id);
-    }
-  }, [selected, videos]);
-
   const shouldPollSelected = selected ? isVideoProcessing(selected) : false;
-
-  useEffect(() => {
-    if (!selected || !shouldPollSelected) return;
-
-    const eventSource = new EventSource(`/api/videos/${selected.id}/events`);
-    const handleVideoEvent = (event: Event) => {
-      const nextVideo = JSON.parse((event as MessageEvent).data) as HistoryVideo;
-      setVideos((current) => {
-        const previous = current.find((video) => video.id === nextVideo.id);
-        if (previous?.status !== "COMPLETED" && nextVideo.status === "COMPLETED") {
-          pushToast("análisis terminado. El video ya está listo para revisarse.", {
-            dedupeKey: `${nextVideo.id}:completed`,
-            durationMs: 8500,
-            sound: true,
-          });
-          pushCompletionStorageToast(nextVideo, pushToast);
-        }
-        return current.map((video) => (video.id === nextVideo.id ? nextVideo : video));
-      });
-      if (nextVideo.status === "COMPLETED" || nextVideo.status === "FAILED") {
-        eventSource.close();
-      }
-    };
-    const handleError = () => {
-      eventSource.close();
-      void refreshVideo(selected.id);
-    };
-    eventSource.addEventListener("video", handleVideoEvent);
-    eventSource.addEventListener("error", handleError);
-
-    return () => {
-      eventSource.removeEventListener("video", handleVideoEvent);
-      eventSource.removeEventListener("error", handleError);
-      eventSource.close();
-    };
-  }, [selected?.id, shouldPollSelected, pushToast]);
 
   useEffect(() => {
     if (!openMenu) return;
@@ -191,13 +197,12 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     function handlePointerDown(event: MouseEvent) {
       const target = event.target;
       if (!(target instanceof HTMLElement) || target.closest("[data-video-menu-surface]")) return;
-      setOpenMenu(null);
+      dispatchUi({ type: "patch", changes: { openMenu: null } });
     }
 
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setOpenMenu(null);
-        setDeleteTargetId(null);
+        dispatchUi({ type: "patch", changes: { openMenu: null, deleteTargetId: null } });
       }
     }
 
@@ -229,14 +234,14 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
 
   async function retryAnalysis() {
     if (!selected) return;
-    setRetrying(true);
+    dispatchUi({ type: "patch", changes: { retrying: true } });
     const response = await fetch(`/api/videos/${selected.id}/analysis/retry`, { method: "POST" });
     const data = (await response.json().catch(() => ({}))) as { video?: HistoryVideo };
-    setRetrying(false);
+    dispatchUi({ type: "patch", changes: { retrying: false } });
     if (!response.ok || !data.video) return;
     setVideos((current) => current.map((video) => (video.id === data.video!.id ? data.video! : video)));
     setSelectedId(data.video.id);
-    setOpenMenu(null);
+    dispatchUi({ type: "patch", changes: { openMenu: null } });
     pushToast("Video recibido. Iniciando análisis.", {
       dedupeKey: `${data.video.id}:queued`,
       durationMs: 7000,
@@ -246,10 +251,10 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
 
   async function deleteVideo() {
     if (!deleteTarget) return;
-    setDeleting(true);
+    dispatchUi({ type: "patch", changes: { deleting: true } });
     const response = await fetch(`/api/videos/${deleteTarget.id}`, { method: "DELETE" });
     const data = (await response.json().catch(() => ({}))) as { deletedId?: string; error?: string; code?: string };
-    setDeleting(false);
+    dispatchUi({ type: "patch", changes: { deleting: false } });
     if (!response.ok || !data.deletedId) {
       const message = data.error || "No se pudo eliminar el video.";
       pushToast(message, {
@@ -266,178 +271,68 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
       }
       return nextVideos;
     });
-    setOpenMenu(null);
-    setDeleteTargetId(null);
+    deleteDialogRef.current?.close();
+    dispatchUi({ type: "patch", changes: { openMenu: null, deleteTargetId: null } });
+  }
+
+  function receiveVideoEvent(nextVideo: HistoryVideo) {
+    setVideos((current) => {
+      const previous = current.find((video) => video.id === nextVideo.id);
+      if (previous?.status !== "COMPLETED" && nextVideo.status === "COMPLETED") {
+        pushToast("análisis terminado. El video ya está listo para revisarse.", {
+          dedupeKey: `${nextVideo.id}:completed`,
+          durationMs: 8500,
+          sound: true,
+        });
+        pushCompletionStorageToast(nextVideo, pushToast);
+      }
+      return current.map((video) => (video.id === nextVideo.id ? nextVideo : video));
+    });
+  }
+
+  function closeDeleteDialog() {
+    deleteDialogRef.current?.close();
+    dispatchUi({ type: "patch", changes: { deleteTargetId: null } });
+  }
+
+  function openDeleteDialog(videoId: string) {
+    dispatchUi({ type: "patch", changes: { deleteTargetId: videoId, openMenu: null } });
+    window.setTimeout(() => deleteDialogRef.current?.showModal(), 0);
   }
 
   return (
     <>
-      <section className="history-workspace">
-        <article className="history-main">
-          <div className="history-detail lab-panel">
-            <div className="panel-heading history-detail__heading">
-              <div>
-                <span>Detalle del partido</span>
-                <h2>{selected?.originalFilename ?? "Sin selección"}</h2>
-                {selected ? <StorageStatusInline video={selected} /> : null}
-              </div>
-              {selected ? (
-                <div className="history-detail__heading-actions">
-                  {showColorEditor ? (
-                    <MatchColorEditor
-                      mode="header"
-                      video={selected}
-                      onToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
-                      onSaved={(nextVideo) => {
-                        setVideos((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)));
-                      }}
-                    />
-                  ) : null}
-                  <span className={`status-pill ${selected.status.toLowerCase()}`}>{formatStatus(selected.status)}</span>
-                </div>
-              ) : null}
-            </div>
-
-            {selected ? (
-              <div className="history-main__content">
-                <div className="history-player-stack">
-                  <div className="history-player-sticky">
-                    <div className="history-player-surface">
-                      {selected.status === "COMPLETED" && getProcessedVideoUrl(selected) ? (
-                        <AnalysisVideoPlayer
-                          src={getProcessedVideoUrl(selected) ?? `/api/videos/${selected.id}/stream?variant=processed`}
-                          title={selected.originalFilename}
-                          onStreamError={(message) => pushToast(message, { tone: "warning", durationMs: 9000 })}
-                        />
-                      ) : isVideoProcessing(selected) ? (
-                        <AnalysisProcessingPanel
-                          filename={selected.originalFilename}
-                          progress={getVideoProgress(selected)}
-                          note="Subir otro video está bloqueado hasta terminar el tracking y la generación del video anotado."
-                        />
-                      ) : isVideoFailed(selected) ? (
-                        <AnalysisProcessingPanel
-                          variant="failed"
-                          filename={selected.originalFilename}
-                          note={selected.latestJob?.error || "El análisis se interrumpió antes de generar el video anotado."}
-                          actionLabel={retrying ? "Reintentando..." : "Reintentar análisis"}
-                          onAction={() => {
-                            if (retrying) return;
-                            void retryAnalysis();
-                          }}
-                        />
-                      ) : (
-                        <div className="analysis-placeholder">
-                          <BarChart3 size={24} />
-                          <strong>{selected.latestJob ? `análisis ${formatStatus(selected.latestJob.status)}` : "análisis en espera"}</strong>
-                          <span>{getVideoPlaceholderMessage(selected)}</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="history-insights">
-                  <div className="history-insights__header">
-                    <span>Métricas del análisis</span>
-                    <button className="button ghost command-button" type="button" onClick={() => void retryAnalysis()} disabled={retrying}>
-                      {retrying ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
-                      Reanalizar
-                    </button>
-                  </div>
-
-                  <div className="history-stat-grid">
-                    {historyMetrics.map((metric) => (
-                      <AnimatedMetricTile
-                        key={metric.id}
-                        animationKey={`${metricAnimationSeed}|history|${metric.id}|${metric.valueTarget.toFixed(3)}|${metric.barTarget.toFixed(3)}|${metric.color ?? "default"}`}
-                        isLoading={!hasCompletedMetrics}
-                        metric={metric}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="empty-state">
-                <BarChart3 size={24} />
-                <strong>Sin partido seleccionado.</strong>
-                <span>El historial mostrará las métricas específicas de cada video.</span>
-              </div>
-            )}
-          </div>
-        </article>
-
-        <aside className="history-list lab-panel">
-          <div className="panel-heading history-list__heading">
-            <div>
-              <span>Historial</span>
-              <h2>Partidos subidos</h2>
-            </div>
-            <span className="history-list__count">{videos.length}</span>
-          </div>
-
-          {videos.length === 0 ? (
-            <div className="empty-state">
-              <Film size={24} />
-              <strong>No hay partidos todavía.</strong>
-              <span>Sube un video desde el panel principal para activar el análisis.</span>
-            </div>
-          ) : (
-            <div className="video-list history-list__scroll">
-              {videos.map((video) => (
-                <article
-                  className={`video-row video-row--shell ${video.id === selected?.id ? "is-selected" : ""}`}
-                  key={video.id}
-                >
-                  <button className="video-row__select" type="button" onClick={() => setSelectedId(video.id)}>
-                    <span className="video-row__icon">
-                      <Film size={17} />
-                    </span>
-                    <div className="video-row__body">
-                      <strong className="video-row__title" title={video.originalFilename}>
-                        {video.originalFilename}
-                      </strong>
-                      <span className="video-row__description" title={formatVideoOpponent(video)}>
-                        {formatVideoOpponent(video)}
-                      </span>
-                      <span className="video-row__meta-inline">
-                        <span>{formatDate(video.createdAt)}</span>
-                        <span>{formatBytes(Number(video.sizeBytes))}</span>
-                      </span>
-                      <StorageStatusInline video={video} />
-                    </div>
-                    <span className={`status-pill ${video.status.toLowerCase()}`}>{formatStatus(video.status)}</span>
-                  </button>
-
-                  <div className="video-row__actions">
-                    <button
-                      className="icon-button icon-button--compact"
-                      type="button"
-                      aria-label={`Abrir acciones para ${video.originalFilename}`}
-                      aria-expanded={openMenu?.id === video.id}
-                      onClick={(event) => {
-                        const rect = event.currentTarget.getBoundingClientRect();
-                        setOpenMenu((current) =>
-                          current?.id === video.id
-                            ? null
-                            : {
-                                id: video.id,
-                                x: Math.max(16, rect.right - 220),
-                                y: rect.bottom + 8,
-                              },
-                        );
-                      }}
-                    >
-                      <MoreVertical size={15} />
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </aside>
-      </section>
+      {selected && shouldPollSelected ? (
+        <VideoEventSubscription
+          key={selected.id}
+          videoId={selected.id}
+          onVideo={receiveVideoEvent}
+          onError={() => void refreshVideo(selected.id)}
+        />
+      ) : null}
+      <HistoryWorkspace
+        videos={videos}
+        selected={selected}
+        retrying={retrying}
+        openMenu={openMenu}
+        showColorEditor={showColorEditor}
+        hasCompletedMetrics={hasCompletedMetrics}
+        historyMetrics={historyMetrics}
+        metricAnimationSeed={metricAnimationSeed}
+        onColorSaved={(nextVideo) =>
+          setVideos((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)))
+        }
+        onColorToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
+        onStreamError={(message) => pushToast(message, { tone: "warning", durationMs: 9000 })}
+        onRetry={() => void retryAnalysis()}
+        onSelect={setSelectedId}
+        onToggleMenu={(videoId, rect) =>
+          dispatchUi({
+            type: "toggleMenu",
+            menu: { id: videoId, x: Math.max(16, rect.right - 220), y: rect.bottom + 8 },
+          })
+        }
+      />
 
       {openMenu && typeof document !== "undefined"
         ? createPortal(
@@ -452,10 +347,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
                 className="history-action-menu__item"
                 type="button"
                 role="menuitem"
-                onClick={() => {
-                  setDeleteTargetId(openMenu.id);
-                  setOpenMenu(null);
-                }}
+                onClick={() => openDeleteDialog(openMenu.id)}
               >
                 <Trash2 size={14} />
                 Eliminar partido
@@ -465,27 +357,23 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
           )
         : null}
 
-      {deleteTarget ? (
-        <div
-          className="history-modal-backdrop"
-          role="button"
-          tabIndex={0}
+      <dialog
+        ref={deleteDialogRef}
+        className="history-modal-backdrop"
+        aria-labelledby="history-delete-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          closeDeleteDialog();
+        }}
+      >
+        <button
+          className="history-modal-backdrop__dismiss"
+          type="button"
           aria-label="Cerrar confirmación de eliminación"
-          onClick={() => setDeleteTargetId(null)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              setDeleteTargetId(null);
-            }
-          }}
-        >
-          <div
-            className="history-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="history-delete-title"
-            onClick={(event) => event.stopPropagation()}
-          >
+          onClick={closeDeleteDialog}
+        />
+        {deleteTarget ? (
+          <div className="history-modal">
             <div className="history-modal__eyebrow">Confirmación</div>
             <h2 id="history-delete-title">Eliminar partido del historial</h2>
             <p>
@@ -493,7 +381,12 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
               y las métricas generadas por el modelo.
             </p>
             <div className="history-modal__actions">
-              <button className="button ghost" type="button" onClick={() => setDeleteTargetId(null)} disabled={deleting}>
+              <button
+                className="button ghost"
+                type="button"
+                onClick={closeDeleteDialog}
+                disabled={deleting}
+              >
                 Cancelar
               </button>
               <button className="button danger" type="button" onClick={() => void deleteVideo()} disabled={deleting}>
@@ -502,10 +395,197 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
+        ) : null}
+      </dialog>
       <ToastViewport toasts={toasts} onDismiss={dismissToast} />
     </>
+  );
+}
+
+type HistoryWorkspaceProps = {
+  videos: HistoryVideo[];
+  selected: HistoryVideo | null;
+  retrying: boolean;
+  openMenu: HistoryUiState["openMenu"];
+  showColorEditor: boolean;
+  hasCompletedMetrics: boolean;
+  historyMetrics: HistoryMetricConfig[];
+  metricAnimationSeed: string;
+  onColorSaved: (video: HistoryVideo) => void;
+  onColorToast: (message: string) => void;
+  onStreamError: (message: string) => void;
+  onRetry: () => void;
+  onSelect: (videoId: string) => void;
+  onToggleMenu: (videoId: string, rect: DOMRect) => void;
+};
+
+function HistoryWorkspace({
+  videos,
+  selected,
+  retrying,
+  openMenu,
+  showColorEditor,
+  hasCompletedMetrics,
+  historyMetrics,
+  metricAnimationSeed,
+  onColorSaved,
+  onColorToast,
+  onStreamError,
+  onRetry,
+  onSelect,
+  onToggleMenu,
+}: HistoryWorkspaceProps) {
+  return (
+    <section className="history-workspace">
+      <article className="history-main">
+        <div className="history-detail lab-panel">
+          <div className="panel-heading history-detail__heading">
+            <div>
+              <span>Detalle del partido</span>
+              <h2>{selected?.originalFilename ?? "Sin selección"}</h2>
+              {selected ? <StorageStatusInline video={selected} /> : null}
+            </div>
+            {selected ? (
+              <div className="history-detail__heading-actions">
+                {showColorEditor ? (
+                  <MatchColorEditor
+                    mode="header"
+                    video={selected}
+                    onToast={onColorToast}
+                    onSaved={onColorSaved}
+                  />
+                ) : null}
+                <span className={`status-pill ${selected.status.toLowerCase()}`}>{formatStatus(selected.status)}</span>
+              </div>
+            ) : null}
+          </div>
+
+          {selected ? (
+            <div className="history-main__content">
+              <div className="history-player-stack">
+                <div className="history-player-sticky">
+                  <div className="history-player-surface">
+                    {selected.status === "COMPLETED" && getProcessedVideoUrl(selected) ? (
+                      <AnalysisVideoPlayer
+                        src={getProcessedVideoUrl(selected) ?? `/api/videos/${selected.id}/stream?variant=processed`}
+                        title={selected.originalFilename}
+                        onStreamError={onStreamError}
+                      />
+                    ) : isVideoProcessing(selected) ? (
+                      <AnalysisProcessingPanel
+                        filename={selected.originalFilename}
+                        progress={getVideoProgress(selected)}
+                        note="Subir otro video está bloqueado hasta terminar el tracking y la generación del video anotado."
+                      />
+                    ) : isVideoFailed(selected) ? (
+                      <AnalysisProcessingPanel
+                        variant="failed"
+                        filename={selected.originalFilename}
+                        note={selected.latestJob?.error || "El análisis se interrumpió antes de generar el video anotado."}
+                        actionLabel={retrying ? "Reintentando..." : "Reintentar análisis"}
+                        onAction={retrying ? undefined : onRetry}
+                      />
+                    ) : (
+                      <div className="analysis-placeholder">
+                        <BarChart3 size={24} />
+                        <strong>{selected.latestJob ? `análisis ${formatStatus(selected.latestJob.status)}` : "análisis en espera"}</strong>
+                        <span>{getVideoPlaceholderMessage(selected)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="history-insights">
+                <div className="history-insights__header">
+                  <span>Métricas del análisis</span>
+                  <button className="button ghost command-button" type="button" onClick={onRetry} disabled={retrying}>
+                    {retrying ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
+                    Reanalizar
+                  </button>
+                </div>
+
+                <div className="history-stat-grid">
+                  {historyMetrics.map((metric) => (
+                    <AnimatedMetricTile
+                      key={metric.id}
+                      animationKey={`${metricAnimationSeed}|history|${metric.id}|${metric.valueTarget.toFixed(3)}|${metric.barTarget.toFixed(3)}|${metric.color ?? "default"}`}
+                      isLoading={!hasCompletedMetrics}
+                      metric={metric}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="empty-state">
+              <BarChart3 size={24} />
+              <strong>Sin partido seleccionado.</strong>
+              <span>El historial mostrará las métricas específicas de cada video.</span>
+            </div>
+          )}
+        </div>
+      </article>
+
+      <aside className="history-list lab-panel">
+        <div className="panel-heading history-list__heading">
+          <div>
+            <span>Historial</span>
+            <h2>Partidos subidos</h2>
+          </div>
+          <span className="history-list__count">{videos.length}</span>
+        </div>
+
+        {videos.length === 0 ? (
+          <div className="empty-state">
+            <Film size={24} />
+            <strong>No hay partidos todavía.</strong>
+            <span>Sube un video desde el panel principal para activar el análisis.</span>
+          </div>
+        ) : (
+          <div className="video-list history-list__scroll">
+            {videos.map((video) => (
+              <article
+                className={`video-row video-row--shell ${video.id === selected?.id ? "is-selected" : ""}`}
+                key={video.id}
+              >
+                <button className="video-row__select" type="button" onClick={() => onSelect(video.id)}>
+                  <span className="video-row__icon">
+                    <Film size={17} />
+                  </span>
+                  <div className="video-row__body">
+                    <strong className="video-row__title" title={video.originalFilename}>
+                      {video.originalFilename}
+                    </strong>
+                    <span className="video-row__description" title={formatVideoOpponent(video)}>
+                      {formatVideoOpponent(video)}
+                    </span>
+                    <span className="video-row__meta-inline">
+                      <span>{formatDate(video.createdAt)}</span>
+                      <span>{formatBytes(Number(video.sizeBytes))}</span>
+                    </span>
+                    <StorageStatusInline video={video} />
+                  </div>
+                  <span className={`status-pill ${video.status.toLowerCase()}`}>{formatStatus(video.status)}</span>
+                </button>
+
+                <div className="video-row__actions">
+                  <button
+                    className="icon-button icon-button--compact"
+                    type="button"
+                    aria-label={`Abrir acciones para ${video.originalFilename}`}
+                    aria-expanded={openMenu?.id === video.id}
+                    onClick={(event) => onToggleMenu(video.id, event.currentTarget.getBoundingClientRect())}
+                  >
+                    <MoreVertical size={15} />
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </aside>
+    </section>
   );
 }
 
@@ -581,16 +661,16 @@ function useAnimatedMetricDisplay({
 }) {
   const safeValue = Math.max(0, Number.isFinite(targetValue) ? targetValue : 0);
   const safeBar = Math.max(0, Math.min(100, Number.isFinite(targetBar) ? targetBar : 0));
-  const [state, setState] = useState<{ animatedValue: number; animatedBar: number }>({ animatedValue: 0, animatedBar: 0 });
+  const [state, dispatch] = useReducer(animatedMetricReducer, { animatedValue: 0, animatedBar: 0 });
 
   useEffect(() => {
     if (isLoading) {
-      setState({ animatedValue: 0, animatedBar: 0 });
+      dispatch({ type: "set", value: 0, bar: 0 });
       return;
     }
 
     if (reducedMotion) {
-      setState({ animatedValue: safeValue, animatedBar: safeBar });
+      dispatch({ type: "set", value: safeValue, bar: safeBar });
       return;
     }
 
@@ -598,15 +678,12 @@ function useAnimatedMetricDisplay({
     const start = performance.now();
     let frame = 0;
 
-    setState({ animatedValue: 0, animatedBar: 0 });
+    dispatch({ type: "set", value: 0, bar: 0 });
 
     const step = (now: number) => {
       const t = Math.min(1, (now - start) / durationMs);
       const eased = 1 - Math.pow(1 - t, 3);
-      setState({
-        animatedValue: safeValue * eased,
-        animatedBar: safeBar * eased,
-      });
+      dispatch({ type: "set", value: safeValue * eased, bar: safeBar * eased });
       if (t < 1) {
         frame = window.requestAnimationFrame(step);
       }
@@ -619,27 +696,6 @@ function useAnimatedMetricDisplay({
   }, [animationKey, isLoading, reducedMotion, safeBar, safeValue]);
 
   return state;
-}
-
-function usePrefersReducedMotion() {
-  const [reducedMotion, setReducedMotion] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const update = () => setReducedMotion(query.matches);
-    update();
-
-    if (typeof query.addEventListener === "function") {
-      query.addEventListener("change", update);
-      return () => query.removeEventListener("change", update);
-    }
-
-    query.addListener(update);
-    return () => query.removeListener(update);
-  }, []);
-
-  return reducedMotion;
 }
 
 function getOwnDistanceKm(metrics: AnalysisMetrics | null) {

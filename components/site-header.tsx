@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/logo";
@@ -16,26 +16,36 @@ type SiteHeaderProps = {
   logoHref?: string;
 };
 
+function replaceStringReducer(_current: string, next: string) {
+  return next;
+}
+
 export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps) {
-  const [open, setOpen] = useState(false);
-  const [activeHash, setActiveHash] = useState(navItems[0]?.href ?? "");
   const pathname = usePathname();
+  const [openPathname, setOpenPathname] = useState<string | null>(null);
+  const [activeHash, updateActiveHash] = useReducer(replaceStringReducer, navItems[0]?.href ?? "");
+  const mobileMenuRef = useRef<HTMLDialogElement>(null);
+  const open = openPathname === pathname;
   const hashItems = useMemo(() => navItems.filter((item) => item.href.startsWith("#")), [navItems]);
 
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+  function closeMobileMenu() {
+    const dialog = mobileMenuRef.current;
+    if (dialog?.open) dialog.close();
+    setOpenPathname(null);
+  }
 
-  useEffect(() => {
-    document.body.style.overflow = open ? "hidden" : "";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [open]);
+  function toggleMobileMenu() {
+    if (open) {
+      closeMobileMenu();
+      return;
+    }
+    mobileMenuRef.current?.showModal();
+    setOpenPathname(pathname);
+  }
 
   useEffect(() => {
     if (pathname !== "/" || hashItems.length === 0) {
-      setActiveHash("");
+      updateActiveHash("");
       return;
     }
 
@@ -55,7 +65,7 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
           .sort((left, right) => right.intersectionRatio - left.intersectionRatio);
         if (visible[0]?.target instanceof HTMLElement) {
           const next = sections.find((section) => section.node === visible[0].target);
-          if (next) setActiveHash(next.href);
+          if (next) updateActiveHash(next.href);
         }
       },
       {
@@ -71,7 +81,7 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
     const syncFromHash = () => {
       const nextHash = window.location.hash;
       if (nextHash && hashItems.some((item) => item.href === nextHash)) {
-        setActiveHash(nextHash);
+        updateActiveHash(nextHash);
       }
     };
 
@@ -120,7 +130,7 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
             type="button"
             aria-label={open ? "Cerrar menu" : "Abrir menu"}
             aria-expanded={open}
-            onClick={() => setOpen((current) => !current)}
+            onClick={toggleMobileMenu}
           >
             <span />
             <span />
@@ -129,11 +139,20 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
         </div>
       </div>
 
-      <div className={`mobile-menu ${open ? "is-open" : ""}`}>
-        <div className="mobile-menu__sheet" role="dialog" aria-modal="true" aria-label="Menu principal">
+      <dialog
+        key={pathname}
+        ref={mobileMenuRef}
+        className={`mobile-menu ${open ? "is-open" : ""}`}
+        aria-label="Menu principal"
+        onCancel={(event) => {
+          event.preventDefault();
+          closeMobileMenu();
+        }}
+      >
+        <div className="mobile-menu__sheet">
           <div className="mobile-menu__top">
             <Logo href={logoHref} />
-            <button className="menu-toggle is-close" type="button" aria-label="Cerrar menu" onClick={() => setOpen(false)}>
+            <button className="menu-toggle is-close" type="button" aria-label="Cerrar menu" onClick={closeMobileMenu}>
               <span />
               <span />
             </button>
@@ -146,7 +165,7 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
                   href={item.href}
                   key={item.href}
                   className={getLinkClass(item.href) || undefined}
-                  onClick={() => setOpen(false)}
+                  onClick={closeMobileMenu}
                 >
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   {item.label}
@@ -156,7 +175,7 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
                   href={item.href}
                   key={item.href}
                   className={getLinkClass(item.href) || undefined}
-                  onClick={() => setOpen(false)}
+                  onClick={closeMobileMenu}
                 >
                   <span>{String(index + 1).padStart(2, "0")}</span>
                   {item.label}
@@ -167,7 +186,7 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
 
           <div className="mobile-menu__cta">{action}</div>
         </div>
-      </div>
+      </dialog>
     </header>
   );
 }

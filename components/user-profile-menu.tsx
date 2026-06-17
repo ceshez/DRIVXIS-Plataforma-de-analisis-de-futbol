@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { BarChart3, Gauge, LogOut, Settings, UserRound } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef } from "react";
 
 type UserProfileMenuProps = {
   name?: string | null;
@@ -22,7 +22,60 @@ const menuItems = [
   { href: "/dashboard/profile", label: "Perfil", icon: UserRound },
 ];
 
-export function UserProfileMenu({
+type ProfileMenuState = {
+  open: boolean;
+  loggingOut: boolean;
+  logoutError: string;
+  hasLocalAvatar: boolean;
+  avatarNonceOverride: string | null;
+  failedAvatarNonce: string | null;
+};
+
+type ProfileMenuAction =
+  | { type: "toggleOpen" }
+  | { type: "close" }
+  | { type: "logoutStarted" }
+  | { type: "logoutFailed"; message: string }
+  | { type: "avatarUpdated"; nonce: string }
+  | { type: "avatarFailed"; nonce: string };
+
+const INITIAL_PROFILE_MENU_STATE: ProfileMenuState = {
+  open: false,
+  loggingOut: false,
+  logoutError: "",
+  hasLocalAvatar: false,
+  avatarNonceOverride: null,
+  failedAvatarNonce: null,
+};
+
+function profileMenuReducer(state: ProfileMenuState, action: ProfileMenuAction): ProfileMenuState {
+  switch (action.type) {
+    case "toggleOpen":
+      return { ...state, open: !state.open };
+    case "close":
+      return { ...state, open: false, logoutError: "" };
+    case "logoutStarted":
+      return { ...state, loggingOut: true, logoutError: "" };
+    case "logoutFailed":
+      return { ...state, loggingOut: false, logoutError: action.message };
+    case "avatarUpdated":
+      return {
+        ...state,
+        hasLocalAvatar: true,
+        avatarNonceOverride: action.nonce,
+        failedAvatarNonce: null,
+      };
+    case "avatarFailed":
+      return { ...state, failedAvatarNonce: action.nonce };
+  }
+}
+
+export function UserProfileMenu(props: UserProfileMenuProps) {
+  const pathname = usePathname();
+  return <UserProfileMenuContent key={pathname} {...props} pathname={pathname} />;
+}
+
+function UserProfileMenuContent({
   name,
   email,
   hasAvatar = false,
@@ -30,19 +83,15 @@ export function UserProfileMenu({
   dropdownDirection = "down",
   triggerVariant = "icon",
   showSidebarSettingsIcon = false,
-}: UserProfileMenuProps) {
-  const pathname = usePathname();
+  pathname,
+}: UserProfileMenuProps & { pathname: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
-  const [loggingOut, setLoggingOut] = useState(false);
-  const [logoutError, setLogoutError] = useState("");
-  const [hasLocalAvatar, setHasLocalAvatar] = useState(false);
-  const [avatarNonceOverride, setAvatarNonceOverride] = useState<string | null>(null);
-  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
+  const [menuState, dispatchMenu] = useReducer(profileMenuReducer, INITIAL_PROFILE_MENU_STATE);
+  const { open, loggingOut, logoutError, hasLocalAvatar, avatarNonceOverride, failedAvatarNonce } = menuState;
   const safeName = (name || "").trim();
   const safeEmail = (email || "").trim();
   const avatarNonce = avatarNonceOverride ?? avatarVersion ?? "0";
-  const showAvatar = (hasAvatar || hasLocalAvatar) && !avatarLoadFailed;
+  const showAvatar = (hasAvatar || hasLocalAvatar) && failedAvatarNonce !== avatarNonce;
 
   const avatarLetter = useMemo(() => {
     const source = safeName || safeEmail || "U";
@@ -50,25 +99,16 @@ export function UserProfileMenu({
   }, [safeName, safeEmail]);
 
   useEffect(() => {
-    setOpen(false);
-    setLogoutError("");
-  }, [pathname]);
-
-  useEffect(() => {
-    setAvatarLoadFailed(false);
-  }, [avatarNonce]);
-
-  useEffect(() => {
     if (!open) return;
 
     function handlePointerDown(event: MouseEvent) {
       if (!rootRef.current) return;
       if (rootRef.current.contains(event.target as Node)) return;
-      setOpen(false);
+      dispatchMenu({ type: "close" });
     }
 
     function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") dispatchMenu({ type: "close" });
     }
 
     document.addEventListener("mousedown", handlePointerDown);
@@ -82,9 +122,7 @@ export function UserProfileMenu({
   useEffect(() => {
     function handleAvatarUpdated(event: Event) {
       const detail = (event as CustomEvent<{ updatedAt?: string }>).detail;
-      setHasLocalAvatar(true);
-      setAvatarNonceOverride(detail?.updatedAt || String(Date.now()));
-      setAvatarLoadFailed(false);
+      dispatchMenu({ type: "avatarUpdated", nonce: detail?.updatedAt || String(Date.now()) });
     }
 
     window.addEventListener("drivxis:avatar-updated", handleAvatarUpdated);
@@ -92,19 +130,16 @@ export function UserProfileMenu({
   }, []);
 
   async function logout() {
-    setLoggingOut(true);
-    setLogoutError("");
+    dispatchMenu({ type: "logoutStarted" });
     try {
       const response = await fetch("/api/auth/logout", { method: "POST" });
       if (!response.ok) {
-        setLogoutError("No se pudo cerrar sesi\u00f3n. Intenta de nuevo.");
-        setLoggingOut(false);
+        dispatchMenu({ type: "logoutFailed", message: "No se pudo cerrar sesi\u00f3n. Intenta de nuevo." });
         return;
       }
       window.location.href = "/";
     } catch {
-      setLogoutError("No se pudo cerrar sesi\u00f3n. Revisa tu conexi\u00f3n.");
-      setLoggingOut(false);
+      dispatchMenu({ type: "logoutFailed", message: "No se pudo cerrar sesi\u00f3n. Revisa tu conexi\u00f3n." });
     }
   }
 
@@ -121,7 +156,7 @@ export function UserProfileMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Abrir men\u00fa de usuario"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => dispatchMenu({ type: "toggleOpen" })}
       >
         <span className="profile-menu__trigger-avatar-wrap">
           {showAvatar ? (
@@ -132,7 +167,7 @@ export function UserProfileMenu({
               width={44}
               height={44}
               unoptimized
-              onError={() => setAvatarLoadFailed(true)}
+              onError={() => dispatchMenu({ type: "avatarFailed", nonce: avatarNonce })}
             />
           ) : (
             <span className="profile-menu__avatar" aria-hidden="true">
@@ -181,7 +216,7 @@ export function UserProfileMenu({
                 key={item.href}
                 role="menuitem"
                 className={`profile-menu__item ${pathname === item.href || pathname.startsWith(`${item.href}/`) ? "is-active" : ""}`}
-                onClick={() => setOpen(false)}
+                onClick={() => dispatchMenu({ type: "close" })}
               >
                 <item.icon size={16} />
                 <strong>{item.label}</strong>

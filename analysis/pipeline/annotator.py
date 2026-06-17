@@ -55,26 +55,92 @@ def draw_player_marker(cv2: Any, canvas: Any, bbox: list[float], color: tuple[in
 def draw_player_metrics(cv2: Any, canvas: Any, bbox: list[float], player: dict[str, Any]) -> None:
     if not player.get("display_speed_sample") or "speed" not in player or "distance" not in player:
         return
+    rect = metric_overlay_rect(cv2, canvas, bbox, player)
+    if rect is None:
+        return
+    x1, y1, x2, y2 = rect
+    speed = float(player.get("speed") or 0.0)
+    distance = float(player.get("distance") or 0.0)
+    lines = [f"{speed:.1f} km/h", f"{format_overlay_distance(distance)}"]
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    scale = 0.36
+    thickness = 1
+    line_height = 13
+    overlay = canvas.copy()
+    cv2.rectangle(overlay, (x1, y1), (x2, y2), (8, 8, 8), cv2.FILLED)
+    cv2.addWeighted(overlay, 0.68, canvas, 0.32, 0, canvas)
+    cv2.rectangle(canvas, (x1, y1), (x2, y2), (238, 238, 224), 1, cv2.LINE_AA)
+    for index, line in enumerate(lines):
+        baseline_y = y1 + 13 + index * line_height
+        cv2.putText(canvas, line, (x1 + 5, baseline_y), font, scale, (250, 250, 240), thickness, cv2.LINE_AA)
+
+
+def metric_overlay_rect(cv2: Any, canvas: Any, bbox: list[float], player: dict[str, Any]) -> tuple[int, int, int, int] | None:
     x1, _y1, x2, y2 = [int(value) for value in bbox]
     x_center = int((x1 + x2) / 2)
     speed = float(player.get("speed") or 0.0)
     distance = float(player.get("distance") or 0.0)
     lines = [f"{speed:.1f} km/h", f"{format_overlay_distance(distance)}"]
     font = cv2.FONT_HERSHEY_SIMPLEX
-    scale = 0.39
+    scale = 0.36
     thickness = 1
-    line_height = 14
+    line_height = 13
     widths = [cv2.getTextSize(line, font, scale, thickness)[0][0] for line in lines]
-    block_width = max(widths)
+    block_width = max(widths) + 10
+    block_height = line_height * len(lines) + 7
     x = max(4, min(canvas.shape[1] - block_width - 4, int(x_center - block_width / 2)))
-    y = min(canvas.shape[0] - 8, int(y2 + 42))
-    if y < y2 + 18:
-        return
+    y = int(y2 + 34)
+    if y + block_height > canvas.shape[0] - 4:
+        return None
+    if y < y2 + 16:
+        return None
+    return x, y, x + block_width, y + block_height
 
-    for index, line in enumerate(lines):
-        baseline_y = y + index * line_height
-        cv2.putText(canvas, line, (x + 1, baseline_y + 1), font, scale, (0, 0, 0), 3, cv2.LINE_AA)
-        cv2.putText(canvas, line, (x, baseline_y), font, scale, (245, 245, 235), thickness, cv2.LINE_AA)
+
+def metric_rect_overlaps(rect: tuple[int, int, int, int], others: list[tuple[int, int, int, int]], padding: int = 4) -> bool:
+    x1, y1, x2, y2 = rect
+    for ox1, oy1, ox2, oy2 in others:
+        if x1 - padding <= ox2 and x2 + padding >= ox1 and y1 - padding <= oy2 and y2 + padding >= oy1:
+            return True
+    return False
+
+
+def select_metric_overlay_ids(cv2: Any, canvas: Any, players: dict[int, dict[str, Any]]) -> set[int]:
+    eligible: list[tuple[int, dict[str, Any], tuple[int, int, int, int]]] = []
+    for player_id, player in players.items():
+        if not player.get("display_speed_sample") or "speed" not in player or "distance" not in player:
+            continue
+        rect = metric_overlay_rect(cv2, canvas, player["bbox"], player)
+        if rect is not None:
+            eligible.append((player_id, player, rect))
+
+    if len(players) >= 12:
+        max_overlays = 4
+    elif len(players) >= 8:
+        max_overlays = 5
+    else:
+        max_overlays = 6
+
+    eligible.sort(
+        key=lambda item: (
+            float(item[1].get("speed_display_confidence", 0.0)),
+            int(item[1].get("speed_sample_streak", 0)),
+            int(item[1].get("speed_sample_count", 0)),
+            float(item[1].get("distance", 0.0)),
+        ),
+        reverse=True,
+    )
+
+    selected: set[int] = set()
+    claimed_rects: list[tuple[int, int, int, int]] = []
+    for player_id, _player, rect in eligible:
+        if len(selected) >= max_overlays:
+            break
+        if metric_rect_overlaps(rect, claimed_rects):
+            continue
+        selected.add(player_id)
+        claimed_rects.append(rect)
+    return selected
 
 
 def format_overlay_distance(distance_meters: float) -> str:
@@ -122,6 +188,7 @@ def annotate_frame(frame: Any, frame_num: int, tracks: dict[str, list[dict[int, 
     cv2.rectangle(canvas, (34, 108), (34 + int(bar_width * progress), 112), orange, -1)
 
     players = tracks["players"][frame_num] if frame_num < len(tracks["players"]) else {}
+    metric_overlay_ids = select_metric_overlay_ids(cv2, canvas, players)
     for player_id, player in players.items():
         team = int(player.get("team", 1))
         color = tuple(int(channel) for channel in player.get("team_color") or (orange if team == 1 else white))
@@ -131,7 +198,8 @@ def annotate_frame(frame: Any, frame_num: int, tracks: dict[str, list[dict[int, 
             draw_label(cv2, canvas, "GK", (x1, max(18, y1)), color)
         if player.get("has_ball"):
             draw_triangle_marker(cv2, np, canvas, player["bbox"], orange, above=True)
-        draw_player_metrics(cv2, canvas, player["bbox"], player)
+        if player_id in metric_overlay_ids:
+            draw_player_metrics(cv2, canvas, player["bbox"], player)
 
     referees = tracks["referees"][frame_num] if frame_num < len(tracks["referees"]) else {}
     for referee_id, referee in referees.items():

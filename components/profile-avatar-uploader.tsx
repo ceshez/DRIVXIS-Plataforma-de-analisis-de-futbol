@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useReducer } from "react";
 import Image from "next/image";
 
 type ProfileAvatarUploaderProps = {
@@ -13,14 +13,65 @@ type ProfileAvatarUploaderProps = {
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
+type AvatarUploadState = {
+  selectedFile: File | null;
+  previewUrl: string;
+  loading: boolean;
+  message: string;
+  error: string;
+  localAvatarVersion: string | null;
+  hasLocalAvatar: boolean;
+};
+
+type AvatarUploadAction =
+  | { type: "fileSelected"; file: File | null; previewUrl: string }
+  | { type: "uploadStarted" }
+  | { type: "uploadFailed"; message: string }
+  | { type: "uploadSucceeded"; updatedAt: string }
+  | { type: "uploadFinished" };
+
+const INITIAL_AVATAR_UPLOAD_STATE: AvatarUploadState = {
+  selectedFile: null,
+  previewUrl: "",
+  loading: false,
+  message: "",
+  error: "",
+  localAvatarVersion: null,
+  hasLocalAvatar: false,
+};
+
+function avatarUploadReducer(state: AvatarUploadState, action: AvatarUploadAction): AvatarUploadState {
+  switch (action.type) {
+    case "fileSelected":
+      return {
+        ...state,
+        selectedFile: action.file,
+        previewUrl: action.previewUrl,
+        message: "",
+        error: "",
+      };
+    case "uploadStarted":
+      return { ...state, loading: true, message: "", error: "" };
+    case "uploadFailed":
+      return { ...state, error: action.message };
+    case "uploadSucceeded":
+      return {
+        ...state,
+        selectedFile: null,
+        previewUrl: "",
+        message: "Imagen de perfil actualizada.",
+        error: "",
+        localAvatarVersion: action.updatedAt,
+        hasLocalAvatar: true,
+      };
+    case "uploadFinished":
+      return { ...state, loading: false };
+  }
+}
+
 export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }: ProfileAvatarUploaderProps) {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [localAvatarVersion, setLocalAvatarVersion] = useState<string | null>(null);
-  const [hasLocalAvatar, setHasLocalAvatar] = useState(false);
+  const [uploadState, dispatchUpload] = useReducer(avatarUploadReducer, INITIAL_AVATAR_UPLOAD_STATE);
+  const { selectedFile, previewUrl, loading, message, error, localAvatarVersion, hasLocalAvatar } = uploadState;
   const initials = useMemo(() => (name.trim() || email.trim() || "U").charAt(0).toUpperCase(), [email, name]);
   const fileInputId = "profile-avatar-input";
   const avatarNonce = localAvatarVersion ?? avatarVersion ?? "0";
@@ -34,36 +85,29 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
   }, [previewUrl]);
 
   function onSelectFile(file: File | null) {
-    setMessage("");
-    setError("");
-    setSelectedFile(file);
-    if (!file) {
-      setPreviewUrl("");
-      return;
-    }
-    setPreviewUrl((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return URL.createObjectURL(file);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    dispatchUpload({
+      type: "fileSelected",
+      file,
+      previewUrl: file ? URL.createObjectURL(file) : "",
     });
   }
 
   async function uploadAvatar() {
     if (!selectedFile) {
-      setError("Selecciona una imagen antes de subir.");
+      dispatchUpload({ type: "uploadFailed", message: "Selecciona una imagen antes de subir." });
       return;
     }
     if (!ALLOWED_TYPES.includes(selectedFile.type)) {
-      setError("Formato no permitido. Usa JPG, PNG o WEBP.");
+      dispatchUpload({ type: "uploadFailed", message: "Formato no permitido. Usa JPG, PNG o WEBP." });
       return;
     }
     if (!selectedFile.size || selectedFile.size > MAX_AVATAR_BYTES) {
-      setError("La imagen supera el limite de 2MB.");
+      dispatchUpload({ type: "uploadFailed", message: "La imagen supera el limite de 2MB." });
       return;
     }
 
-    setLoading(true);
-    setError("");
-    setMessage("");
+    dispatchUpload({ type: "uploadStarted" });
 
     const payload = new FormData();
     payload.set("file", selectedFile);
@@ -79,25 +123,18 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
       };
 
       if (!response.ok) {
-        setError(data.error || "No se pudo subir la imagen.");
-        setLoading(false);
+        dispatchUpload({ type: "uploadFailed", message: data.error || "No se pudo subir la imagen." });
         return;
       }
 
       const updatedAt = data.avatar?.updatedAt || String(Date.now());
-      setLocalAvatarVersion(updatedAt);
-      setHasLocalAvatar(true);
-      setSelectedFile(null);
-      setPreviewUrl((current) => {
-        if (current) URL.revokeObjectURL(current);
-        return "";
-      });
-      setMessage("Imagen de perfil actualizada.");
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+      dispatchUpload({ type: "uploadSucceeded", updatedAt });
       window.dispatchEvent(new CustomEvent("drivxis:avatar-updated", { detail: { updatedAt } }));
     } catch {
-      setError("No se pudo subir la imagen. Revisa tu conexion.");
+      dispatchUpload({ type: "uploadFailed", message: "No se pudo subir la imagen. Revisa tu conexion." });
     } finally {
-      setLoading(false);
+      dispatchUpload({ type: "uploadFinished" });
     }
   }
 
@@ -134,11 +171,11 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
       <div className="profile-editor__fields">
         <label>
           <span>Nombre</span>
-          <input type="text" value={name} readOnly aria-readonly="true" />
+          <input type="text" value={name} readOnly />
         </label>
         <label>
           <span>Correo</span>
-          <input type="email" value={email} readOnly aria-readonly="true" />
+          <input type="email" value={email} readOnly />
         </label>
       </div>
 

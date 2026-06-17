@@ -24,7 +24,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useMemo, useReducer, useRef } from "react";
 import { UserProfileMenu } from "@/components/user-profile-menu";
 import { getDemoAssistantResponse } from "@/lib/chatbot-demo";
 import styles from "./dashboard-chatbot-demo.module.css";
@@ -48,6 +48,28 @@ type PendingReply = {
 };
 
 type AssistantPhase = "idle" | "thinking" | "typing";
+type NavItemId = (typeof navItems)[number]["id"];
+
+type ChatbotState = {
+  messages: ChatMessage[];
+  draft: string;
+  hasSentFirstMessage: boolean;
+  sidebarCollapsed: boolean;
+  mobileSidebarOpen: boolean;
+  assistantPhase: AssistantPhase;
+  typingText: string;
+  selectedPrompt: string;
+  replyQueue: PendingReply[];
+  activeReply: PendingReply | null;
+  activeNavItem: NavItemId;
+  openRecentMenuId: string | null;
+  isMobileLayout: boolean;
+};
+
+type ChatbotAction =
+  | { type: "patch"; changes: Partial<ChatbotState> }
+  | { type: "update"; update: (state: ChatbotState) => Partial<ChatbotState> }
+  | { type: "resetConversation"; activeNavItem: NavItemId };
 
 const navItems = [
   { id: "new", label: "Nuevo chat", icon: Plus },
@@ -75,6 +97,41 @@ const starterPrompts = [
   "Resumen del partido",
 ];
 
+const INITIAL_CHATBOT_STATE: ChatbotState = {
+  messages: [],
+  draft: "",
+  hasSentFirstMessage: false,
+  sidebarCollapsed: false,
+  mobileSidebarOpen: false,
+  assistantPhase: "idle",
+  typingText: "",
+  selectedPrompt: "",
+  replyQueue: [],
+  activeReply: null,
+  activeNavItem: "new",
+  openRecentMenuId: null,
+  isMobileLayout: false,
+};
+
+function chatbotReducer(state: ChatbotState, action: ChatbotAction): ChatbotState {
+  if (action.type === "resetConversation") {
+    return {
+      ...state,
+      messages: [],
+      draft: "",
+      hasSentFirstMessage: false,
+      assistantPhase: "idle",
+      typingText: "",
+      selectedPrompt: "",
+      replyQueue: [],
+      activeReply: null,
+      activeNavItem: action.activeNavItem,
+    };
+  }
+  const changes = action.type === "update" ? action.update(state) : action.changes;
+  return { ...state, ...changes };
+}
+
 function BrandWordmark({ compact = false }: { compact?: boolean }) {
   return (
     <span className={`${styles.brandWordmark} ${compact ? styles.brandWordmarkCompact : ""}`} aria-label="DRIVXIS">
@@ -85,25 +142,397 @@ function BrandWordmark({ compact = false }: { compact?: boolean }) {
   );
 }
 
+type ChatbotSidebarProps = {
+  state: ChatbotState;
+  className: string;
+  userName?: string | null;
+  userEmail?: string | null;
+  hasAvatar: boolean;
+  avatarVersion?: string | null;
+  dispatch: React.Dispatch<ChatbotAction>;
+  onNavAction: (itemId: NavItemId) => void;
+};
+
+function ChatbotSidebar({
+  state,
+  className,
+  userName,
+  userEmail,
+  hasAvatar,
+  avatarVersion,
+  dispatch,
+  onNavAction,
+}: ChatbotSidebarProps) {
+  const { sidebarCollapsed, activeNavItem, openRecentMenuId } = state;
+  return (
+    <aside className={className} aria-label="Navegación de chatbot">
+      <div className={styles.sidebarInner}>
+        <div className={styles.mobileHeader}>
+          <BrandWordmark compact />
+          <button
+            type="button"
+            aria-label="Cerrar panel"
+            onClick={() => dispatch({ type: "patch", changes: { mobileSidebarOpen: false } })}
+          >
+            <X size={14} />
+          </button>
+        </div>
+
+        <div className={styles.desktopHeader}>
+          <div className={styles.brandRow}>
+            <Link href="/dashboard/chatbot" className={styles.brandLink} aria-label="Chatbot DRIVXIS">
+              <BrandWordmark />
+            </Link>
+            <button
+              type="button"
+              className={`${styles.collapseButton} ${styles.collapsedTooltipTrigger}`}
+              onClick={() =>
+                dispatch({
+                  type: "update",
+                  update: (current) => ({ sidebarCollapsed: !current.sidebarCollapsed }),
+                })
+              }
+              aria-label={sidebarCollapsed ? "Expandir sidebar" : "Colapsar sidebar"}
+              data-tooltip={sidebarCollapsed ? "Abrir barra lateral" : "Cerrar barra lateral"}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+            </button>
+          </div>
+
+          <Link href="/dashboard" className={`${styles.backLink} ${styles.collapsedTooltipTrigger}`} data-tooltip="Volver al dashboard">
+            <span className={styles.backLinkIcon} aria-hidden="true">
+              <ArrowLeft size={12} />
+            </span>
+            <span className={styles.backLinkLabel}>Volver al dashboard</span>
+          </Link>
+        </div>
+
+        <div className={styles.navArea}>
+          <ul className={styles.navList}>
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeNavItem === item.id;
+              return (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    className={`${styles.navItem} ${styles.collapsedTooltipTrigger} ${isActive ? styles.navItemActive : ""}`}
+                    onClick={() => onNavAction(item.id)}
+                    data-tooltip={item.label}
+                  >
+                    <Icon size={14} />
+                    <span className={styles.navText}>{item.label}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className={styles.recentSection}>
+            <p className={styles.recentTitle}>Recientes</p>
+            <ul className={styles.recentList}>
+              {recentItems.map((item) => (
+                <li key={item.id} className={styles.recentItem} data-recent-menu-root="true">
+                  <button type="button" className={styles.recentRow}>
+                    <Clock3 size={10} />
+                    <span>{item.label}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.recentMenuButton}
+                    aria-label={`Opciones para ${item.label}`}
+                    aria-haspopup="menu"
+                    aria-expanded={openRecentMenuId === item.id}
+                    onClick={() =>
+                      dispatch({
+                        type: "update",
+                        update: (current) => ({
+                          openRecentMenuId: current.openRecentMenuId === item.id ? null : item.id,
+                        }),
+                      })
+                    }
+                  >
+                    <Ellipsis size={12} />
+                  </button>
+                  {openRecentMenuId === item.id ? (
+                    <ul className={styles.recentMenu} role="menu" aria-label={`Acciones para ${item.label}`}>
+                      {["Editar nombre", "Eliminar", "Agregar a temporada"].map((label) => (
+                        <li key={label}>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => dispatch({ type: "patch", changes: { openRecentMenuId: null } })}
+                          >
+                            {label}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <div className={styles.userDock}>
+          <div className={styles.userExpanded}>
+            <UserProfileMenu
+              name={userName}
+              email={userEmail}
+              hasAvatar={hasAvatar}
+              avatarVersion={avatarVersion}
+              dropdownDirection="up"
+              triggerVariant="sidebar-card"
+              showSidebarSettingsIcon
+            />
+          </div>
+          <div className={styles.userCollapsed}>
+            <UserProfileMenu
+              name={userName}
+              email={userEmail}
+              hasAvatar={hasAvatar}
+              avatarVersion={avatarVersion}
+              dropdownDirection="up"
+            />
+          </div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+type ChatbotWorkspaceProps = {
+  state: ChatbotState;
+  greetingName: string;
+  threadRef: React.RefObject<HTMLDivElement | null>;
+  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  dispatch: React.Dispatch<ChatbotAction>;
+  onScroll: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onInputKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
+  onApplyPrompt: (prompt: string) => void;
+};
+
+function ChatbotWorkspace({
+  state,
+  greetingName,
+  threadRef,
+  inputRef,
+  dispatch,
+  onScroll,
+  onSubmit,
+  onInputKeyDown,
+  onApplyPrompt,
+}: ChatbotWorkspaceProps) {
+  const {
+    messages,
+    draft,
+    hasSentFirstMessage,
+    assistantPhase,
+    typingText,
+    selectedPrompt,
+    replyQueue,
+    activeReply,
+    isMobileLayout,
+  } = state;
+  const trimmedDraft = draft.trim();
+  const isAssistantResponding = assistantPhase !== "idle" || activeReply !== null || replyQueue.length > 0;
+  const showEmptyIntro = !hasSentFirstMessage && (!isMobileLayout || trimmedDraft.length === 0);
+  const showStarterPrompts = !hasSentFirstMessage;
+  const isAssistantThinking = assistantPhase === "thinking";
+  const isAssistantTyping = assistantPhase === "typing";
+  const isConversationMode = hasSentFirstMessage || messages.length > 0 || assistantPhase !== "idle";
+  const landingClassName = [styles.landing, showEmptyIntro ? styles.landingIntro : styles.landingCompact].join(" ");
+
+  return (
+    <div className={styles.workspace}>
+      <header className={styles.mobileTopbar}>
+        <button
+          type="button"
+          aria-label="Abrir sidebar"
+          onClick={() => dispatch({ type: "patch", changes: { mobileSidebarOpen: true } })}
+        >
+          <Menu size={15} />
+        </button>
+        <BrandWordmark compact />
+        <span className={styles.mobileTopbarPlaceholder} aria-hidden="true" />
+      </header>
+
+      {isConversationMode ? (
+        <div className={styles.conversation}>
+          <div className={styles.thread} ref={threadRef} onScroll={onScroll} aria-live="polite">
+            <div className={styles.threadMessages}>
+              {messages.map((message) => (
+                <article
+                  key={message.id}
+                  className={`${styles.message} ${message.role === "user" ? styles.messageUser : styles.messageAssistant}`}
+                >
+                  <p>{message.content}</p>
+                </article>
+              ))}
+
+              {isAssistantThinking ? (
+                <article className={`${styles.message} ${styles.messageAssistant} ${styles.messageThinking}`} aria-label="Asistente pensando">
+                  <span />
+                  <span />
+                  <span />
+                </article>
+              ) : null}
+
+              {isAssistantTyping ? (
+                <article className={`${styles.message} ${styles.messageAssistant}`}>
+                  <p>
+                    {typingText}
+                    <i className={styles.caret} aria-hidden="true" />
+                  </p>
+                </article>
+              ) : null}
+            </div>
+          </div>
+
+          <div className={styles.composerDock}>
+            <div className={styles.composerDockInner}>
+              <form className={`${styles.composer} ${styles.composerChat}`} onSubmit={onSubmit}>
+                <label className="visually-hidden" htmlFor="chatbot-composer-input-active">
+                  Escribe tu mensaje
+                </label>
+                <textarea
+                  id="chatbot-composer-input-active"
+                  ref={inputRef}
+                  rows={2}
+                  className={styles.composerTextarea}
+                  value={draft}
+                  disabled={isAssistantResponding}
+                  onChange={(event) => {
+                    dispatch({
+                      type: "patch",
+                      changes: { draft: event.target.value, selectedPrompt: "" },
+                    });
+                  }}
+                  onKeyDown={onInputKeyDown}
+                  placeholder="Escribe tu consulta para el asistente..."
+                />
+                <ComposerFooter
+                  canSend={trimmedDraft.length > 0 && !isAssistantResponding}
+                  submitAlways
+                />
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className={landingClassName}>
+          <div className={styles.centerStack}>
+            {showEmptyIntro ? (
+              <div className={styles.hero}>
+                <h1 className={styles.heroTitle}>Buenas noches, {greetingName}</h1>
+                <p className={styles.heroSubtitle}>Tu asistente de análisis táctico e inteligencia deportiva</p>
+              </div>
+            ) : null}
+
+            <div className={styles.composerStack}>
+              <form className={`${styles.composer} ${styles.composerEmpty}`} onSubmit={onSubmit}>
+                <label className="visually-hidden" htmlFor="chatbot-composer-input">
+                  Escribe tu mensaje
+                </label>
+                <textarea
+                  id="chatbot-composer-input"
+                  ref={inputRef}
+                  rows={3}
+                  className={styles.composerTextarea}
+                  value={draft}
+                  disabled={isAssistantResponding}
+                  onChange={(event) => {
+                    dispatch({
+                      type: "patch",
+                      changes: { draft: event.target.value, selectedPrompt: "" },
+                    });
+                  }}
+                  onKeyDown={onInputKeyDown}
+                  placeholder="¿Cómo puedo ayudarte hoy?"
+                />
+                <ComposerFooter canSend={trimmedDraft.length > 0 && !isAssistantResponding} />
+              </form>
+
+              {showStarterPrompts ? (
+                <div className={styles.suggestionGrid} aria-label="Sugerencias iniciales">
+                  {starterPrompts.map((prompt, index) => {
+                    const Icon = starterPromptIcons[index % starterPromptIcons.length];
+                    return (
+                      <button
+                        key={prompt}
+                        type="button"
+                        className={`${styles.suggestionChip} ${selectedPrompt === prompt ? styles.suggestionChipSelected : ""}`}
+                        onClick={() => onApplyPrompt(prompt)}
+                      >
+                        <Icon size={13} />
+                        <span>{prompt}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <p className={styles.privacyNote}>
+            <span>◌</span> Tus datos están protegidos. DRIVXIS nunca comparte tu información.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ComposerFooter({ canSend, submitAlways = false }: { canSend: boolean; submitAlways?: boolean }) {
+  return (
+    <div className={styles.composerFooter}>
+      <div className={styles.composerTools}>
+        <button type="button" className={styles.toolButton} aria-label="Agregar recurso">
+          <Plus size={15} />
+        </button>
+        <button type="button" className={styles.toolButton} aria-label="Adjuntar archivo">
+          <Paperclip size={14} />
+        </button>
+      </div>
+      {canSend || submitAlways ? (
+        <button className={styles.sendButton} type="submit" disabled={!canSend} aria-label="Enviar mensaje">
+          <ArrowUp size={14} />
+        </button>
+      ) : (
+        <div className={styles.assistantPicker} aria-label="Seleccionar asistente">
+          <strong>Asistente táctico</strong>
+          <ChevronDown size={15} />
+          <AudioLines size={16} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DashboardChatbotDemo({
   userName,
   userEmail,
   hasAvatar = false,
   avatarVersion = null,
 }: DashboardChatbotDemoProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [draft, setDraft] = useState("");
-  const [hasSentFirstMessage, setHasSentFirstMessage] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [assistantPhase, setAssistantPhase] = useState<AssistantPhase>("idle");
-  const [typingText, setTypingText] = useState("");
-  const [selectedPrompt, setSelectedPrompt] = useState("");
-  const [replyQueue, setReplyQueue] = useState<PendingReply[]>([]);
-  const [activeReply, setActiveReply] = useState<PendingReply | null>(null);
-  const [activeNavItem, setActiveNavItem] = useState<(typeof navItems)[number]["id"]>("new");
-  const [openRecentMenuId, setOpenRecentMenuId] = useState<string | null>(null);
-  const [isMobileLayout, setIsMobileLayout] = useState(false);
+  const [chatbotState, dispatchChatbot] = useReducer(chatbotReducer, INITIAL_CHATBOT_STATE);
+  const {
+    messages,
+    draft,
+    hasSentFirstMessage,
+    sidebarCollapsed,
+    mobileSidebarOpen,
+    assistantPhase,
+    typingText,
+    selectedPrompt,
+    replyQueue,
+    activeReply,
+    activeNavItem,
+    openRecentMenuId,
+    isMobileLayout,
+  } = chatbotState;
 
   const messageCounterRef = useRef(0);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -113,23 +542,11 @@ export function DashboardChatbotDemo({
 
   const trimmedDraft = draft.trim();
   const isAssistantResponding = assistantPhase !== "idle" || activeReply !== null || replyQueue.length > 0;
-  const showEmptyIntro = !hasSentFirstMessage && (!isMobileLayout || trimmedDraft.length === 0);
-  const showStarterPrompts = !hasSentFirstMessage;
-  const isAssistantThinking = assistantPhase === "thinking";
   const isAssistantTyping = assistantPhase === "typing";
-  const isConversationMode = hasSentFirstMessage || messages.length > 0 || assistantPhase !== "idle";
   const isDesktopSidebarCollapsed = sidebarCollapsed && !isMobileLayout;
 
   const rootClassName = [styles.shell, isDesktopSidebarCollapsed ? styles.sidebarCollapsed : ""].filter(Boolean).join(" ");
   const sidebarClassName = [styles.sidebar, mobileSidebarOpen ? styles.sidebarMobileOpen : ""].filter(Boolean).join(" ");
-  const landingClassName = [styles.landing, showEmptyIntro ? styles.landingIntro : styles.landingCompact].join(" ");
-
-  const starterPromptEntries = useMemo(() => {
-    return starterPrompts.map((prompt, index) => ({
-      prompt,
-      Icon: starterPromptIcons[index % starterPromptIcons.length],
-    }));
-  }, []);
 
   const greetingName = useMemo(() => {
     const source = (userName || "Carlos").trim();
@@ -139,8 +556,13 @@ export function DashboardChatbotDemo({
 
   useEffect(() => {
     if (activeReply || replyQueue.length === 0) return;
-    setActiveReply(replyQueue[0]);
-    setReplyQueue((current) => current.slice(1));
+    dispatchChatbot({
+      type: "update",
+      update: (current) => ({
+        activeReply: current.replyQueue[0] ?? null,
+        replyQueue: current.replyQueue.slice(1),
+      }),
+    });
   }, [activeReply, replyQueue]);
 
   useEffect(() => {
@@ -150,16 +572,15 @@ export function DashboardChatbotDemo({
     let thinkingTimeout: ReturnType<typeof setTimeout> | null = null;
     let cursor = 0;
 
-    setAssistantPhase("thinking");
-    setTypingText("");
+    dispatchChatbot({ type: "patch", changes: { assistantPhase: "thinking", typingText: "" } });
 
     thinkingTimeout = setTimeout(() => {
-      setAssistantPhase("typing");
+      dispatchChatbot({ type: "patch", changes: { assistantPhase: "typing" } });
 
       typingInterval = setInterval(() => {
         const chunk = Math.max(1, Math.min(4, Math.floor(Math.random() * 4) + 1));
         cursor = Math.min(activeReply.content.length, cursor + chunk);
-        setTypingText(activeReply.content.slice(0, cursor));
+        dispatchChatbot({ type: "patch", changes: { typingText: activeReply.content.slice(0, cursor) } });
 
         if (cursor < activeReply.content.length) return;
 
@@ -168,17 +589,22 @@ export function DashboardChatbotDemo({
           typingInterval = null;
         }
 
-        setMessages((current) => [
-          ...current,
-          {
-            id: activeReply.id,
-            role: "assistant",
-            content: activeReply.content,
-          },
-        ]);
-        setTypingText("");
-        setAssistantPhase("idle");
-        setActiveReply(null);
+        dispatchChatbot({
+          type: "update",
+          update: (current) => ({
+            messages: [
+              ...current.messages,
+              {
+                id: activeReply.id,
+                role: "assistant",
+                content: activeReply.content,
+              },
+            ],
+            typingText: "",
+            assistantPhase: "idle",
+            activeReply: null,
+          }),
+        });
       }, 26);
     }, 320);
 
@@ -215,7 +641,7 @@ export function DashboardChatbotDemo({
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 760px)");
     const updateIsMobile = (event?: MediaQueryListEvent) => {
-      setIsMobileLayout(event ? event.matches : mediaQuery.matches);
+      dispatchChatbot({ type: "patch", changes: { isMobileLayout: event ? event.matches : mediaQuery.matches } });
     };
     updateIsMobile();
     mediaQuery.addEventListener("change", updateIsMobile);
@@ -224,7 +650,7 @@ export function DashboardChatbotDemo({
 
   useEffect(() => {
     if (!isMobileLayout && mobileSidebarOpen) {
-      setMobileSidebarOpen(false);
+      dispatchChatbot({ type: "patch", changes: { mobileSidebarOpen: false } });
     }
   }, [isMobileLayout, mobileSidebarOpen]);
 
@@ -246,10 +672,10 @@ export function DashboardChatbotDemo({
     function handlePointerDown(event: MouseEvent) {
       const target = event.target as HTMLElement;
       if (target.closest("[data-recent-menu-root='true']")) return;
-      setOpenRecentMenuId(null);
+      dispatchChatbot({ type: "patch", changes: { openRecentMenuId: null } });
     }
     function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") setOpenRecentMenuId(null);
+      if (event.key === "Escape") dispatchChatbot({ type: "patch", changes: { openRecentMenuId: null } });
     }
     document.addEventListener("mousedown", handlePointerDown);
     document.addEventListener("keydown", handleEscape);
@@ -266,7 +692,11 @@ export function DashboardChatbotDemo({
 
   function queueAssistantReply(message: string) {
     const response = getDemoAssistantResponse(message);
-    setReplyQueue((current) => [...current, { id: nextMessageId("assistant"), content: response }]);
+    const reply = { id: nextMessageId("assistant"), content: response };
+    dispatchChatbot({
+      type: "update",
+      update: (current) => ({ replyQueue: [...current.replyQueue, reply] }),
+    });
   }
 
   function updateAutoScrollPreference() {
@@ -280,20 +710,25 @@ export function DashboardChatbotDemo({
     if (trimmedDraft.length === 0 || isAssistantResponding) return;
 
     const outbound = trimmedDraft;
-    setMessages((current) => [
-      ...current,
-      {
-        id: nextMessageId("user"),
-        role: "user",
-        content: outbound,
-      },
-    ]);
-    setHasSentFirstMessage(true);
-    setDraft("");
-    setSelectedPrompt("");
+    dispatchChatbot({
+      type: "update",
+      update: (current) => ({
+        messages: [
+          ...current.messages,
+          {
+            id: nextMessageId("user"),
+            role: "user",
+            content: outbound,
+          },
+        ],
+        hasSentFirstMessage: true,
+        draft: "",
+        selectedPrompt: "",
+        mobileSidebarOpen: false,
+      }),
+    });
     queueAssistantReply(outbound);
     autoScrollEnabledRef.current = true;
-    setMobileSidebarOpen(false);
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -312,316 +747,55 @@ export function DashboardChatbotDemo({
   }
 
   function applyStarterPrompt(prompt: string) {
-    setSelectedPrompt(prompt);
-    setDraft(prompt);
-    setMobileSidebarOpen(false);
+    dispatchChatbot({
+      type: "patch",
+      changes: { selectedPrompt: prompt, draft: prompt, mobileSidebarOpen: false },
+    });
   }
 
-  function handleNavAction(itemId: (typeof navItems)[number]["id"]) {
-    setActiveNavItem(itemId);
-    if (itemId !== "new") return;
-    setMessages([]);
-    setReplyQueue([]);
-    setActiveReply(null);
-    setTypingText("");
-    setAssistantPhase("idle");
-    setDraft("");
-    setSelectedPrompt("");
-    setHasSentFirstMessage(false);
-    autoScrollEnabledRef.current = true;
+  function handleNavAction(itemId: NavItemId) {
+    if (itemId === "new") {
+      dispatchChatbot({ type: "resetConversation", activeNavItem: itemId });
+      autoScrollEnabledRef.current = true;
+      return;
+    }
+    dispatchChatbot({ type: "patch", changes: { activeNavItem: itemId } });
   }
 
   return (
     <section className={rootClassName}>
       <div className={styles.layout}>
-        <aside className={sidebarClassName} aria-label="Navegación de chatbot">
-          <div className={styles.sidebarInner}>
-            <div className={styles.mobileHeader}>
-              <BrandWordmark compact />
-              <button type="button" aria-label="Cerrar panel" onClick={() => setMobileSidebarOpen(false)}>
-                <X size={14} />
-              </button>
-            </div>
+        <ChatbotSidebar
+          state={chatbotState}
+          className={sidebarClassName}
+          userName={userName}
+          userEmail={userEmail}
+          hasAvatar={hasAvatar}
+          avatarVersion={avatarVersion}
+          dispatch={dispatchChatbot}
+          onNavAction={handleNavAction}
+        />
 
-            <div className={styles.desktopHeader}>
-              <div className={styles.brandRow}>
-                <Link href="/dashboard/chatbot" className={styles.brandLink} aria-label="Chatbot DRIVXIS">
-                  <BrandWordmark />
-                </Link>
-                <button
-                  type="button"
-                  className={`${styles.collapseButton} ${styles.collapsedTooltipTrigger}`}
-                  onClick={() => setSidebarCollapsed((value) => !value)}
-                  aria-label={sidebarCollapsed ? "Expandir sidebar" : "Colapsar sidebar"}
-                  data-tooltip={sidebarCollapsed ? "Abrir barra lateral" : "Cerrar barra lateral"}
-                >
-                  {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
-                </button>
-              </div>
-
-              <Link href="/dashboard" className={`${styles.backLink} ${styles.collapsedTooltipTrigger}`} data-tooltip="Volver al dashboard">
-                <span className={styles.backLinkIcon} aria-hidden="true">
-                  <ArrowLeft size={12} />
-                </span>
-                <span className={styles.backLinkLabel}>Volver al dashboard</span>
-              </Link>
-            </div>
-
-            <div className={styles.navArea}>
-              <ul className={styles.navList}>
-                {navItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeNavItem === item.id;
-                  return (
-                    <li key={item.id}>
-                      <button
-                        type="button"
-                        className={`${styles.navItem} ${styles.collapsedTooltipTrigger} ${isActive ? styles.navItemActive : ""}`}
-                        onClick={() => handleNavAction(item.id)}
-                        data-tooltip={item.label}
-                      >
-                        <Icon size={14} />
-                        <span className={styles.navText}>{item.label}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              <div className={styles.recentSection}>
-                <p className={styles.recentTitle}>Recientes</p>
-                <ul className={styles.recentList}>
-                  {recentItems.map((item) => (
-                    <li key={item.id} className={styles.recentItem} data-recent-menu-root="true">
-                      <button type="button" className={styles.recentRow}>
-                        <Clock3 size={10} />
-                        <span>{item.label}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.recentMenuButton}
-                        aria-label={`Opciones para ${item.label}`}
-                        aria-haspopup="menu"
-                        aria-expanded={openRecentMenuId === item.id}
-                        onClick={() => setOpenRecentMenuId((current) => (current === item.id ? null : item.id))}
-                      >
-                        <Ellipsis size={12} />
-                      </button>
-                      {openRecentMenuId === item.id ? (
-                        <ul className={styles.recentMenu} role="menu" aria-label={`Acciones para ${item.label}`}>
-                          <li>
-                            <button type="button" role="menuitem" onClick={() => setOpenRecentMenuId(null)}>
-                              Editar nombre
-                            </button>
-                          </li>
-                          <li>
-                            <button type="button" role="menuitem" onClick={() => setOpenRecentMenuId(null)}>
-                              Eliminar
-                            </button>
-                          </li>
-                          <li>
-                            <button type="button" role="menuitem" onClick={() => setOpenRecentMenuId(null)}>
-                              Agregar a temporada
-                            </button>
-                          </li>
-                        </ul>
-                      ) : null}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            <div className={styles.userDock}>
-              <div className={styles.userExpanded}>
-                <UserProfileMenu
-                  name={userName}
-                  email={userEmail}
-                  hasAvatar={hasAvatar}
-                  avatarVersion={avatarVersion}
-                  dropdownDirection="up"
-                  triggerVariant="sidebar-card"
-                  showSidebarSettingsIcon
-                />
-              </div>
-              <div className={styles.userCollapsed}>
-                <UserProfileMenu
-                  name={userName}
-                  email={userEmail}
-                  hasAvatar={hasAvatar}
-                  avatarVersion={avatarVersion}
-                  dropdownDirection="up"
-                />
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <div className={styles.workspace}>
-          <header className={styles.mobileTopbar}>
-            <button type="button" aria-label="Abrir sidebar" onClick={() => setMobileSidebarOpen(true)}>
-              <Menu size={15} />
-            </button>
-            <BrandWordmark compact />
-            <span className={styles.mobileTopbarPlaceholder} aria-hidden="true" />
-          </header>
-
-          {isConversationMode ? (
-            <div className={styles.conversation}>
-              <div className={styles.thread} ref={threadRef} onScroll={updateAutoScrollPreference} aria-live="polite">
-                <div className={styles.threadMessages}>
-                  {messages.map((message) => (
-                    <article
-                      key={message.id}
-                      className={`${styles.message} ${message.role === "user" ? styles.messageUser : styles.messageAssistant}`}
-                    >
-                      <p>{message.content}</p>
-                    </article>
-                  ))}
-
-                  {isAssistantThinking ? (
-                    <article className={`${styles.message} ${styles.messageAssistant} ${styles.messageThinking}`} aria-label="Asistente pensando">
-                      <span />
-                      <span />
-                      <span />
-                    </article>
-                  ) : null}
-
-                  {isAssistantTyping ? (
-                    <article className={`${styles.message} ${styles.messageAssistant}`}>
-                      <p>
-                        {typingText}
-                        <i className={styles.caret} aria-hidden="true" />
-                      </p>
-                    </article>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className={styles.composerDock}>
-                <div className={styles.composerDockInner}>
-                  <form className={`${styles.composer} ${styles.composerChat}`} onSubmit={handleSubmit}>
-                    <label className="visually-hidden" htmlFor="chatbot-composer-input-active">
-                      Escribe tu mensaje
-                    </label>
-                    <textarea
-                      id="chatbot-composer-input-active"
-                      ref={inputRef}
-                      rows={2}
-                      className={styles.composerTextarea}
-                      value={draft}
-                      disabled={isAssistantResponding}
-                      onChange={(event) => {
-                        setDraft(event.target.value);
-                        if (selectedPrompt) setSelectedPrompt("");
-                      }}
-                      onKeyDown={handleInputKeyDown}
-                      placeholder="Escribe tu consulta para el asistente..."
-                    />
-                    <div className={styles.composerFooter}>
-                      <div className={styles.composerTools}>
-                        <button type="button" className={styles.toolButton} aria-label="Agregar recurso">
-                          <Plus size={15} />
-                        </button>
-                        <button type="button" className={styles.toolButton} aria-label="Adjuntar archivo">
-                          <Paperclip size={14} />
-                        </button>
-                      </div>
-
-                      <button
-                        className={styles.sendButton}
-                        type="submit"
-                        disabled={trimmedDraft.length === 0 || isAssistantResponding}
-                        aria-label="Enviar mensaje"
-                      >
-                        <ArrowUp size={14} />
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className={landingClassName}>
-              <div className={styles.centerStack}>
-                {showEmptyIntro ? (
-                  <div className={styles.hero}>
-                    <h1 className={styles.heroTitle}>Buenas noches, {greetingName}</h1>
-                    <p className={styles.heroSubtitle}>Tu asistente de análisis táctico e inteligencia deportiva</p>
-                  </div>
-                ) : null}
-
-                <div className={styles.composerStack}>
-                  <form className={`${styles.composer} ${styles.composerEmpty}`} onSubmit={handleSubmit}>
-                    <label className="visually-hidden" htmlFor="chatbot-composer-input">
-                      Escribe tu mensaje
-                    </label>
-                    <textarea
-                      id="chatbot-composer-input"
-                      ref={inputRef}
-                      rows={3}
-                      className={styles.composerTextarea}
-                      value={draft}
-                      disabled={isAssistantResponding}
-                      onChange={(event) => {
-                        setDraft(event.target.value);
-                        if (selectedPrompt) setSelectedPrompt("");
-                      }}
-                      onKeyDown={handleInputKeyDown}
-                      placeholder="¿Cómo puedo ayudarte hoy?"
-                    />
-                    <div className={styles.composerFooter}>
-                      <div className={styles.composerTools}>
-                        <button type="button" className={styles.toolButton} aria-label="Agregar recurso">
-                          <Plus size={16} />
-                        </button>
-                        <button type="button" className={styles.toolButton} aria-label="Adjuntar archivo">
-                          <Paperclip size={14} />
-                        </button>
-                      </div>
-
-                      {trimmedDraft.length === 0 || isAssistantResponding ? (
-                        <div className={styles.assistantPicker} aria-label="Seleccionar asistente">
-                          <strong>Asistente táctico</strong>
-                          <ChevronDown size={15} />
-                          <AudioLines size={16} />
-                        </div>
-                      ) : (
-                        <button className={styles.sendButton} type="submit" aria-label="Enviar mensaje">
-                          <ArrowUp size={15} />
-                        </button>
-                      )}
-                    </div>
-                  </form>
-
-                  {showStarterPrompts ? (
-                    <div className={styles.suggestionGrid} aria-label="Sugerencias iniciales">
-                      {starterPromptEntries.map(({ prompt, Icon }) => (
-                        <button
-                          key={prompt}
-                          type="button"
-                          className={`${styles.suggestionChip} ${selectedPrompt === prompt ? styles.suggestionChipSelected : ""}`}
-                          onClick={() => applyStarterPrompt(prompt)}
-                        >
-                          <Icon size={13} />
-                          <span>{prompt}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-
-              <p className={styles.privacyNote}>
-                <span>◌</span> Tus datos están protegidos. DRIVXIS nunca comparte tu información.
-              </p>
-            </div>
-          )}
-        </div>
+        <ChatbotWorkspace
+          state={chatbotState}
+          greetingName={greetingName}
+          threadRef={threadRef}
+          inputRef={inputRef}
+          dispatch={dispatchChatbot}
+          onScroll={updateAutoScrollPreference}
+          onSubmit={handleSubmit}
+          onInputKeyDown={handleInputKeyDown}
+          onApplyPrompt={applyStarterPrompt}
+        />
       </div>
 
       {mobileSidebarOpen ? (
-        <button type="button" className={styles.overlay} aria-label="Cerrar sidebar" onClick={() => setMobileSidebarOpen(false)} />
+        <button
+          type="button"
+          className={styles.overlay}
+          aria-label="Cerrar sidebar"
+          onClick={() => dispatchChatbot({ type: "patch", changes: { mobileSidebarOpen: false } })}
+        />
       ) : null}
     </section>
   );

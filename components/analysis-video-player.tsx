@@ -10,30 +10,30 @@ type AnalysisVideoPlayerProps = {
   onStreamError?: (message: string) => void;
 };
 
+async function tryLockLandscape() {
+  const orientation = window.screen?.orientation;
+  if (!orientation || typeof orientation.lock !== "function") return;
+  try {
+    await orientation.lock("landscape");
+  } catch {
+    // Some mobile browsers block orientation lock outside trusted fullscreen contexts.
+  }
+}
+
+async function tryUnlockOrientation() {
+  const orientation = window.screen?.orientation;
+  if (!orientation || typeof orientation.unlock !== "function") return;
+  try {
+    orientation.unlock();
+  } catch {
+    // Ignore unlock failures on unsupported/restricted browsers.
+  }
+}
+
 export function AnalysisVideoPlayer({ src, title, className = "", onStreamError }: AnalysisVideoPlayerProps) {
   const shellRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [streamError, setStreamError] = useState<{ src: string; message: string } | null>(null);
-
-  async function tryLockLandscape() {
-    const orientation = window.screen?.orientation;
-    if (!orientation || typeof orientation.lock !== "function") return;
-    try {
-      await orientation.lock("landscape");
-    } catch {
-      // Some mobile browsers block orientation lock outside trusted fullscreen contexts.
-    }
-  }
-
-  async function tryUnlockOrientation() {
-    const orientation = window.screen?.orientation;
-    if (!orientation || typeof orientation.unlock !== "function") return;
-    try {
-      orientation.unlock();
-    } catch {
-      // Ignore unlock failures on unsupported/restricted browsers.
-    }
-  }
 
   useEffect(() => {
     function syncFullscreenState() {
@@ -106,8 +106,10 @@ export function AnalysisVideoPlayer({ src, title, className = "", onStreamError 
         className="analysis-video"
         src={src}
         controls
+        muted
         preload="metadata"
         title={title}
+        aria-label={title}
         onError={() => {
           void handlePlaybackError();
         }}

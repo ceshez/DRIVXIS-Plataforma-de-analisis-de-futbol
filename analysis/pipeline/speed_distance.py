@@ -6,6 +6,10 @@ from .calibration import is_inside_pitch
 from .common import HUMAN_MAX_SPEED_KMH, MIN_TRUSTED_SPEED_SAMPLES, SPEED_WINDOW_FRAMES, measure_distance, median
 
 
+MIN_DISPLAY_SPEED_SAMPLES = max(MIN_TRUSTED_SPEED_SAMPLES + 1, 6)
+MIN_DISPLAY_SPEED_STREAK = 4
+
+
 def add_rejection(quality: dict[str, Any], reason: str) -> None:
     quality["rejectedSamples"] += 1
     quality["rejectionReasons"][reason] = quality["rejectionReasons"].get(reason, 0) + 1
@@ -23,6 +27,7 @@ def add_speed_and_distance(
     player_valid_samples: dict[int, int] = {}
     player_untrusted: dict[int, str] = {}
     candidate_samples: dict[int, list[dict[str, Any]]] = {}
+    accepted_samples: dict[int, list[dict[str, Any]]] = {}
     quality: dict[str, Any] = {
         "validSamples": 0,
         "rejectedSamples": 0,
@@ -46,6 +51,14 @@ def add_speed_and_distance(
                 continue
             if any(track_id not in players[index] for index in range(frame_num, last_frame + 1)):
                 add_rejection(quality, "track_gap")
+                continue
+            window_players = [players[index][track_id] for index in range(frame_num, last_frame + 1)]
+            if any(player.get("interpolated") for player in window_players):
+                add_rejection(quality, "recent_reappearance")
+                continue
+            source_ids = {player.get("source_track_id") for player in window_players if "source_track_id" in player}
+            if len(source_ids) > 1:
+                add_rejection(quality, "source_track_fragment")
                 continue
 
             start = players[frame_num][track_id].get("position_transformed")
@@ -102,8 +115,15 @@ def add_speed_and_distance(
                 player_trusted_max_speed[track_id] = max(player_trusted_max_speed.get(track_id, 0.0), speed_kmh)
             player_valid_samples[track_id] = player_valid_samples.get(track_id, 0) + 1
             quality["validSamples"] += 1
+            accepted_sample = {
+                "frame": int(sample["frame"]),
+                "lastFrame": int(sample["lastFrame"]),
+                "speed": speed_kmh,
+                "distance": player_distance[track_id],
+            }
+            accepted_samples.setdefault(track_id, []).append(accepted_sample)
 
-            for batch_frame_num in range(int(sample["frame"]), int(sample["lastFrame"]) + 1):
+            for batch_frame_num in range(accepted_sample["frame"], accepted_sample["lastFrame"] + 1):
                 if track_id in players[batch_frame_num]:
                     players[batch_frame_num][track_id]["speed"] = speed_kmh
                     players[batch_frame_num][track_id]["distance"] = player_distance[track_id]
@@ -119,19 +139,52 @@ def add_speed_and_distance(
                 player["distance"] = player_distance[track_id]
 
     for track_id, count in player_valid_samples.items():
-        if count < MIN_TRUSTED_SPEED_SAMPLES:
+        if count < MIN_DISPLAY_SPEED_SAMPLES:
             player_untrusted.setdefault(track_id, "low_sample_count")
+
+    display_sample_counts: dict[int, int] = {}
+    display_sample_streaks: dict[int, int] = {}
+    for track_id, samples in accepted_samples.items():
+        if int(player_valid_samples.get(track_id, 0)) < MIN_DISPLAY_SPEED_SAMPLES or track_id in player_untrusted:
+            continue
+        streak = 0
+        previous_last_frame: int | None = None
+        for sample in samples:
+            frame = int(sample["frame"])
+            last_frame = int(sample["lastFrame"])
+            if previous_last_frame is None or frame <= previous_last_frame + 1:
+                streak += 1
+            else:
+                streak = 1
+            previous_last_frame = last_frame
+
+            if streak < MIN_DISPLAY_SPEED_STREAK:
+                continue
+
+            display_sample_counts[track_id] = display_sample_counts.get(track_id, 0) + 1
+            display_sample_streaks[track_id] = max(display_sample_streaks.get(track_id, 0), streak)
+            for batch_frame_num in range(frame, last_frame + 1):
+                if track_id not in players[batch_frame_num]:
+                    continue
+                player = players[batch_frame_num][track_id]
+                if "speed" not in player or "distance" not in player:
+                    continue
+                if float(player.get("speed", 0.0)) > HUMAN_MAX_SPEED_KMH:
+                    continue
+                player["display_speed_sample"] = True
+                player["speed_sample_streak"] = streak
 
     for frame_players in players:
         for track_id, player in frame_players.items():
-            if (
-                int(player_valid_samples.get(track_id, 0)) >= MIN_TRUSTED_SPEED_SAMPLES
-                and track_id not in player_untrusted
-                and "speed" in player
-                and "distance" in player
-                and float(player.get("speed", 0.0)) <= HUMAN_MAX_SPEED_KMH
-            ):
-                player["display_speed_sample"] = True
+            if track_id not in player_valid_samples:
+                continue
+            player["speed_sample_count"] = int(player_valid_samples.get(track_id, 0))
+            if track_id in display_sample_counts:
+                player["speed_display_confidence"] = round(
+                    min(1.0, display_sample_counts[track_id] / max(1, MIN_DISPLAY_SPEED_SAMPLES)),
+                    3,
+                )
+                player["speed_sample_streak"] = int(display_sample_streaks.get(track_id, player.get("speed_sample_streak", 0)))
 
     total_candidates = quality["validSamples"] + quality["rejectedSamples"]
     validity = quality["validSamples"] / max(1, total_candidates)

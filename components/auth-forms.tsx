@@ -123,13 +123,13 @@ export function AuthForm({ mode, initialEmail = "" }: AuthFormProps) {
       </form>
 
       {notice ? (
-        <div className={`auth-toast auth-toast--${notice.tone}`} role="status" aria-live="polite">
+        <output className={`auth-toast auth-toast--${notice.tone}`} aria-live="polite">
           {notice.tone === "success" ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
-          <div>
+          <span className="auth-toast__copy">
             <strong>{notice.title}</strong>
             <span>{notice.message}</span>
-          </div>
-        </div>
+          </span>
+        </output>
       ) : null}
     </>
   );
