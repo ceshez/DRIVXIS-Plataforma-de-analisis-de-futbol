@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BarChart3, Film, Loader2, MoreVertical, RotateCcw, Trash2 } from "lucide-react";
+import { BarChart3, FileDown, Film, Loader2, MoreVertical, RotateCcw, Trash2 } from "lucide-react";
 import { AnalysisProcessingPanel } from "@/components/analysis-processing-panel";
 import { AnalysisVideoPlayer } from "@/components/analysis-video-player";
 import { ToastViewport, useAppToasts } from "@/components/app-toast";
@@ -10,6 +10,14 @@ import { MatchColorEditor } from "@/components/match-color-editor";
 import { usePrefersReducedMotion } from "@/components/use-prefers-reduced-motion";
 import { VideoEventSubscription } from "@/components/video-event-subscription";
 import { type AnalysisMetrics } from "@/lib/analysis-metrics";
+import {
+  type ReportDownloadState,
+  getPdfDownloadFilename,
+  getReportDownloadLabel,
+  readPdfResponse,
+  triggerPdfDownload,
+  waitForNextPaint,
+} from "@/lib/pdf-download";
 
 export type HistoryVideo = {
   id: string;
@@ -354,6 +362,7 @@ export function VideoHistory({ initialNextCursor = null, initialVideos }: VideoH
         }
         onColorToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
         onStreamError={(message) => pushToast(message, { tone: "warning", durationMs: 9000 })}
+        onReportToast={(message, options) => pushToast(message, options)}
         onRetry={() => void retryAnalysis()}
         onSelect={setSelectedId}
         onToggleMenu={(videoId, rect) =>
@@ -447,6 +456,7 @@ type HistoryWorkspaceProps = {
   onColorSaved: (video: HistoryVideo) => void;
   onColorToast: (message: string) => void;
   onStreamError: (message: string) => void;
+  onReportToast: (message: string, options?: ReportToastOptions) => void;
   onRetry: () => void;
   onSelect: (videoId: string) => void;
   onToggleMenu: (videoId: string, rect: DOMRect) => void;
@@ -467,6 +477,7 @@ function HistoryWorkspace({
   onColorSaved,
   onColorToast,
   onStreamError,
+  onReportToast,
   onRetry,
   onSelect,
   onToggleMenu,
@@ -538,10 +549,15 @@ function HistoryWorkspace({
               <div className="history-insights">
                 <div className="history-insights__header">
                   <span>Métricas del análisis</span>
-                  <button className="button ghost command-button" type="button" onClick={onRetry} disabled={retrying} aria-busy={retrying}>
-                    {retrying ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
-                    {retrying ? "Reintentando..." : "Reanalizar"}
-                  </button>
+                  <div className="history-detail__heading-actions">
+                    {hasCompletedMetrics ? (
+                      <ReportDownloadButton videoId={selected.id} onToast={onReportToast} />
+                    ) : null}
+                    <button className="button ghost command-button" type="button" onClick={onRetry} disabled={retrying} aria-busy={retrying}>
+                      {retrying ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
+                      {retrying ? "Reintentando..." : "Reanalizar"}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="history-stat-grid">
@@ -631,6 +647,56 @@ function HistoryWorkspace({
         )}
       </aside>
     </section>
+  );
+}
+
+type ReportToastOptions = {
+  tone?: "success" | "info" | "warning";
+  durationMs?: number;
+  sound?: boolean;
+};
+
+function ReportDownloadButton({ videoId, onToast }: { videoId: string; onToast: (message: string, options?: ReportToastOptions) => void }) {
+  const [download, setDownload] = useState<ReportDownloadState>({ phase: "idle", bytesPerSecond: 0 });
+
+  async function downloadReport() {
+    if (download.phase !== "idle") return;
+
+    setDownload({ phase: "preparing", bytesPerSecond: 0 });
+    try {
+      const response = await fetch(`/api/videos/${videoId}/analysis/report`, { cache: "no-store" });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || "No se pudo preparar el reporte PDF.");
+      }
+
+      const blob = await readPdfResponse(response, (bytesPerSecond) => {
+        setDownload({ phase: "downloading", bytesPerSecond });
+      });
+      await waitForNextPaint();
+      triggerPdfDownload(blob, getPdfDownloadFilename(response.headers.get("content-disposition")));
+      onToast("Reporte PDF descargado.", { durationMs: 7000, sound: true });
+    } catch (error) {
+      onToast(error instanceof Error ? error.message : "No se pudo descargar el reporte PDF.", {
+        tone: "warning",
+        durationMs: 9000,
+      });
+    } finally {
+      setDownload({ phase: "idle", bytesPerSecond: 0 });
+    }
+  }
+
+  return (
+    <button
+      className="button ghost command-button"
+      type="button"
+      onClick={() => void downloadReport()}
+      disabled={download.phase !== "idle"}
+      aria-busy={download.phase !== "idle"}
+    >
+      {download.phase !== "idle" ? <Loader2 className="spin" size={14} /> : <FileDown size={14} />}
+      {getReportDownloadLabel(download)}
+    </button>
   );
 }
 

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getDetectedColorPair, isAllowedDetectedColorSwap } from "@/lib/detected-color-pair";
 import { parseAnalysisMetrics } from "@/lib/analysis-metrics";
+import { buildMatchReport, createMatchReportData, createMatchReportFilename } from "@/lib/match-report";
 import { pickLocale } from "@/lib/i18n";
 import { getAnalysisOutputDirectory, getLocalObjectPath, isManagedAnalysisPath, isManagedLocalUploadPath } from "@/lib/local-storage";
 import { createVideoObjectKey } from "@/lib/storage";
@@ -164,6 +165,65 @@ describe("analysis metrics contract", () => {
     expect(isAllowedDetectedColorSwap({ ownTeamColor: "#ffffff", rivalTeamColor: "#00aa44" }, detected)).toBe(true);
     expect(isAllowedDetectedColorSwap({ ownTeamColor: "#00aa44", rivalTeamColor: "#ffffff" }, detected)).toBe(true);
     expect(isAllowedDetectedColorSwap({ ownTeamColor: "#123456", rivalTeamColor: "#ffffff" }, detected)).toBe(false);
+  });
+});
+
+describe("match analysis report", () => {
+  it("does not attribute team metrics until the detected colors are confirmed", () => {
+    const metrics = parseAnalysisMetrics({
+      version: 1,
+      match: {
+        ownTeam: "Club Azul",
+        rivalTeam: "Club Rojo",
+        detectedTeamColors: { team1: "#112233", team2: "#aabbcc" },
+      },
+      possession: { team1Pct: 62, team2Pct: 38 },
+      speed: { maxKmh: 0, avgKmh: 0, validSamples: 0, rejectedSamples: 0, players: [] },
+      distance: { totalMeters: 24000, teams: { own: { name: "Club Azul", totalMeters: 12800, totalKm: 12.8 }, rival: { name: "Club Rojo", totalMeters: 11200, totalKm: 11.2 } } },
+      video: { frameCount: 1200, fps: 24, durationSeconds: 50, annotatedAvailable: true },
+    });
+
+    const report = createMatchReportData({ metrics: metrics!, originalFilename: "match.mp4" });
+
+    expect(report.teamMapping.confirmed).toBe(false);
+    expect(report.statTeams.primary).toBe("Equipo detectado 1");
+    expect(report.insights.some((insight) => insight.includes("Equipo detectado 1"))).toBe(true);
+  });
+
+  it("builds a written report from the completed analysis metrics", () => {
+    const metrics = parseAnalysisMetrics({
+      version: 1,
+      match: {
+        ownTeam: "Club Azul",
+        rivalTeam: "Club Rojo",
+        detectedTeamColors: { team1: "#112233", team2: "#aabbcc" },
+      },
+      possession: { team1Pct: 62, team2Pct: 38 },
+      ballControl: { ownTeam: 62, rivalTeam: 38 },
+      speed: { maxKmh: 31, avgKmh: 18.5, publishable: true, validSamples: 10, rejectedSamples: 0, players: [] },
+      distance: {
+        totalMeters: 24000,
+        teams: {
+          own: { name: "Club Azul", totalMeters: 12800, totalKm: 12.8 },
+          rival: { name: "Club Rojo", totalMeters: 11200, totalKm: 11.2 },
+        },
+      },
+      players: { detected: 18 },
+      video: { frameCount: 1200, fps: 24, durationSeconds: 125, annotatedAvailable: true },
+    });
+
+    expect(metrics).not.toBeNull();
+    const report = buildMatchReport({
+      metrics: metrics!,
+      originalFilename: "Final jornada 12.mp4",
+      matchInfo: { ownTeamColor: "#112233", rivalTeamColor: "#aabbcc" },
+      generatedAt: new Date("2026-06-23T12:00:00Z"),
+    });
+
+    expect(report).toContain("Partido: Club Azul vs Club Rojo");
+    expect(report).toContain("Club Azul 62,0%");
+    expect(report).toContain("Jugadores detectados: 18");
+    expect(createMatchReportFilename("Final/jornada 12.mp4", "pdf")).toBe("Final-jornada 12-reporte-de-analisis.pdf");
   });
 });
 

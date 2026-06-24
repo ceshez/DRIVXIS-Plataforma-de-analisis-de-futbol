@@ -236,6 +236,14 @@ POST /api/videos/:id/analysis/retry
 
 Debe crear un nuevo `AnalysisJob` en estado `QUEUED`.
 
+### Descargar reporte de análisis
+
+```txt
+GET /api/videos/:id/analysis/report
+```
+
+Requiere sesión y propiedad sobre el video. Devuelve un PDF descargable, con la identidad visual de DRIVXIS y las métricas más relevantes del último análisis completado. Mientras el análisis no haya terminado, responde `409`.
+
 ## Traduccion
 
 ### Traducir diccionario
