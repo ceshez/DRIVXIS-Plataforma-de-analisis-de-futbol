@@ -5,9 +5,11 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { serializeVideos } from "@/lib/video-serialization";
 
+const HISTORY_PAGE_SIZE = 25;
+
 export default async function VideosPage() {
   const user = await requireUser();
-  const videos = await getVideos(user.id);
+  const videosPage = await getVideos(user.id);
 
   return (
     <main className="app-frame app-frame--videos-watch">
@@ -26,7 +28,7 @@ export default async function VideosPage() {
         }
       />
 
-      <VideoHistory initialVideos={videos} />
+      <VideoHistory initialNextCursor={videosPage.nextCursor} initialVideos={videosPage.videos} />
     </main>
   );
 }
@@ -35,8 +37,8 @@ async function getVideos(ownerId: string) {
   try {
     const videos = await prisma.video.findMany({
       where: { ownerId },
-      orderBy: { createdAt: "desc" },
-      take: 50,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: HISTORY_PAGE_SIZE + 1,
       select: {
         id: true,
         originalFilename: true,
@@ -73,8 +75,12 @@ async function getVideos(ownerId: string) {
       },
     });
 
-    return serializeVideos(videos);
+    const visibleVideos = videos.slice(0, HISTORY_PAGE_SIZE);
+    return {
+      videos: serializeVideos(visibleVideos),
+      nextCursor: videos.length > HISTORY_PAGE_SIZE ? visibleVideos.at(-1)?.id ?? null : null,
+    };
   } catch {
-    return [];
+    return { videos: [], nextCursor: null };
   }
 }

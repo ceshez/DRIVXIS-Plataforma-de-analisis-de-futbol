@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useReducer } from "react";
 import Image from "next/image";
+import { Loader2 } from "lucide-react";
 
 type ProfileAvatarUploaderProps = {
   name: string;
@@ -139,7 +140,7 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
   }
 
   return (
-    <section className="profile-editor lab-panel">
+    <section className="profile-editor lab-panel" aria-busy={loading}>
       <div className="profile-editor__avatar-wrap">
         <label className="profile-editor__avatar-button" htmlFor={fileInputId} aria-label="Actualizar foto de perfil">
           {previewUrl ? (
@@ -180,10 +181,12 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
       </div>
 
       <button className="button primary profile-editor__save" type="button" onClick={() => void uploadAvatar()} disabled={loading || !selectedFile}>
-        {loading ? "Subiendo..." : "Guardar avatar"}
+        {loading ? <Loader2 className="spin" size={14} aria-hidden="true" /> : null}
+        {loading ? "Subiendo avatar..." : "Guardar avatar"}
       </button>
 
       <p className="profile-editor__note">Mas opciones de perfil estaran disponibles proximamente.</p>
+      {loading ? <p className="visually-hidden" role="status">Subiendo avatar. Espera un momento.</p> : null}
       {message ? <p className="profile-editor__message profile-editor__message--success">{message}</p> : null}
       {error ? <p className="profile-editor__message profile-editor__message--error">{error}</p> : null}
     </section>

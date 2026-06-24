@@ -25,11 +25,16 @@ export function AnalysisProcessingPanel({
   const safeProgress = Math.max(0, Math.min(100, Number.isFinite(progress) ? Math.round(progress) : 0));
 
   return (
-    <div className={`analysis-result-panel ${variant === "failed" ? "analysis-result-panel--failed" : "analysis-result-panel--processing"}`}>
+    <div
+      className={`analysis-result-panel ${variant === "failed" ? "analysis-result-panel--failed" : "analysis-result-panel--processing"}`}
+      role={variant === "processing" ? "status" : undefined}
+      aria-live={variant === "processing" ? "polite" : undefined}
+      aria-busy={variant === "processing"}
+    >
       <MicroGrid />
       <div className="analysis-result-panel__inner">
         <span className="analysis-upload__icon">
-          {variant === "failed" ? <AlertTriangle size={30} /> : <Loader2 className="spin" size={30} />}
+          {variant === "failed" ? <AlertTriangle size={30} /> : <Loader2 className="spin" size={30} aria-hidden="true" />}
         </span>
         <div>
           <strong>{title ?? (variant === "failed" ? "Analisis fallido" : filename)}</strong>

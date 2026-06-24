@@ -87,7 +87,11 @@ function MatchColorEditorContent<TVideo extends VideoWithMatch>({
   }
 
   return (
-    <div className={`match-color-editor ${mode === "header" ? "match-color-editor--header" : ""}`} aria-label="Colores de equipos detectados">
+    <div
+      className={`match-color-editor ${mode === "header" ? "match-color-editor--header" : ""}`}
+      aria-label="Colores de equipos detectados"
+      aria-busy={state === "saving"}
+    >
       <div className={`match-color-editor__copy ${mode === "header" ? "match-color-editor__copy--compact" : ""}`}>
         <span>Colores del partido</span>
         <strong>
@@ -109,7 +113,7 @@ function MatchColorEditorContent<TVideo extends VideoWithMatch>({
           <button
             className="match-color-swap"
             type="button"
-            aria-label="Intercambiar colores de equipo propio y rival"
+            aria-label={state === "saving" ? "Guardando colores" : "Intercambiar colores de equipo propio y rival"}
             onClick={swapColors}
             disabled={state === "saving" || !detectedPair}
             title="Intercambiar"
@@ -127,13 +131,14 @@ function MatchColorEditorContent<TVideo extends VideoWithMatch>({
       <button
         className={`match-color-save ${state === "saved" ? "is-saved" : ""} ${state === "error" ? "is-error" : ""}`}
         type="button"
-        aria-label="Guardar"
-        title="Guardar"
+        aria-label={state === "saving" ? "Guardando colores" : "Guardar colores"}
+        title={state === "saving" ? "Guardando colores" : "Guardar colores"}
         onClick={() => pair && void saveColors(pair)}
         disabled={state === "saving" || !pair || !detectedPair}
       >
         {state === "saving" ? <Loader2 className="spin" size={14} /> : <Save size={14} />}
       </button>
+      {state === "saving" ? <span className="visually-hidden" role="status">Guardando colores del partido.</span> : null}
     </div>
   );
 }

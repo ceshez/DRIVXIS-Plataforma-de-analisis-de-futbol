@@ -32,6 +32,7 @@ export type HistoryVideo = {
 
 type VideoHistoryProps = {
   initialVideos: HistoryVideo[];
+  initialNextCursor?: string | null;
 };
 
 type MatchInfo = {
@@ -103,9 +104,11 @@ function animatedMetricReducer(_state: AnimatedMetricState, action: AnimatedMetr
   };
 }
 
-export function VideoHistory({ initialVideos }: VideoHistoryProps) {
+export function VideoHistory({ initialNextCursor = null, initialVideos }: VideoHistoryProps) {
   const [videos, setVideos] = useState(initialVideos);
   const [selectedId, setSelectedId] = useState(initialVideos[0]?.id ?? "");
+  const [nextCursor, setNextCursor] = useState(initialNextCursor);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [uiState, dispatchUi] = useReducer(historyUiReducer, INITIAL_HISTORY_UI_STATE);
   const deleteDialogRef = useRef<HTMLDialogElement>(null);
   const { retrying, openMenu, deleteTargetId, deleting } = uiState;
@@ -275,6 +278,33 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
     dispatchUi({ type: "patch", changes: { openMenu: null, deleteTargetId: null } });
   }
 
+  async function loadMoreVideos() {
+    if (!nextCursor || loadingMore) return;
+
+    setLoadingMore(true);
+    const params = new URLSearchParams({
+      cursor: nextCursor,
+      limit: "25",
+    });
+    const response = await fetch(`/api/videos?${params.toString()}`, { cache: "no-store" }).catch(() => null);
+    const data = (await response?.json().catch(() => ({}))) as {
+      videos?: HistoryVideo[];
+      nextCursor?: string | null;
+    };
+    setLoadingMore(false);
+
+    if (!response?.ok || !Array.isArray(data.videos)) {
+      pushToast("No se pudo cargar más historial.", { tone: "warning", durationMs: 7000 });
+      return;
+    }
+
+    setVideos((current) => {
+      const seen = new Set(current.map((video) => video.id));
+      return [...current, ...data.videos!.filter((video) => !seen.has(video.id))];
+    });
+    setNextCursor(data.nextCursor ?? null);
+  }
+
   function receiveVideoEvent(nextVideo: HistoryVideo) {
     setVideos((current) => {
       const previous = current.find((video) => video.id === nextVideo.id);
@@ -332,6 +362,9 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
             menu: { id: videoId, x: Math.max(16, rect.right - 220), y: rect.bottom + 8 },
           })
         }
+        hasMore={Boolean(nextCursor)}
+        loadingMore={loadingMore}
+        onLoadMore={() => void loadMoreVideos()}
       />
 
       {openMenu && typeof document !== "undefined"
@@ -373,7 +406,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
           onClick={closeDeleteDialog}
         />
         {deleteTarget ? (
-          <div className="history-modal">
+          <div className="history-modal" aria-busy={deleting}>
             <div className="history-modal__eyebrow">Confirmación</div>
             <h2 id="history-delete-title">Eliminar partido del historial</h2>
             <p>
@@ -391,7 +424,7 @@ export function VideoHistory({ initialVideos }: VideoHistoryProps) {
               </button>
               <button className="button danger" type="button" onClick={() => void deleteVideo()} disabled={deleting}>
                 {deleting ? <Loader2 className="spin" size={14} /> : <Trash2 size={14} />}
-                Eliminar
+                {deleting ? "Eliminando..." : "Eliminar"}
               </button>
             </div>
           </div>
@@ -417,6 +450,9 @@ type HistoryWorkspaceProps = {
   onRetry: () => void;
   onSelect: (videoId: string) => void;
   onToggleMenu: (videoId: string, rect: DOMRect) => void;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
 };
 
 function HistoryWorkspace({
@@ -434,6 +470,9 @@ function HistoryWorkspace({
   onRetry,
   onSelect,
   onToggleMenu,
+  hasMore,
+  loadingMore,
+  onLoadMore,
 }: HistoryWorkspaceProps) {
   return (
     <section className="history-workspace">
@@ -499,9 +538,9 @@ function HistoryWorkspace({
               <div className="history-insights">
                 <div className="history-insights__header">
                   <span>Métricas del análisis</span>
-                  <button className="button ghost command-button" type="button" onClick={onRetry} disabled={retrying}>
+                  <button className="button ghost command-button" type="button" onClick={onRetry} disabled={retrying} aria-busy={retrying}>
                     {retrying ? <Loader2 className="spin" size={14} /> : <RotateCcw size={14} />}
-                    Reanalizar
+                    {retrying ? "Reintentando..." : "Reanalizar"}
                   </button>
                 </div>
 
@@ -582,6 +621,12 @@ function HistoryWorkspace({
                 </div>
               </article>
             ))}
+            {hasMore ? (
+              <button className="button ghost history-list__load-more" type="button" onClick={onLoadMore} disabled={loadingMore} aria-busy={loadingMore}>
+                {loadingMore ? <Loader2 className="spin" size={14} /> : null}
+                {loadingMore ? "Cargando más..." : "Cargar más"}
+              </button>
+            ) : null}
           </div>
         )}
       </aside>
@@ -784,8 +829,19 @@ function formatVideoOpponent(video: HistoryVideo) {
 }
 
 function StorageStatusInline({ video }: { video: HistoryVideo }) {
-  void video;
-  return null;
+  const labels = getStorageLabels(video);
+  if (labels.length === 0) return null;
+
+  const hasMissingOutput = labels.includes("Processed: Missing");
+  const hasLocalOnlyOutput = labels.includes("Processed: Local");
+  const tone = hasMissingOutput ? "warning" : hasLocalOnlyOutput ? "local" : "remote";
+  const readableLabels = labels.map(formatStorageLabel);
+
+  return (
+    <span className={`storage-hint storage-hint--${tone}`} title={readableLabels.join(" / ")}>
+      {readableLabels.join(" / ")}
+    </span>
+  );
 }
 
 function getVideoMetadata(video: HistoryVideo) {
@@ -811,6 +867,23 @@ function getStorageLabels(video: HistoryVideo) {
   }
 
   return labels;
+}
+
+function formatStorageLabel(label: string) {
+  switch (label) {
+    case "Original: R2":
+      return "Original R2";
+    case "Original: Local":
+      return "Original local";
+    case "Processed: R2":
+      return "Procesado R2";
+    case "Processed: Local":
+      return "Procesado local";
+    case "Processed: Missing":
+      return "Procesado faltante";
+    default:
+      return label;
+  }
 }
 
 function getProcessedMissingWarning(video: HistoryVideo) {

@@ -341,7 +341,7 @@ export function VideoUploadDropzone({
   const displayProgress = typeof progress === "number" ? Math.max(0, Math.min(100, Math.round(progress))) : null;
 
   return (
-    <div className="analysis-upload">
+    <div className="analysis-upload" aria-busy={isBusy}>
       {!disabled ? (
         <MatchSetup
           ownTeam={ownTeam}
@@ -393,7 +393,7 @@ export function VideoUploadDropzone({
         onChange={(event) => void handleFiles(event.target.files)}
       />
       {status !== "idle" ? (
-        <div className="analysis-upload__note">
+        <div className="analysis-upload__note" role="status" aria-live="polite">
           <Film size={14} />
           <span>{message}</span>
         </div>

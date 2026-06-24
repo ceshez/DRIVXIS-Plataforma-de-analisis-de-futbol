@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { BarChart3, Gauge, LogOut, Settings, UserRound } from "lucide-react";
+import { BarChart3, Gauge, Loader2, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
 import { useEffect, useMemo, useReducer, useRef } from "react";
 
 type UserProfileMenuProps = {
@@ -20,6 +20,7 @@ const menuItems = [
   { href: "/dashboard/videos", label: "An\u00e1lisis", icon: BarChart3 },
   { href: "/dashboard/usage", label: "Uso", icon: Gauge },
   { href: "/dashboard/profile", label: "Perfil", icon: UserRound },
+  { href: "/dashboard/teams", label: "Equipos", icon: ShieldCheck },
 ];
 
 type ProfileMenuState = {
@@ -229,7 +230,7 @@ function UserProfileMenuContent({
               onClick={() => void logout()}
               disabled={loggingOut}
             >
-              <LogOut size={16} />
+              {loggingOut ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <LogOut size={16} />}
               <strong>{loggingOut ? "CERRANDO SESI\u00d3N..." : "CERRAR SESI\u00d3N"}</strong>
             </button>
           </div>

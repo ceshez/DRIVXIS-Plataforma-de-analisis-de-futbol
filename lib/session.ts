@@ -3,8 +3,6 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 
-const SESSION_COOKIE = "drivxis_session";
-
 type SessionPayload = {
   userId: string;
   email: string;
@@ -12,12 +10,24 @@ type SessionPayload = {
   exp: number;
 };
 
+function getSessionCookieName() {
+  const cookieName = process.env.SESSION_COOKIE;
+
+  if (!cookieName) {
+    throw new Error("Missing SESSION_COOKIE environment variable.");
+  }
+
+  return cookieName;
+}
+
 function getSecret() {
-  return (
-    process.env.NEXTAUTH_SECRET ??
-    process.env.AUTH_SECRET ??
-    "dev-only-change-me-before-production"
-  );
+  const secret = process.env.NEXTAUTH_SECRET ?? process.env.AUTH_SECRET;
+
+  if (!secret) {
+    throw new Error("Missing NEXTAUTH_SECRET or AUTH_SECRET environment variable.");
+  }
+
+  return secret;
 }
 
 function base64Url(input: string | Buffer) {
@@ -60,7 +70,7 @@ function verifySessionToken(token: string): SessionPayload | null {
 
 export async function setSessionCookie(payload: Omit<SessionPayload, "exp">) {
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, createSessionToken(payload), {
+  cookieStore.set(getSessionCookieName(), createSessionToken(payload), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -71,12 +81,12 @@ export async function setSessionCookie(payload: Omit<SessionPayload, "exp">) {
 
 export async function clearSessionCookie() {
   const cookieStore = await cookies();
-  cookieStore.delete(SESSION_COOKIE);
+  cookieStore.delete(getSessionCookieName());
 }
 
 async function getCurrentUser() {
   const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  const token = cookieStore.get(getSessionCookieName())?.value;
   if (!token) return null;
 
   const payload = verifySessionToken(token);

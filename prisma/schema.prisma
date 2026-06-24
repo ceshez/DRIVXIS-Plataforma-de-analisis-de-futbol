@@ -26,6 +26,20 @@ enum AnalysisStatus {
   FAILED
 }
 
+enum TeamMemberRole {
+  OWNER
+  ADMIN
+  ANALYST
+  COACH
+  VIEWER
+}
+
+enum PlayerStatus {
+  ACTIVE
+  INJURED
+  INACTIVE
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -37,8 +51,71 @@ model User {
   storageLimitBytes BigInt @default(1073741824)
   storageUsedBytes  BigInt @default(0)
   videos       Video[]
+  ownedTeams Team[] @relation("TeamOwner")
+  teamMemberships TeamMember[]
+  createdTeamInvitations TeamInvitation[] @relation("InvitationCreator")
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String
+  season    String?
+  ownerId   String
+  owner     User     @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members   TeamMember[]
+  players   Player[]
+  invitations TeamInvitation[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId, createdAt])
+}
+
+model TeamMember {
+  id        String         @id @default(cuid())
+  teamId    String
+  userId    String
+  role      TeamMemberRole @default(VIEWER)
+  team      Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([teamId, userId])
+  @@index([userId])
+}
+
+model TeamInvitation {
+  id          String         @id @default(cuid())
+  teamId      String
+  email       String
+  role        TeamMemberRole @default(VIEWER)
+  invitedById String
+  team        Team           @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  invitedBy   User           @relation("InvitationCreator", fields: [invitedById], references: [id], onDelete: Cascade)
+  createdAt   DateTime       @default(now())
+  expiresAt   DateTime
+
+  @@unique([teamId, email])
+  @@index([email])
+}
+
+model Player {
+  id          String       @id @default(cuid())
+  teamId      String
+  name        String
+  position    String
+  shirtNumber Int?
+  birthDate   DateTime?
+  status      PlayerStatus @default(ACTIVE)
+  team        Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([teamId, shirtNumber])
+  @@index([teamId, name])
 }
 
 model Video {

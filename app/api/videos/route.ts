@@ -9,6 +9,9 @@ import { serializeVideo, serializeVideos } from "@/lib/video-serialization";
 
 export const runtime = "nodejs";
 
+const DEFAULT_PAGE_SIZE = 25;
+const MAX_PAGE_SIZE = 50;
+
 class StorageQuotaExceededError extends Error {
   constructor(
     public readonly usedBytes: bigint,
@@ -18,16 +21,21 @@ class StorageQuotaExceededError extends Error {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await requireUser();
+  const { searchParams } = new URL(request.url);
+  const pageSize = parsePageSize(searchParams.get("limit"));
+  const cursor = parseCursor(searchParams.get("cursor"));
+  const safeCursor = cursor ? await getOwnedCursor(cursor, user.id) : null;
   let videos;
   let fallbackUsed = false;
 
   try {
     videos = await prisma.video.findMany({
       where: { ownerId: user.id },
-      orderBy: { createdAt: "desc" },
-      take: 50,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: pageSize + 1,
+      ...(safeCursor ? { cursor: { id: safeCursor }, skip: 1 } : {}),
       select: {
         id: true,
         originalFilename: true,
@@ -67,8 +75,9 @@ export async function GET() {
     fallbackUsed = true;
     videos = await prisma.video.findMany({
       where: { ownerId: user.id },
-      orderBy: { createdAt: "desc" },
-      take: 50,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: pageSize + 1,
+      ...(safeCursor ? { cursor: { id: safeCursor }, skip: 1 } : {}),
       select: {
         id: true,
         originalFilename: true,
@@ -83,9 +92,11 @@ export async function GET() {
     });
   }
 
-  const serialized = serializeVideos(videos);
+  const visibleVideos = videos.slice(0, pageSize);
+  const serialized = serializeVideos(visibleVideos);
   return NextResponse.json({
     videos: serialized,
+    nextCursor: videos.length > pageSize ? visibleVideos.at(-1)?.id ?? null : null,
     ...(fallbackUsed ? { warnings: ["VIDEO_RELATION_FALLBACK_USED"] } : {}),
   });
 }
@@ -227,4 +238,23 @@ export async function POST(request: Request) {
 
   kickAnalysisWorker();
   return NextResponse.json({ video: serializeVideo(video) }, { status: 201 });
+}
+
+function parsePageSize(value: string | null) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_PAGE_SIZE;
+  return Math.max(1, Math.min(MAX_PAGE_SIZE, Math.round(parsed)));
+}
+
+function parseCursor(value: string | null) {
+  const cursor = value?.trim();
+  return cursor || null;
+}
+
+async function getOwnedCursor(cursor: string, ownerId: string) {
+  const video = await prisma.video.findFirst({
+    where: { id: cursor, ownerId },
+    select: { id: true },
+  });
+  return video?.id ?? null;
 }

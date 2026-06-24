@@ -43,6 +43,19 @@ export function AuthForm({ mode, initialEmail = "" }: AuthFormProps) {
     setLoading(false);
 
     if (!response.ok) {
+      if (mode === "register" && response.status === 409) {
+        const email = encodeURIComponent(String(form.get("email") || ""));
+        setNotice({
+          tone: "error",
+          title: "Cuenta existente",
+          message: "Te llevamos al login con tu correo listo.",
+        });
+        window.setTimeout(() => {
+          window.location.href = `/login${email ? `?email=${email}` : ""}`;
+        }, 1200);
+        return;
+      }
+
       if (mode === "login" && data.needsRegistration) {
         const email = encodeURIComponent(String(form.get("email") || ""));
         setNotice({
@@ -75,7 +88,7 @@ export function AuthForm({ mode, initialEmail = "" }: AuthFormProps) {
 
   return (
     <>
-      <form className="auth-form" onSubmit={submit}>
+      <form className="auth-form" onSubmit={submit} aria-busy={loading}>
         {mode === "register" && (
           <label>
             <span>Nombre</span>
@@ -110,6 +123,7 @@ export function AuthForm({ mode, initialEmail = "" }: AuthFormProps) {
               type="button"
               aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
               onClick={() => setShowPassword((current) => !current)}
+              disabled={loading}
             >
               {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
@@ -120,6 +134,7 @@ export function AuthForm({ mode, initialEmail = "" }: AuthFormProps) {
           {loading ? <Loader2 className="spin" size={14} /> : null}
           {loading ? "Procesando" : mode === "register" ? "Crear cuenta" : "Entrar al sistema"}
         </button>
+        {loading ? <span className="visually-hidden" role="status">Validando datos. Espera un momento.</span> : null}
       </form>
 
       {notice ? (
