@@ -7,6 +7,7 @@ type SessionPayload = {
   userId: string;
   email: string;
   role: "USER" | "ADMIN";
+  sessionVersion?: number;
   exp: number;
 };
 
@@ -84,7 +85,7 @@ export async function clearSessionCookie() {
   cookieStore.delete(getSessionCookieName());
 }
 
-async function getCurrentUser() {
+export async function getCurrentUser() {
   const cookieStore = await cookies();
   const token = cookieStore.get(getSessionCookieName())?.value;
   if (!token) return null;
@@ -100,11 +101,17 @@ async function getCurrentUser() {
         email: true,
         name: true,
         role: true,
+        locale: true,
+        theme: true,
+        sessionVersion: true,
         createdAt: true,
         updatedAt: true,
         avatarObjectKey: true,
         avatarMimeType: true,
       },
+    }).then((user) => {
+      if (!user || user.sessionVersion !== (payload.sessionVersion ?? 0)) return null;
+      return user;
     });
   } catch {
     return null;

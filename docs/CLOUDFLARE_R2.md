@@ -132,7 +132,8 @@ En DevTools -> Network:
 npm run typecheck
 npm test
 npm run build
-npm run analysis:worker -- --once
+docker compose --env-file deploy/analysis-worker.env \
+  -f compose.analysis-worker.yml up -d --build
 ```
 
 ## 6.1 Prueba manual con presigned URL (debug local)

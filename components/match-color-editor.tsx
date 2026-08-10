@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ArrowLeftRight, Loader2, Save } from "lucide-react";
+import { useAppPreferences } from "@/components/app-preferences-provider";
 import type { AnalysisMetrics } from "@/lib/analysis-metrics";
 
 type MatchColorEditorProps<TVideo> = {
@@ -52,6 +53,8 @@ function MatchColorEditorContent<TVideo extends VideoWithMatch>({
   onToast,
   mode = "default",
 }: MatchColorEditorProps<TVideo>) {
+  const { locale } = useAppPreferences();
+  const english = locale === "en";
   const matchInfo = getVideoMatchInfo(video);
   const detectedColors = video.latestMetrics?.match?.detectedTeamColors;
   const detectedPair = useMemo(() => getDetectedPair(detectedColors), [detectedColors]);
@@ -73,7 +76,7 @@ function MatchColorEditorContent<TVideo extends VideoWithMatch>({
     }
     onSaved(data.video);
     setState("saved");
-    onToast?.("Colores del partido guardados correctamente");
+    onToast?.(english ? "Match colors saved successfully" : "Colores del partido guardados correctamente");
   }
 
   function swapColors() {
@@ -89,56 +92,58 @@ function MatchColorEditorContent<TVideo extends VideoWithMatch>({
   return (
     <div
       className={`match-color-editor ${mode === "header" ? "match-color-editor--header" : ""}`}
-      aria-label="Colores de equipos detectados"
+      aria-label={english ? "Detected team colors" : "Colores de equipos detectados"}
       aria-busy={state === "saving"}
     >
       <div className={`match-color-editor__copy ${mode === "header" ? "match-color-editor__copy--compact" : ""}`}>
-        <span>Colores del partido</span>
+        <span>{english ? "Match colors" : "Colores del partido"}</span>
         <strong>
-          {matchInfo.ownTeam ?? "Equipo propio"} / {matchInfo.rivalTeam ?? "Equipo rival"}
+          {matchInfo.ownTeam ?? (english ? "Your team" : "Equipo propio")} / {matchInfo.rivalTeam ?? (english ? "Opponent" : "Equipo rival")}
         </strong>
         {detectedPair ? (
           <small>
-            Detectados por el análisis
-            {detectedColors?.tentative ? " - tentativos" : ""}
+            {english ? "Detected by the analysis" : "Detectados por el análisis"}
+            {detectedColors?.tentative ? (english ? " - tentative" : " - tentativos") : ""}
           </small>
         ) : (
-          <small>Sin colores detectados aun</small>
+          <small>{english ? "No colors detected yet" : "Sin colores detectados aún"}</small>
         )}
       </div>
 
       {pair ? (
         <>
-          <ColorSwatch label="Equipo propio" color={pair.ownTeamColor} />
+          <ColorSwatch label={english ? "Your team" : "Equipo propio"} color={pair.ownTeamColor} />
           <button
             className="match-color-swap"
             type="button"
-            aria-label={state === "saving" ? "Guardando colores" : "Intercambiar colores de equipo propio y rival"}
+            aria-label={state === "saving" ? (english ? "Saving colors" : "Guardando colores") : (english ? "Swap your team and opponent colors" : "Intercambiar colores de equipo propio y rival")}
             onClick={swapColors}
             disabled={state === "saving" || !detectedPair}
-            title="Intercambiar"
+            title={english ? "Swap" : "Intercambiar"}
           >
             {state === "saving" ? <Loader2 className="spin" size={15} /> : <ArrowLeftRight size={15} />}
           </button>
-          <ColorSwatch label="Equipo rival" color={pair.rivalTeamColor} />
+          <ColorSwatch label={english ? "Opponent" : "Equipo rival"} color={pair.rivalTeamColor} />
         </>
       ) : (
         <div className={`match-color-empty ${mode === "header" ? "match-color-empty--header" : ""}`}>
-          {mode === "header" ? "Sin colores detectados" : "El análisis debe detectar dos colores antes de permitir intercambio."}
+          {mode === "header"
+            ? (english ? "No colors detected" : "Sin colores detectados")
+            : (english ? "The analysis must detect two colors before they can be swapped." : "El análisis debe detectar dos colores antes de permitir intercambio.")}
         </div>
       )}
 
       <button
         className={`match-color-save ${state === "saved" ? "is-saved" : ""} ${state === "error" ? "is-error" : ""}`}
         type="button"
-        aria-label={state === "saving" ? "Guardando colores" : "Guardar colores"}
-        title={state === "saving" ? "Guardando colores" : "Guardar colores"}
+        aria-label={state === "saving" ? (english ? "Saving colors" : "Guardando colores") : (english ? "Save colors" : "Guardar colores")}
+        title={state === "saving" ? (english ? "Saving colors" : "Guardando colores") : (english ? "Save colors" : "Guardar colores")}
         onClick={() => pair && void saveColors(pair)}
         disabled={state === "saving" || !pair || !detectedPair}
       >
         {state === "saving" ? <Loader2 className="spin" size={14} /> : <Save size={14} />}
       </button>
-      {state === "saving" ? <span className="visually-hidden" role="status">Guardando colores del partido.</span> : null}
+      {state === "saving" ? <span className="visually-hidden" role="status">{english ? "Saving match colors." : "Guardando colores del partido."}</span> : null}
     </div>
   );
 }

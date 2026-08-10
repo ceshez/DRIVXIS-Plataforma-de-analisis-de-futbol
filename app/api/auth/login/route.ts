@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyPassword } from "@/lib/password";
+import { setPreferenceCookies } from "@/lib/preference-cookies";
+import { normalizeLocale, normalizeTheme } from "@/lib/preferences";
 import { prisma } from "@/lib/prisma";
 import { clearSessionCookie, setSessionCookie } from "@/lib/session";
 import { loginSchema } from "@/lib/validators";
@@ -12,7 +14,15 @@ export async function POST(request: Request) {
 
   const user = await prisma.user.findUnique({
     where: { email: parsed.data.email },
-    select: { id: true, email: true, role: true, passwordHash: true },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      passwordHash: true,
+      locale: true,
+      theme: true,
+      sessionVersion: true,
+    },
   });
 
   if (!user) {
@@ -31,6 +41,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Correo o contraseña incorrectos." }, { status: 401 });
   }
 
-  await setSessionCookie({ userId: user.id, email: user.email, role: user.role });
+  await Promise.all([
+    setSessionCookie({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      sessionVersion: user.sessionVersion,
+    }),
+    setPreferenceCookies({ locale: normalizeLocale(user.locale), theme: normalizeTheme(user.theme) }),
+  ]);
   return NextResponse.json({ ok: true });
 }

@@ -27,6 +27,9 @@ Campos importantes:
 - `name`
 - `passwordHash`
 - `role`
+- `locale`
+- `theme`
+- `sessionVersion`
 - `storageLimitBytes`
 - `storageUsedBytes`
 - `createdAt`
@@ -35,8 +38,13 @@ Campos importantes:
 Relacion:
 
 - Un usuario puede tener muchos videos.
+- Un usuario puede tener codigos temporales de recuperacion de contraseña.
 - `storageLimitBytes` define la cuota maxima por usuario (1GB por defecto).
 - `storageUsedBytes` mantiene el uso acumulado y se actualiza solo en backend/worker.
+
+### PasswordResetCode
+
+Guarda un hash del codigo de seis digitos, vencimiento, cantidad de intentos y momento de uso. Nunca persiste el codigo en texto plano y elimina su validez al cambiar la contraseña.
 
 ### Video
 
@@ -131,6 +139,7 @@ Campos importantes:
 ```mermaid
 erDiagram
   User ||--o{ Video : tiene
+  User ||--o{ PasswordResetCode : solicita
   Video ||--o{ AnalysisJob : genera
   Video ||--o{ MetricSnapshot : tiene
 ```

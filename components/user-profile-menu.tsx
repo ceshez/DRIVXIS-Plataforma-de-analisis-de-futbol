@@ -3,8 +3,9 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { BarChart3, Gauge, Loader2, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
+import { BarChart3, Gauge, Languages, Loader2, LogOut, Moon, Settings, Sun } from "lucide-react";
 import { useEffect, useMemo, useReducer, useRef } from "react";
+import { useAppPreferences } from "@/components/app-preferences-provider";
 
 type UserProfileMenuProps = {
   name?: string | null;
@@ -15,13 +16,6 @@ type UserProfileMenuProps = {
   triggerVariant?: "icon" | "sidebar-card";
   showSidebarSettingsIcon?: boolean;
 };
-
-const menuItems = [
-  { href: "/dashboard/videos", label: "An\u00e1lisis", icon: BarChart3 },
-  { href: "/dashboard/usage", label: "Uso", icon: Gauge },
-  { href: "/dashboard/profile", label: "Perfil", icon: UserRound },
-  { href: "/dashboard/teams", label: "Equipos", icon: ShieldCheck },
-];
 
 type ProfileMenuState = {
   open: boolean;
@@ -87,12 +81,18 @@ function UserProfileMenuContent({
   pathname,
 }: UserProfileMenuProps & { pathname: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const { locale, theme, savingPreferences, savePreferences, t } = useAppPreferences();
   const [menuState, dispatchMenu] = useReducer(profileMenuReducer, INITIAL_PROFILE_MENU_STATE);
   const { open, loggingOut, logoutError, hasLocalAvatar, avatarNonceOverride, failedAvatarNonce } = menuState;
   const safeName = (name || "").trim();
   const safeEmail = (email || "").trim();
   const avatarNonce = avatarNonceOverride ?? avatarVersion ?? "0";
   const showAvatar = (hasAvatar || hasLocalAvatar) && failedAvatarNonce !== avatarNonce;
+  const menuItems = [
+    { href: "/dashboard/videos", label: t("analyses"), icon: BarChart3 },
+    { href: "/dashboard/usage", label: t("usage"), icon: Gauge },
+    { href: "/dashboard/profile", label: t("settings"), icon: Settings },
+  ];
 
   const avatarLetter = useMemo(() => {
     const source = safeName || safeEmail || "U";
@@ -156,17 +156,18 @@ function UserProfileMenuContent({
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="Abrir men\u00fa de usuario"
+        aria-label={t("openUserMenu")}
         onClick={() => dispatchMenu({ type: "toggleOpen" })}
       >
         <span className="profile-menu__trigger-avatar-wrap">
           {showAvatar ? (
             <Image
               src={`/api/profile/avatar?v=${encodeURIComponent(avatarNonce)}`}
-              alt="Avatar de usuario"
+              alt={locale === "en" ? "User avatar" : "Avatar de usuario"}
               className="profile-menu__avatar-image"
               width={44}
               height={44}
+              style={{ width: "100%", height: "100%" }}
               unoptimized
               onError={() => dispatchMenu({ type: "avatarFailed", nonce: avatarNonce })}
             />
@@ -188,7 +189,7 @@ function UserProfileMenuContent({
       </button>
 
       {open ? (
-        <div className="profile-menu__dropdown" role="menu" aria-label="Men\u00fa de usuario">
+        <div className="profile-menu__dropdown" role="menu" aria-label={t("userMenu")}>
           <div className="profile-menu__identity">
             <span className="profile-menu__identity-avatar" aria-hidden="true">
               {showAvatar ? (
@@ -198,6 +199,7 @@ function UserProfileMenuContent({
                   className="profile-menu__identity-avatar-image"
                   width={40}
                   height={40}
+                  style={{ width: 40, height: 40 }}
                   unoptimized
                 />
               ) : (
@@ -223,6 +225,22 @@ function UserProfileMenuContent({
                 <strong>{item.label}</strong>
               </Link>
             ))}
+            <div className="profile-menu__preferences" role="group" aria-label={t("settings")}>
+              <div className="profile-menu__preference-row">
+                <span><Languages size={15} />{t("language")}</span>
+                <div className="profile-menu__segmented">
+                  <button type="button" aria-pressed={locale === "es"} disabled={savingPreferences} onClick={() => void savePreferences({ locale: "es" })}>ES</button>
+                  <button type="button" aria-pressed={locale === "en"} disabled={savingPreferences} onClick={() => void savePreferences({ locale: "en" })}>EN</button>
+                </div>
+              </div>
+              <div className="profile-menu__preference-row">
+                <span>{theme === "dark" ? <Moon size={15} /> : <Sun size={15} />}{t("appearance")}</span>
+                <div className="profile-menu__segmented">
+                  <button type="button" aria-pressed={theme === "dark"} disabled={savingPreferences} onClick={() => void savePreferences({ theme: "dark" })}>{t("dark")}</button>
+                  <button type="button" aria-pressed={theme === "light"} disabled={savingPreferences} onClick={() => void savePreferences({ theme: "light" })}>{t("light")}</button>
+                </div>
+              </div>
+            </div>
             <button
               type="button"
               role="menuitem"
@@ -231,7 +249,7 @@ function UserProfileMenuContent({
               disabled={loggingOut}
             >
               {loggingOut ? <Loader2 className="spin" size={16} aria-hidden="true" /> : <LogOut size={16} />}
-              <strong>{loggingOut ? "CERRANDO SESI\u00d3N..." : "CERRAR SESI\u00d3N"}</strong>
+              <strong>{loggingOut ? t("loggingOut") : t("logout")}</strong>
             </button>
           </div>
           {logoutError ? <p className="profile-menu__error">{logoutError}</p> : null}

@@ -1,67 +1,72 @@
 # DRIVXIS Analysis Engine
 
-This folder adapts `abdullahtarek/football_analysis` into a CLI that DRIVXIS can run from a queue worker.
+The analysis pipeline uses YOLO by default and keeps ByteTrack, team assignment, goalkeepers, possession, speed, distance, annotation, and metrics v1 independent from the selected detector.
 
-## Setup
+## Local YOLO setup
 
-1. Create a dedicated virtual environment for the worker.
-
-Recommended on Windows:
-
-```bash
-py -3.11 -m venv .venv-analysis
+```powershell
+python -m venv .venv-analysis
+.\.venv-analysis\Scripts\python.exe -m pip install --upgrade pip
+.\.venv-analysis\Scripts\python.exe -m pip install -r analysis\requirements.txt
 ```
 
-If Python 3.11 is not installed yet, Python 3.12 is also acceptable for local tests. Avoid Python 3.14 for this pipeline until the vision stack is validated there.
-
-2. Install dependencies into that environment:
-
-```bash
-.venv-analysis\Scripts\python.exe -m pip install --upgrade pip
-.venv-analysis\Scripts\python.exe -m pip install -r analysis/requirements.txt
-```
-
-3. Confirm the trained YOLO model exists at:
-
-```bash
-analysis/models/best.pt
-```
-
-4. Point the worker to the virtualenv interpreter in `.env`:
+Configure `.env`:
 
 ```env
 PYTHON_BIN=".venv-analysis/Scripts/python.exe"
-LOCAL_STORAGE_ROOT=".drivxis/uploads"
-ANALYSIS_STORAGE_ROOT=".drivxis/analysis"
-ANALYSIS_MODEL_PATH="analysis/models/best.pt"
+ANALYSIS_AUTO_START="true"
+ANALYSIS_DETECTOR="yolo"
+ANALYSIS_MODEL_PATH="analysis/models/best.onnx"
+ANALYSIS_DETECTION_FPS="5"
+ANALYSIS_BATCH_SIZE="4"
+ANALYSIS_MAX_WIDTH="1280"
+YOLO_DEVICE="cpu"
 ```
 
-Cloudflare R2 / S3 credentials are not required for the first local version. The upload route and worker already support local storage-only execution.
+Run a preflight and one queue iteration:
 
-## CLI
+```powershell
+.\.venv-analysis\Scripts\python.exe analysis\check_runtime.py
+npm run analysis:worker -- --once
+```
+
+## Export `best.pt` to ONNX
+
+```powershell
+.\.venv-analysis\Scripts\python.exe -m pip install onnx onnxslim onnxruntime
+.\.venv-analysis\Scripts\python.exe -c "from ultralytics import YOLO; YOLO(r'analysis/models/best.pt').export(format='onnx', imgsz=640, dynamic=True, simplify=True, opset=17)"
+```
+
+The generated `analysis/models/best.onnx` is intentionally ignored by Git. Upload it to R2 as `models/best.onnx`; the deployed worker downloads it once into `/models/best.onnx` using `ANALYSIS_MODEL_OBJECT_KEY`.
+
+## CPU production worker
 
 ```bash
-.venv-analysis\Scripts\python.exe analysis/run_analysis.py --input path/to/source.mp4 --output path/to/annotated.mp4 --metrics-json path/to/metrics.json --model analysis/models/best.pt
+cp deploy/analysis-worker.env.example deploy/analysis-worker.env
+docker compose --env-file deploy/analysis-worker.env -f compose.analysis-worker.yml up -d --build
+docker compose --env-file deploy/analysis-worker.env -f compose.analysis-worker.yml logs -f worker
 ```
 
-The CLI writes an annotated MP4 plus a metrics JSON payload that follows the DRIVXIS v1 contract.
+The worker exposes no inbound port. It needs outbound access to PostgreSQL and R2. Keep `ANALYSIS_AUTO_START=false` in the deployed web application.
 
-## Smoke Test
+## Optional LocateAnything research worker
 
-Use a short local MP4 from `.drivxis/uploads` or any accessible path:
+Set `ANALYSIS_DETECTOR=locateanything` and use `compose.analysis-gpu.yml`. This backend requires Linux, Python 3.11, CUDA/BF16, and at least 24 GB VRAM. The `nvidia/LocateAnything-3B` license allows research/evaluation only; do not use it commercially without separate permission from NVIDIA.
 
 ```bash
-.venv-analysis\Scripts\python.exe analysis/run_analysis.py --input C:\ruta\partido.mp4 --output .drivxis\analysis\smoke-test\annotated.mp4 --metrics-json .drivxis\analysis\smoke-test\metrics.json --model analysis/models/best.pt
+cp deploy/analysis-gpu.env.example deploy/analysis-gpu.env
+docker compose --env-file deploy/analysis-gpu.env -f compose.analysis-gpu.yml up -d --build
 ```
 
-Expected outputs:
+## Direct smoke test
 
-- `.drivxis/analysis/smoke-test/annotated.mp4`
-- `.drivxis/analysis/smoke-test/metrics.json`
-
-The model must expose classes compatible with:
-
-- `player` or `person`
-- `ball` or `football`
-- optionally `goalkeeper`, `goalie`, `keeper`, `gk`
-- optionally `referee`, `ref`, `official`
+```powershell
+.\.venv-analysis\Scripts\python.exe analysis\run_analysis.py `
+  --input "C:\video\clip.mp4" `
+  --output ".drivxis\analysis\smoke-test\processed.mp4" `
+  --metrics-json ".drivxis\analysis\smoke-test\metrics.json" `
+  --detector yolo `
+  --model "analysis\models\best.onnx" `
+  --detection-fps 5 `
+  --batch-size 4
+```

@@ -30,16 +30,21 @@ export function VideoEventSubscription<TVideo>({
         eventSource.close();
       }
     };
-    const receiveError = () => {
+    const receiveVideoError = () => {
       eventSource.close();
       handleError();
     };
+    const receiveTransportError = () => {
+      if (eventSource.readyState === EventSource.CLOSED) handleError();
+    };
 
     eventSource.addEventListener("video", receiveVideo);
-    eventSource.addEventListener("error", receiveError);
+    eventSource.addEventListener("video-error", receiveVideoError);
+    eventSource.addEventListener("error", receiveTransportError);
     return () => {
       eventSource.removeEventListener("video", receiveVideo);
-      eventSource.removeEventListener("error", receiveError);
+      eventSource.removeEventListener("video-error", receiveVideoError);
+      eventSource.removeEventListener("error", receiveTransportError);
       eventSource.close();
     };
   }, [videoId]);

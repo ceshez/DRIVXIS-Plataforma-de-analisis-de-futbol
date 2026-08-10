@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Maximize2, Minimize2 } from "lucide-react";
+import { useAppPreferences } from "@/components/app-preferences-provider";
 
 type AnalysisVideoPlayerProps = {
   src: string;
@@ -31,6 +32,8 @@ async function tryUnlockOrientation() {
 }
 
 export function AnalysisVideoPlayer({ src, title, className = "", onStreamError }: AnalysisVideoPlayerProps) {
+  const { locale } = useAppPreferences();
+  const english = locale === "en";
   const shellRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [streamError, setStreamError] = useState<{ src: string; message: string } | null>(null);
@@ -66,7 +69,7 @@ export function AnalysisVideoPlayer({ src, title, className = "", onStreamError 
   }
 
   async function handlePlaybackError() {
-    const fallbackMessage = "No se pudo reproducir el video procesado.";
+    const fallbackMessage = english ? "The processed video could not be played." : "No se pudo reproducir el video procesado.";
     try {
       const response = await fetch(src, {
         method: "GET",
@@ -91,7 +94,7 @@ export function AnalysisVideoPlayer({ src, title, className = "", onStreamError 
       setStreamError({ src, message });
       onStreamError?.(message);
     } catch {
-      const networkMessage = "No se pudo cargar el stream. Verifica red, sesion o configuracion de storage.";
+      const networkMessage = english ? "The stream could not be loaded. Check the network, session, or storage configuration." : "No se pudo cargar el stream. Verifica la red, sesión o configuración de almacenamiento.";
       setStreamError({ src, message: networkMessage });
       onStreamError?.(networkMessage);
     }
@@ -118,7 +121,7 @@ export function AnalysisVideoPlayer({ src, title, className = "", onStreamError 
         className="video-fullscreen-button"
         type="button"
         onClick={() => void toggleFullscreen()}
-        aria-label={isFullscreen ? "Volver al tamaño normal" : "Ver video en pantalla completa"}
+        aria-label={isFullscreen ? (english ? "Exit fullscreen" : "Volver al tamaño normal") : (english ? "View video fullscreen" : "Ver video en pantalla completa")}
       >
         {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
       </button>

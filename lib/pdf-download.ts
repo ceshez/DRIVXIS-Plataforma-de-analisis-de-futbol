@@ -49,10 +49,11 @@ export function getPdfDownloadFilename(contentDisposition: string | null) {
   return "reporte-de-analisis.pdf";
 }
 
-export function getReportDownloadLabel(download: ReportDownloadState) {
-  if (download.phase === "preparing") return "Preparando PDF...";
-  if (download.phase === "downloading") return `Descargando · ${formatTransferRate(download.bytesPerSecond)}`;
-  return "Descargar PDF";
+export function getReportDownloadLabel(download: ReportDownloadState, locale: "es" | "en" = "es") {
+  const english = locale === "en";
+  if (download.phase === "preparing") return english ? "Preparing PDF..." : "Preparando PDF...";
+  if (download.phase === "downloading") return `${english ? "Downloading" : "Descargando"} · ${formatTransferRate(download.bytesPerSecond)}`;
+  return english ? "Download PDF" : "Descargar PDF";
 }
 
 export function waitForNextPaint() {

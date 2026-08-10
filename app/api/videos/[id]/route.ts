@@ -211,6 +211,9 @@ export async function DELETE(_request: Request, context: RouteContext) {
   addRemoteKey(metadata.processedObjectKey);
   addRemoteKey(metadata.annotatedObjectKey);
   addRemoteKey(metadata.latestMetricsObjectKey);
+  addRemoteKey(`users/${user.id}/analysis/${video.id}/processed.mp4`);
+  addRemoteKey(`users/${user.id}/analysis/${video.id}/annotated.mp4`);
+  addRemoteKey(`users/${user.id}/analysis/${video.id}/metrics.json`);
 
   if (isStorageConfigured() && remoteObjectKeys.size > 0) {
     const remoteDeletion = await deleteStorageObjects(Array.from(remoteObjectKeys));

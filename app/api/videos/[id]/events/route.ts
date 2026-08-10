@@ -1,5 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import {
+  getVideoEventRetryDelay,
+  isVideoEventTerminal,
+  VIDEO_EVENT_MAX_CONSECUTIVE_FAILURES,
+  VIDEO_EVENT_POLL_MS,
+  VIDEO_EVENT_RECONNECT_MS,
+  VIDEO_EVENT_STREAM_MAX_MS,
+} from "@/lib/video-event-stream";
 import { serializeVideo } from "@/lib/video-serialization";
 
 type RouteContext = {
@@ -17,35 +25,73 @@ export async function GET(request: Request, context: RouteContext) {
     async start(controller) {
       let lastPayload = "";
       let closed = false;
+      let consecutiveFailures = 0;
+      const streamStartedAt = Date.now();
 
-      request.signal.addEventListener("abort", () => {
+      const closeStream = () => {
+        if (closed) return;
         closed = true;
-        controller.close();
-      });
-
-      while (!closed) {
-        const video = await findVideo(id, user.id);
-        if (!video) {
-          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: "Video no encontrado." })}\n\n`));
+        try {
           controller.close();
-          return;
+        } catch {
+          // The browser may have cancelled the stream before the abort signal reached this handler.
         }
+      };
 
-        const serialized = serializeVideo(video);
-        const payload = JSON.stringify(serialized);
-        if (payload !== lastPayload) {
-          controller.enqueue(encoder.encode(`event: video\ndata: ${payload}\n\n`));
-          lastPayload = payload;
-        } else {
-          controller.enqueue(encoder.encode(`event: ping\ndata: {}\n\n`));
+      const handleAbort = () => closeStream();
+      request.signal.addEventListener("abort", handleAbort, { once: true });
+
+      try {
+        controller.enqueue(encoder.encode(`retry: ${VIDEO_EVENT_RECONNECT_MS}\n\n`));
+
+        while (!closed) {
+          if (Date.now() - streamStartedAt >= VIDEO_EVENT_STREAM_MAX_MS) {
+            closeStream();
+            return;
+          }
+
+          try {
+            const video = await findVideo(id, user.id);
+            consecutiveFailures = 0;
+            if (!video) {
+              controller.enqueue(
+                encoder.encode(`event: video-error\ndata: ${JSON.stringify({ error: "Video no encontrado." })}\n\n`),
+              );
+              closeStream();
+              return;
+            }
+
+            const serialized = serializeVideo(video);
+            const payload = JSON.stringify(serialized);
+            if (payload !== lastPayload) {
+              controller.enqueue(encoder.encode(`event: video\ndata: ${payload}\n\n`));
+              lastPayload = payload;
+            } else {
+              controller.enqueue(encoder.encode(`event: ping\ndata: {}\n\n`));
+            }
+
+            if (isVideoEventTerminal(serialized)) {
+              closeStream();
+              return;
+            }
+
+            await wait(VIDEO_EVENT_POLL_MS);
+          } catch (error) {
+            if (closed || request.signal.aborted) return;
+            consecutiveFailures += 1;
+            console.warn(
+              `[video-events] transient read failure for ${id} (${consecutiveFailures}/${VIDEO_EVENT_MAX_CONSECUTIVE_FAILURES}): ${formatError(error)}`,
+            );
+            if (consecutiveFailures >= VIDEO_EVENT_MAX_CONSECUTIVE_FAILURES) {
+              closeStream();
+              return;
+            }
+            await wait(getVideoEventRetryDelay(consecutiveFailures));
+          }
         }
-
-        if (serialized.status === "COMPLETED" || serialized.status === "FAILED") {
-          controller.close();
-          return;
-        }
-
-        await wait(1500);
+      } finally {
+        request.signal.removeEventListener("abort", handleAbort);
+        closeStream();
       }
     },
   });
@@ -102,4 +148,8 @@ async function findVideo(id: string, ownerId: string) {
 
 function wait(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function formatError(error: unknown) {
+  return error instanceof Error ? error.message.split("\n").filter(Boolean).at(-1) || error.name : String(error);
 }

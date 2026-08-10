@@ -2,8 +2,10 @@
 
 import { useEffect, useReducer, useRef, useState } from "react";
 import { CheckCircle2, Film, Loader2, Upload, XCircle } from "lucide-react";
+import { useAppPreferences } from "@/components/app-preferences-provider";
 import { MicroGrid } from "@/components/micro-graphics";
 import type { AnalysisMetrics } from "@/lib/analysis-metrics";
+import type { AppLocale } from "@/lib/preferences";
 
 export type UploadedVideo = {
   id: string;
@@ -59,6 +61,7 @@ type MatchSetupProps = {
   ownTeam: string;
   rivalTeam: string;
   uploading: boolean;
+  locale: AppLocale;
   onTeamChanged: (team: "ownTeam" | "rivalTeam", value: string) => void;
 };
 
@@ -77,26 +80,27 @@ function uploadFormReducer(state: UploadFormState, action: UploadFormAction): Up
   return { ...state, ...action.changes };
 }
 
-function MatchSetup({ ownTeam, rivalTeam, uploading, onTeamChanged }: MatchSetupProps) {
+function MatchSetup({ ownTeam, rivalTeam, uploading, locale, onTeamChanged }: MatchSetupProps) {
+  const english = locale === "en";
   return (
-    <div className="match-setup" aria-label="Datos del partido">
+    <div className="match-setup" aria-label={english ? "Match details" : "Datos del partido"}>
       <label>
-        <span>Tu equipo</span>
+        <span>{english ? "Your team" : "Tu equipo"}</span>
         <input
           type="text"
           value={ownTeam}
           onChange={(event) => onTeamChanged("ownTeam", event.target.value)}
-          placeholder="Ej. DRIVXIS FC"
+          placeholder={english ? "e.g. DRIVXIS FC" : "Ej. DRIVXIS FC"}
           disabled={uploading}
         />
       </label>
       <label>
-        <span>Rival</span>
+        <span>{english ? "Opponent" : "Rival"}</span>
         <input
           type="text"
           value={rivalTeam}
           onChange={(event) => onTeamChanged("rivalTeam", event.target.value)}
-          placeholder="Ej. Academia Norte"
+          placeholder={english ? "e.g. North Academy" : "Ej. Academia Norte"}
           disabled={uploading}
         />
       </label>
@@ -113,6 +117,8 @@ export function VideoUploadDropzone({
   disabledMessage = "Analizando video actual",
   progress,
 }: VideoUploadDropzoneProps) {
+  const { locale } = useAppPreferences();
+  const english = locale === "en";
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploadForm, dispatchUploadForm] = useReducer(uploadFormReducer, INITIAL_UPLOAD_FORM_STATE);
@@ -149,7 +155,7 @@ export function VideoUploadDropzone({
     if (normalizedOwnTeam.length < 2 || normalizedRivalTeam.length < 2) {
       dispatchUploadForm({
         type: "patch",
-        changes: { status: "error", message: "Indica tu equipo y el rival antes de subir el partido." },
+        changes: { status: "error", message: english ? "Enter your team and opponent before uploading the match." : "Indica tu equipo y el rival antes de subir el partido." },
       });
       return;
     }
@@ -158,14 +164,14 @@ export function VideoUploadDropzone({
     if (!requestedMimeType || !requestedMimeType.startsWith("video/")) {
       dispatchUploadForm({
         type: "patch",
-        changes: { status: "error", message: "El archivo no tiene un MIME type de video válido." },
+        changes: { status: "error", message: english ? "The selected file is not a valid video." : "El archivo no tiene un MIME type de video válido." },
       });
       return;
     }
 
     dispatchUploadForm({
       type: "patch",
-      changes: { status: "uploading", fileName: file.name, message: "Preparando carga" },
+      changes: { status: "uploading", fileName: file.name, message: english ? "Preparing upload" : "Preparando carga" },
     });
     uploadDiagnosticsRef.current = {
       uploadUrlHost: null,
@@ -206,7 +212,7 @@ export function VideoUploadDropzone({
       };
 
       if (!presignResponse.ok || !presign.objectKey) {
-        throw new Error(presign.details || presign.error || "No se pudo preparar la carga.");
+        throw new Error(presign.details || presign.error || (english ? "The upload could not be prepared." : "No se pudo preparar la carga."));
       }
 
       const uploadUrlHost = getUploadUrlHost(presign.uploadUrl);
@@ -241,12 +247,12 @@ export function VideoUploadDropzone({
       }
 
       if (presign.uploadMode === "s3" && presign.uploadUrl) {
-        const uploadStartMessage = "Subiendo a la nube... Esto puede tardar varios minutos"
+        const uploadStartMessage = english ? "Uploading to the cloud... This may take several minutes" : "Subiendo a la nube... Esto puede tardar varios minutos";
         dispatchUploadForm({ type: "patch", changes: { message: uploadStartMessage } });
         onNotify?.(uploadStartMessage, "info");
       } else {
-        const fallbackReason = presign.configErrors?.[0] || "Almacenamiento remoto no configurado";
-        const fallbackMessage = `Using local fallback. ${fallbackReason}`;
+        const fallbackReason = presign.configErrors?.[0] || (english ? "Remote storage is not configured" : "Almacenamiento remoto no configurado");
+        const fallbackMessage = `${english ? "Using local storage" : "Usando almacenamiento local"}. ${fallbackReason}`;
         dispatchUploadForm({ type: "patch", changes: { message: fallbackMessage } });
         onNotify?.(fallbackMessage, "warning");
       }
@@ -290,7 +296,7 @@ export function VideoUploadDropzone({
         if (!uploadResponse.ok) {
           throw new Error(await describeRemoteUploadFailure(uploadResponse));
         }
-        const successMessage = "Video original subido a la nube.";
+        const successMessage = english ? "Original video uploaded to the cloud." : "Video original subido a la nube.";
         dispatchUploadForm({ type: "patch", changes: { message: successMessage } });
         onNotify?.(successMessage, "success");
       } else {
@@ -301,14 +307,14 @@ export function VideoUploadDropzone({
         });
         const localUpload = (await localUploadResponse.json().catch(() => ({}))) as { error?: string };
         if (!localUploadResponse.ok) {
-          throw new Error(localUpload.error || "No se pudo guardar el archivo local.");
+          throw new Error(localUpload.error || (english ? "The local file could not be saved." : "No se pudo guardar el archivo local."));
         }
-        const localSuccessMessage = "Video original guardado localmente. No se subió a la nube.";
+        const localSuccessMessage = english ? "Original video saved locally; it was not uploaded to the cloud." : "Video original guardado localmente. No se subió a la nube.";
         dispatchUploadForm({ type: "patch", changes: { message: localSuccessMessage } });
         onNotify?.(localSuccessMessage, "warning");
       }
 
-      dispatchUploadForm({ type: "patch", changes: { message: "Registrando metadata" } });
+      dispatchUploadForm({ type: "patch", changes: { message: english ? "Registering metadata" : "Registrando metadata" } });
       const createResponse = await fetch("/api/videos", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -316,12 +322,12 @@ export function VideoUploadDropzone({
       });
       const created = (await createResponse.json().catch(() => ({}))) as { error?: string; video?: UploadedVideo };
       if (!createResponse.ok || !created.video) {
-        throw new Error(created.error || "No se pudo registrar el video.");
+        throw new Error(created.error || (english ? "The video could not be registered." : "No se pudo registrar el video."));
       }
 
       dispatchUploadForm({
         type: "patch",
-        changes: { status: "queued", message: "Video en cola de análisis" },
+        changes: { status: "queued", message: english ? "Video queued for analysis" : "Video en cola de análisis" },
       });
       window.localStorage.setItem(
         "drivxis:primary-team",
@@ -331,7 +337,7 @@ export function VideoUploadDropzone({
       if (inputRef.current) inputRef.current.value = "";
     } catch (error) {
       const reason = normalizeUploadError(error, attemptedRemotePut, uploadDiagnosticsRef.current);
-      const prefixed = `Upload failed: ${reason}`;
+      const prefixed = `${english ? "Upload failed" : "Falló la carga"}: ${reason}`;
       dispatchUploadForm({ type: "patch", changes: { status: "error", message: prefixed } });
       onNotify?.(prefixed, "warning");
     }
@@ -347,6 +353,7 @@ export function VideoUploadDropzone({
           ownTeam={ownTeam}
           rivalTeam={rivalTeam}
           uploading={status === "uploading"}
+          locale={locale}
           onTeamChanged={(team, value) => dispatchUploadForm({ type: "teamChanged", team, value })}
         />
       ) : null}
@@ -372,16 +379,16 @@ export function VideoUploadDropzone({
         <span className="analysis-upload__icon">
           {status === "uploading" || disabled ? <Loader2 className="spin" size={30} /> : status === "queued" ? <CheckCircle2 size={30} /> : status === "error" ? <XCircle size={30} /> : <Upload size={30} />}
         </span>
-        <strong>{disabled ? "análisis en curso" : fileName || label}</strong>
+        <strong>{disabled ? (english ? "analysis in progress" : "análisis en curso") : fileName || label}</strong>
         <small>{disabled ? disabledMessage : status === "idle" ? description : message}</small>
         {displayProgress !== null ? (
-          <span className="analysis-upload__progress" aria-label={`Progreso ${displayProgress}%`}>
+          <span className="analysis-upload__progress" aria-label={`${english ? "Progress" : "Progreso"} ${displayProgress}%`}>
             <span style={{ width: `${displayProgress}%` }} />
           </span>
         ) : null}
         <span className={`live-chip live-chip--small ${status === "uploading" || disabled ? "" : "live-chip--muted"}`}>
           <span />
-          {disabled ? `${displayProgress ?? 0}%` : status === "uploading" ? "Subiendo" : status === "queued" ? "En cola" : status === "error" ? "Error" : "Listo"}
+          {disabled ? `${displayProgress ?? 0}%` : status === "uploading" ? (english ? "Uploading" : "Subiendo") : status === "queued" ? (english ? "Queued" : "En cola") : status === "error" ? "Error" : (english ? "Ready" : "Listo")}
         </span>
       </button>
       <input
@@ -389,7 +396,7 @@ export function VideoUploadDropzone({
         type="file"
         accept="video/*"
         className="visually-hidden"
-        aria-label="Seleccionar archivo de video"
+        aria-label={english ? "Select video file" : "Seleccionar archivo de video"}
         onChange={(event) => void handleFiles(event.target.files)}
       />
       {status !== "idle" ? (

@@ -1,0 +1,45 @@
+{
+  "clips": [
+    {
+      "name": "wide-tactical-camera",
+      "video": "clips/wide-tactical-camera.mp4",
+      "frames": [
+        {
+          "timestampSeconds": 1.2,
+          "objects": [
+            { "label": "player", "bbox": [320, 140, 372, 310] },
+            { "label": "ball", "bbox": [640, 350, 652, 362] }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "goal-area",
+      "video": "clips/goal-area.mp4",
+      "frames": [
+        {
+          "timestampSeconds": 2.4,
+          "objects": [
+            { "label": "goalkeeper", "bbox": [85, 120, 145, 330] }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "occlusion-and-motion",
+      "video": "clips/occlusion-and-motion.mp4",
+      "frames": [
+        {
+          "timestampSeconds": 3.6,
+          "objects": [
+            { "label": "referee", "bbox": [710, 180, 755, 345] }
+          ]
+        }
+      ]
+    }
+  ],
+  "yoloBaseline": {
+    "playerF1": 0.0,
+    "ballGoalkeeperRecall": 0.0
+  }
+}

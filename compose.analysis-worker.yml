@@ -1,0 +1,25 @@
+name: drivxis-analysis-cpu
+
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.analysis-worker
+    image: drivxis-analysis-worker:yolo-cpu
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${ANALYSIS_ENV_FILE:-./deploy/analysis-worker.env}
+    environment:
+      ANALYSIS_AUTO_START: "false"
+      ANALYSIS_DETECTOR: "yolo"
+      ANALYSIS_MODEL_PATH: /models/best.onnx
+      LOCAL_STORAGE_ROOT: /work/uploads
+      ANALYSIS_STORAGE_ROOT: /work/analysis
+    volumes:
+      - drivxis_yolo_models:/models
+      - drivxis_analysis_work:/work
+
+volumes:
+  drivxis_yolo_models:
+  drivxis_analysis_work:

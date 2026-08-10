@@ -7,11 +7,14 @@ const globalForAnalysisWorker = globalThis as typeof globalThis & {
   drivxisAnalysisKickAt?: number;
 };
 
-function shouldAutoStartAnalysisWorker() {
-  if (process.env.ANALYSIS_AUTO_START) {
-    return process.env.ANALYSIS_AUTO_START === "true";
-  }
-  return process.env.NODE_ENV !== "production";
+export function shouldAutoStartAnalysisWorker(
+  options: { autoStart?: string; platform?: NodeJS.Platform; detector?: string } = {},
+) {
+  const autoStart = options.autoStart ?? process.env.ANALYSIS_AUTO_START;
+  const platform = options.platform ?? process.platform;
+  const detector = (options.detector ?? process.env.ANALYSIS_DETECTOR ?? "yolo").toLowerCase();
+  if (autoStart !== "true") return false;
+  return detector === "locateanything" ? platform === "linux" : detector === "yolo";
 }
 
 export function kickAnalysisWorker() {

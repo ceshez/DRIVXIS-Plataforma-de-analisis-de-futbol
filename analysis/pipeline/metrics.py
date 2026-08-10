@@ -13,6 +13,7 @@ def build_metrics(
     possession_quality: dict[str, Any],
     match_info: dict[str, Any],
     detected_team_colors: dict[str, Any],
+    inference: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     known_control = [team for team in control if team in (1, 2)]
     team1_pct = known_control.count(1) / len(known_control) * 100 if known_control else 0
@@ -42,7 +43,7 @@ def build_metrics(
     raw_max_speed = round(max(all_speeds), 2) if all_speeds else 0
     own_team_name = match_info.get("ownTeam") or "Equipo 1"
     rival_team_name = match_info.get("rivalTeam") or "Equipo 2"
-    return {
+    metrics = {
         "version": 1,
         "source": "football_analysis",
         "match": {
@@ -122,3 +123,6 @@ def build_metrics(
             "processedAvailable": True,
         },
     }
+    if inference:
+        metrics["inference"] = inference
+    return metrics

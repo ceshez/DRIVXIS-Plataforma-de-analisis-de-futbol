@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import colorsys
 from typing import Any
 
 from .common import DEFAULT_TEAM_COLORS_BGR, bbox_iou, bbox_width, bgr_to_hex, build_color_anchors, center_of_bbox, measure_distance
@@ -13,6 +14,8 @@ TEAM_SWITCH_STREAK_FRAMES = 6
 TEAM_LOCK_VOTE_FRAMES = 4
 OCCLUSION_IOU_THRESHOLD = 0.06
 OCCLUSION_MIN_AREA_RATIO = 0.16
+UNKNOWN_TEAM = 0
+UNKNOWN_TEAM_COLOR_BGR = (142, 142, 142)
 
 
 class TeamAssigner:
@@ -174,7 +177,7 @@ class TeamAssigner:
         return center_distance <= close_threshold and vertical_overlap >= 0.42
 
     def collect_samples(self, frame: Any, player_tracks: dict[int, dict[str, Any]], max_samples: int = 180) -> None:
-        if self.color_anchors:
+        if len(self.color_anchors) >= 2:
             return
         for player_id, player in player_tracks.items():
             if player.get("isGoalkeeper") or player.get("role") == "goalkeeper":
@@ -209,6 +212,11 @@ class TeamAssigner:
             second_center_for_home = measure_distance(centers[1], self.color_anchors[1]) + measure_distance(centers[0], self.color_anchors[2])
             if second_center_for_home < first_center_for_home:
                 centers = [centers[1], centers[0]]
+        elif len(self.color_anchors) == 1:
+            anchored_team, anchor = next(iter(self.color_anchors.items()))
+            closest_center = 0 if measure_distance(centers[0], anchor) <= measure_distance(centers[1], anchor) else 1
+            if (anchored_team == 1 and closest_center == 1) or (anchored_team == 2 and closest_center == 0):
+                centers = [centers[1], centers[0]]
         elif 1 in self.team_colors and 2 in self.team_colors:
             keep_order = measure_distance(centers[0], self.team_colors[1]) + measure_distance(centers[1], self.team_colors[2])
             swap_order = measure_distance(centers[1], self.team_colors[1]) + measure_distance(centers[0], self.team_colors[2])
@@ -220,21 +228,46 @@ class TeamAssigner:
 
     def get_player_team_info(self, frame: Any, bbox: list[float], player_id: int) -> dict[str, Any]:
         if player_id in self.contaminated_players:
-            previous_team = self.player_team.get(player_id, self.player_locked_team.get(player_id, 1))
-            return {"team": previous_team, "team_confidence": 0.0, "team_assignment_state": "occluded_keep_previous"}
+            previous_team = self.player_locked_team.get(player_id, self.player_team.get(player_id))
+            if previous_team in (1, 2):
+                return {
+                    "team": previous_team,
+                    "team_confidence": 0.0,
+                    "team_assignment_state": "occluded_keep_previous",
+                }
+            return {
+                "team": UNKNOWN_TEAM,
+                "team_confidence": 0.0,
+                "team_assignment_state": "occluded_unassigned",
+            }
 
         color = self.get_player_color(frame, bbox)
         if color is None:
-            return {"team": self.player_team.get(player_id, 1)}
+            previous_team = self.player_locked_team.get(player_id, self.player_team.get(player_id))
+            return {
+                "team": previous_team if previous_team in (1, 2) else UNKNOWN_TEAM,
+                "team_confidence": 0.0,
+                "team_assignment_state": "color_unavailable",
+            }
 
-        if self.color_anchors:
-            distances = {team_id: color_distance(color, anchor) for team_id, anchor in self.color_anchors.items()}
-            team = min(distances.keys(), key=lambda team_id: distances[team_id])
-        elif self.kmeans is not None and self.team_colors:
-            distances = {team_id: color_distance(color, self.team_colors[team_id]) for team_id in self.team_colors}
+        reference_colors = {
+            team_id: self.color_anchors.get(team_id, self.team_colors.get(team_id))
+            for team_id in (1, 2)
+        }
+        if all(reference_colors[team_id] is not None for team_id in (1, 2)):
+            distances = {
+                team_id: color_distance(color, reference_colors[team_id])
+                for team_id in (1, 2)
+            }
             team = 1 if distances.get(1, float("inf")) <= distances.get(2, float("inf")) else 2
         else:
-            return {"team": self.player_team.get(player_id, 1), "jersey_color": tuple(float(channel) for channel in color[:3])}
+            previous_team = self.player_locked_team.get(player_id, self.player_team.get(player_id))
+            return {
+                "team": previous_team if previous_team in (1, 2) else UNKNOWN_TEAM,
+                "jersey_color": tuple(float(channel) for channel in color[:3]),
+                "team_confidence": 0.0,
+                "team_assignment_state": "awaiting_color_model",
+            }
 
         ordered_distances = sorted(distances.values())
         confidence = 0.0
@@ -299,16 +332,18 @@ class TeamAssigner:
 
     def get_draw_color(self, team: int) -> tuple[int, int, int]:
         if team in self.color_anchors:
-            return tuple(int(channel) for channel in self.color_anchors[team])
+            return marker_color(self.color_anchors[team])
         if team in self.team_colors:
-            return tuple(int(channel) for channel in self.team_colors[team])
-        return DEFAULT_TEAM_COLORS_BGR.get(team, DEFAULT_TEAM_COLORS_BGR[1])
+            return marker_color(self.team_colors[team])
+        if team == UNKNOWN_TEAM:
+            return UNKNOWN_TEAM_COLOR_BGR
+        return marker_color(DEFAULT_TEAM_COLORS_BGR.get(team, DEFAULT_TEAM_COLORS_BGR[1]))
 
     def get_detected_colors(self) -> dict[str, Any]:
         colors: dict[str, Any] = {
-            "confidence": round(float(self.color_confidence if not self.color_anchors else 1.0), 3),
+            "confidence": round(float(1.0 if len(self.color_anchors) >= 2 else self.color_confidence), 3),
             "sampleCount": int(self.sample_count),
-            "tentative": bool(not self.color_anchors and self.color_confidence < 0.45),
+            "tentative": bool(len(self.color_anchors) < 2 and self.color_confidence < 0.45),
         }
         for team in (1, 2):
             color = self.team_colors.get(team)
@@ -342,3 +377,21 @@ def color_distance(first: Any, second: Any) -> float:
         return sum((float(first[index]) - float(second[index])) ** 2 for index in range(3)) ** 0.5
     except (TypeError, ValueError, IndexError):
         return 0.0
+
+
+def marker_color(color: Any) -> tuple[int, int, int]:
+    """Keep the inferred jersey hue while making the annotation visible on grass."""
+    try:
+        blue, green, red = [max(0.0, min(255.0, float(value))) / 255.0 for value in color[:3]]
+    except (TypeError, ValueError, IndexError):
+        return UNKNOWN_TEAM_COLOR_BGR
+
+    hue, saturation, value = colorsys.rgb_to_hsv(red, green, blue)
+    if saturation < 0.12:
+        neutral = 245 if value >= 0.56 else 36
+        return (neutral, neutral, neutral)
+
+    saturation = max(0.72, saturation)
+    value = max(0.92, value)
+    red, green, blue = colorsys.hsv_to_rgb(hue, saturation, value)
+    return (round(blue * 255), round(green * 255), round(red * 255))

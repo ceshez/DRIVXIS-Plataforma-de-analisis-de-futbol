@@ -1,5 +1,7 @@
 ﻿import type { Metadata, Viewport } from "next";
 import { Inter, Orbitron } from "next/font/google";
+import { AppPreferencesProvider } from "@/components/app-preferences-provider";
+import { getServerPreferences } from "@/lib/server-preferences";
 import "./globals.css";
 
 const display = Orbitron({
@@ -51,11 +53,15 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const preferences = await getServerPreferences();
+
   return (
-    <html lang="es" data-scroll-behavior="smooth">
+    <html lang={preferences.locale} data-theme={preferences.theme} data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className={`${display.variable} ${body.variable}`}>
-        {children}
+        <AppPreferencesProvider initialLocale={preferences.locale} initialTheme={preferences.theme}>
+          {children}
+        </AppPreferencesProvider>
       </body>
     </html>
   );

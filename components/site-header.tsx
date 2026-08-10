@@ -4,6 +4,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "@/components/logo";
+import { useAppPreferences } from "@/components/app-preferences-provider";
 
 type NavItem = {
   href: string;
@@ -21,6 +22,8 @@ function replaceStringReducer(_current: string, next: string) {
 }
 
 export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps) {
+  const { locale } = useAppPreferences();
+  const english = locale === "en";
   const pathname = usePathname();
   const [openPathname, setOpenPathname] = useState<string | null>(null);
   const [activeHash, updateActiveHash] = useReducer(replaceStringReducer, navItems[0]?.href ?? "");
@@ -109,7 +112,7 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
       <div className="site-header__bar">
         <Logo href={logoHref} />
 
-        <nav className="site-nav site-nav--primary" aria-label="Navegacion principal">
+        <nav className="site-nav site-nav--primary" aria-label={english ? "Primary navigation" : "Navegación principal"}>
           {navItems.map((item) =>
             item.href.startsWith("/") ? (
               <Link href={item.href} key={item.href} className={getLinkClass(item.href) || undefined}>
@@ -128,7 +131,7 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
           <button
             className={`menu-toggle ${open ? "is-open" : ""}`}
             type="button"
-            aria-label={open ? "Cerrar menu" : "Abrir menu"}
+            aria-label={open ? (english ? "Close menu" : "Cerrar menú") : (english ? "Open menu" : "Abrir menú")}
             aria-expanded={open}
             onClick={toggleMobileMenu}
           >
@@ -143,7 +146,7 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
         key={pathname}
         ref={mobileMenuRef}
         className={`mobile-menu ${open ? "is-open" : ""}`}
-        aria-label="Menu principal"
+        aria-label={english ? "Main menu" : "Menú principal"}
         onCancel={(event) => {
           event.preventDefault();
           closeMobileMenu();
@@ -152,13 +155,13 @@ export function SiteHeader({ navItems, action, logoHref = "/" }: SiteHeaderProps
         <div className="mobile-menu__sheet">
           <div className="mobile-menu__top">
             <Logo href={logoHref} />
-            <button className="menu-toggle is-close" type="button" aria-label="Cerrar menu" onClick={closeMobileMenu}>
+            <button className="menu-toggle is-close" type="button" aria-label={english ? "Close menu" : "Cerrar menú"} onClick={closeMobileMenu}>
               <span />
               <span />
             </button>
           </div>
 
-          <nav className="mobile-menu__nav" aria-label="Navegacion movil">
+          <nav className="mobile-menu__nav" aria-label={english ? "Mobile navigation" : "Navegación móvil"}>
             {navItems.map((item, index) =>
               item.href.startsWith("/") ? (
                 <Link

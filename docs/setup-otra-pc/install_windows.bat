@@ -18,23 +18,14 @@ if not exist .env (
 echo Instalando dependencias Node...
 call npm install || exit /b 1
 
-echo Creando entorno Python .venv-analysis...
-py -3.12 -m venv .venv-analysis || exit /b 1
-
-echo Instalando dependencias Python...
-call .\.venv-analysis\Scripts\python.exe -m pip install --upgrade pip || exit /b 1
-call .\.venv-analysis\Scripts\python.exe -m pip install -r analysis\requirements.txt || exit /b 1
-
 echo Prisma generate + migrate deploy...
 call npx prisma generate || exit /b 1
 call npx prisma migrate deploy || exit /b 1
 
-echo Verificando imports Python...
-call .\.venv-analysis\Scripts\python.exe -c "import cv2, numpy, supervision, sklearn, ultralytics, imageio_ffmpeg; print('python ok')" || exit /b 1
-
 echo Setup completado.
 echo Luego ejecuta:
 echo 1) npm run dev
-echo 2) npm run analysis:worker
+echo 2) Configurar YOLO local en .env y copiar analysis/models/best.onnx
+echo 3) Ejecutar npm run analysis:worker -- --once para validar.
 
 endlocal

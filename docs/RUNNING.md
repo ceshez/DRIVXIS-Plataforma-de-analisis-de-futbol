@@ -61,21 +61,46 @@ http://localhost:3000
 
 ## 5. Ejecutar worker de analisis
 
+Para desarrollo local con YOLO, instala `analysis/requirements.txt`, configura `ANALYSIS_DETECTOR=yolo` y ejecuta:
+
 ```bash
 npm run analysis:worker -- --once
 ```
 
-Para analisis real, instalar dependencias Python:
+Con `ANALYSIS_AUTO_START=true`, cada subida local inicia ese consumidor una vez. En produccion la app web debe usar `ANALYSIS_AUTO_START=false` y el worker separado:
 
 ```bash
-pip install -r analysis/requirements.txt
+cp deploy/analysis-worker.env.example deploy/analysis-worker.env
+# Completar DATABASE_URL, R2 y la fuente del modelo en deploy/analysis-worker.env.
+docker compose --env-file deploy/analysis-worker.env -f compose.analysis-worker.yml up -d --build
+docker compose --env-file deploy/analysis-worker.env -f compose.analysis-worker.yml logs -f worker
 ```
 
-Colocar modelo YOLO en:
+El modelo ONNX se descarga desde `models/best.onnx` a un volumen persistente. El contenedor no publica puertos y puede ejecutarse en CPU; una GPU compatible con ONNX Runtime reduce sustancialmente el tiempo.
 
-```txt
-analysis/models/best.pt
+Para evaluar LocateAnything en un host Linux/H100:
+
+```bash
+cp deploy/analysis-gpu.env.example deploy/analysis-gpu.env
+# Completar DATABASE_URL, R2 y HF_TOKEN en deploy/analysis-gpu.env.
+docker compose --env-file deploy/analysis-gpu.env -f compose.analysis-gpu.yml up -d --build
+docker compose --env-file deploy/analysis-gpu.env -f compose.analysis-gpu.yml logs -f worker-h100
 ```
+
+El compose GPU reserva una GPU, exige que CUDA exponga una `H100` y conserva el checkpoint en `drivxis_hf_cache`.
+
+Antes de consumir la cola, `scripts/start-analysis-worker.sh` valida CUDA/BF16/H100 y ejecuta `analysis/cache_model.py`. El snapshot se reutiliza desde el volumen persistente o se descarga una unica vez y queda fijado por estas variables:
+
+```env
+LOCATEANYTHING_MODEL_ID="nvidia/LocateAnything-3B"
+LOCATEANYTHING_REVISION="c32291ca5e996f5a7a485845b4f57a233936bba0"
+```
+
+Antes de reclamar un job, el worker ejecuta `python analysis/check_runtime.py`. Si el entorno no cumple, termina sin cambiar el job de `QUEUED` a `RUNNING`.
+
+Para el archivo de prueba actual (30 s, 1080p, 25 FPS), el pipeline analiza 150 frames a 5 FPS en 38 lotes. En el equipo local Ryzen 7 3700X, ONNX/CPU tardo aproximadamente 2 min 42 s; un partido de 90 minutos escalaria a varias horas, por lo que produccion debe dimensionarse y medirse con un canario.
+
+Consultar `analysis/README.md` para instalacion local y smoke test GPU.
 
 ## 6. Verificacion antes de entregar
 

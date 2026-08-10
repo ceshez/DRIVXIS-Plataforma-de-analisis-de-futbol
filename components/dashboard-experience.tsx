@@ -5,11 +5,13 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { CheckCircle2, Film, History, ScanLine, Upload } from "lucide-react";
 import { AnalysisProcessingPanel } from "@/components/analysis-processing-panel";
+import { useAppPreferences } from "@/components/app-preferences-provider";
 import { type AnalysisMetrics } from "@/lib/analysis-metrics";
 import { AnalysisVideoPlayer } from "@/components/analysis-video-player";
 import { ToastViewport, useAppToasts } from "@/components/app-toast";
 import { MatchColorEditor } from "@/components/match-color-editor";
 import { AnnotationLine, CornerMarks, Crosshair, MicroGrid } from "@/components/micro-graphics";
+import { ReportDownloadButton, type ReportToastOptions } from "@/components/report-download-button";
 import { usePrefersReducedMotion } from "@/components/use-prefers-reduced-motion";
 import { VideoEventSubscription } from "@/components/video-event-subscription";
 import { VideoUploadDropzone, type UploadedVideo } from "@/components/video-upload-dropzone";
@@ -47,6 +49,7 @@ type RecentVideo = {
     status: string;
     progress: number;
     error: string | null;
+    cancelled?: boolean;
   } | null;
 };
 
@@ -137,12 +140,22 @@ const zoneData = [
   { zone: "ATQ", value: 84 },
 ];
 
-const analysisSteps = ["Subida validada", "Cola IA", "Tracking YOLO", "métricas", "Reporte"];
+const videoDateFormatters = {
+  es: new Intl.DateTimeFormat("es-CR", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }),
+  en: new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }),
+};
+
+const analysisStepsByLocale = {
+  es: ["Subida validada", "Cola IA", "Tracking YOLO", "Métricas", "Reporte"],
+  en: ["Upload validated", "AI queue", "YOLO tracking", "Metrics", "Report"],
+} as const;
 
 export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = true }: DashboardExperienceProps) {
+  const { locale } = useAppPreferences();
   const [items, setItems] = useState(() => videos);
   const [activeId, setActiveId] = useState(videos[0]?.id ?? "");
   const [uploadOpen, setUploadOpen] = useState(videos.length === 0);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [storageUsage, setStorageUsage] = useState<StorageUsagePayload | null>(null);
   const { toasts, pushToast, dismissToast } = useAppToasts();
   const selectedVideo = items.find((video) => video.id === activeId) ?? items[0] ?? null;
@@ -150,8 +163,8 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
   const metrics = featured?.latestMetrics ?? null;
   const matchInfo = getVideoMatchInfo(featured);
   const colorAssignment = useMemo(() => resolveTeamColorAssignment(matchInfo, metrics), [matchInfo, metrics]);
-  const ownTeamName = metrics?.match?.ownTeam ?? matchInfo.ownTeam ?? "Equipo 1";
-  const rivalTeamName = metrics?.match?.rivalTeam ?? matchInfo.rivalTeam ?? "Equipo 2";
+  const ownTeamName = metrics?.match?.ownTeam ?? matchInfo.ownTeam ?? (locale === "en" ? "Team 1" : "Equipo 1");
+  const rivalTeamName = metrics?.match?.rivalTeam ?? matchInfo.rivalTeam ?? (locale === "en" ? "Team 2" : "Equipo 2");
   const rawOwnGoals = metrics?.match?.ownGoals ?? 0;
   const rawRivalGoals = metrics?.match?.rivalGoals ?? 0;
   const ownGoals = colorAssignment.isSwapped ? rawRivalGoals : rawOwnGoals;
@@ -219,10 +232,10 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
       formatValue: formatKm,
     },
   ];
-  const bottomStats = buildBottomStats(ownPossession, rivalPossession, ownDistanceKm, rivalDistanceKm);
+  const bottomStats = buildBottomStats(ownPossession, rivalPossession, ownDistanceKm, rivalDistanceKm, locale);
   const radarData = useMemo(
-    () => buildRadar(ownPossession, rivalPossession, ownDistanceKm, rivalDistanceKm),
-    [ownDistanceKm, ownPossession, rivalDistanceKm, rivalPossession],
+    () => buildRadar(ownPossession, rivalPossession, ownDistanceKm, rivalDistanceKm, locale),
+    [locale, ownDistanceKm, ownPossession, rivalDistanceKm, rivalPossession],
   );
   const stepIndex = getStepIndex(featured?.status, featured?.latestJob?.status);
   const activeProgress = getVideoProgress(featured);
@@ -234,6 +247,7 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
   const totalAnalysisLabel = Math.max(totalAnalyses, items.length);
   const showCompletedPanel = Boolean(featured && featured.status === "COMPLETED" && getProcessedVideoUrl(featured));
   const analysisStageState = uploadOpen ? "fresh" : isFeaturedProcessing ? "processing" : showCompletedPanel ? "completed" : "idle";
+  const analysisSteps = analysisStepsByLocale[locale];
 
   useEffect(() => {
     void refreshStorageUsage();
@@ -243,7 +257,7 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
     setItems((current) => [video as RecentVideo, ...current.filter((item) => item.id !== video.id)]);
     setActiveId(video.id);
     setUploadOpen(false);
-    pushToast("Video recibido. Iniciando análisis.", {
+    pushToast(locale === "en" ? "Video received. Starting analysis." : "Video recibido. Iniciando análisis.", {
       dedupeKey: `${video.id}:queued`,
       durationMs: 7000,
       sound: true,
@@ -253,37 +267,34 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
 
   async function refreshVideo(videoId: string) {
     const response = await fetch(`/api/videos/${videoId}`, { method: "GET", cache: "no-store" });
+    if (!response.ok) return;
     const data = (await response.json().catch(() => ({}))) as { video?: RecentVideo };
-    if (!response.ok || !data.video) return;
-    setItems((current) => {
-      const previous = current.find((video) => video.id === data.video!.id);
-      if (previous?.status !== "COMPLETED" && data.video!.status === "COMPLETED") {
-        pushToast("análisis terminado. El video ya está listo para revisarse.", {
-          dedupeKey: `${data.video!.id}:completed`,
-          durationMs: 8500,
-          sound: true,
-        });
-        pushCompletionStorageToast(data.video!, pushToast);
-        void refreshStorageUsage();
-      }
-      return current.map((video) => (video.id === data.video!.id ? data.video! : video));
-    });
+    if (!data.video) return;
+    const previous = items.find((video) => video.id === data.video!.id);
+    if (previous?.status !== "COMPLETED" && data.video.status === "COMPLETED") {
+      pushToast(locale === "en" ? "Analysis complete. The video is ready to review." : "Análisis terminado. El video ya está listo para revisarse.", {
+        dedupeKey: `${data.video.id}:completed`,
+        durationMs: 8500,
+        sound: true,
+      });
+      pushCompletionStorageToast(data.video, pushToast, locale);
+      void refreshStorageUsage();
+    }
+    setItems((current) => current.map((video) => (video.id === data.video!.id ? data.video! : video)));
   }
 
   function receiveVideoEvent(nextVideo: RecentVideo) {
-    setItems((current) => {
-      const previous = current.find((video) => video.id === nextVideo.id);
-      if (previous?.status !== "COMPLETED" && nextVideo.status === "COMPLETED") {
-        pushToast("análisis terminado. El video ya está listo para revisarse.", {
-          dedupeKey: `${nextVideo.id}:completed`,
-          durationMs: 8500,
-          sound: true,
-        });
-        pushCompletionStorageToast(nextVideo, pushToast);
-        void refreshStorageUsage();
-      }
-      return current.map((video) => (video.id === nextVideo.id ? nextVideo : video));
-    });
+    const previous = items.find((video) => video.id === nextVideo.id);
+    if (previous?.status !== "COMPLETED" && nextVideo.status === "COMPLETED") {
+      pushToast(locale === "en" ? "Analysis complete. The video is ready to review." : "Análisis terminado. El video ya está listo para revisarse.", {
+        dedupeKey: `${nextVideo.id}:completed`,
+        durationMs: 8500,
+        sound: true,
+      });
+      pushCompletionStorageToast(nextVideo, pushToast, locale);
+      void refreshStorageUsage();
+    }
+    setItems((current) => current.map((video) => (video.id === nextVideo.id ? nextVideo : video)));
     if (nextVideo.status === "COMPLETED" || nextVideo.status === "FAILED") {
       setActiveId(nextVideo.id);
     }
@@ -303,6 +314,27 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
     setStorageUsage(payload);
   }
 
+  async function cancelAnalysis(videoId: string) {
+    if (cancellingId) return;
+    setCancellingId(videoId);
+    const response = await fetch(`/api/videos/${videoId}/analysis/cancel`, { method: "POST" }).catch(() => null);
+    const data = (await response?.json().catch(() => ({}))) as { video?: RecentVideo; error?: string } | undefined;
+    setCancellingId(null);
+
+    if (!response?.ok || !data?.video) {
+      pushToast(data?.error || (locale === "en" ? "The analysis could not be cancelled." : "No se pudo cancelar el análisis."), { tone: "warning", durationMs: 8000 });
+      return;
+    }
+
+    setItems((current) => current.map((video) => (video.id === data.video!.id ? data.video! : video)));
+    setActiveId(data.video.id);
+    pushToast(locale === "en" ? "Analysis cancelled. The original video was preserved." : "Análisis cancelado. El video original se conserva.", {
+      dedupeKey: `${data.video.id}:cancelled`,
+      durationMs: 8000,
+      sound: true,
+    });
+  }
+
   return (
     <div className="dashboard-lab dashboard-lab--figma">
       {pollingEnabled && pollTarget ? (
@@ -316,36 +348,48 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
       <section className="dashboard-command dashboard-command--hero">
         <MicroGrid />
         <div className="dashboard-command__copy">
-          <AnnotationLine label="módulo de análisis" value="" />
+          <AnnotationLine label={locale === "en" ? "analysis module" : "módulo de análisis"} value="" />
           <h1>
-            Dashboard <span>de análisis</span>
+            Dashboard <span>{locale === "en" ? "analysis" : "de análisis"}</span>
           </h1>
         </div>
         <div className="dashboard-command__status-anchor" aria-live="polite">
           <div className="live-chip dashboard-command__status">
             <span />
-            {featured ? formatStatus(featured.status) : "En espera"}
+            {featured ? getVideoStatusLabel(featured, locale) : locale === "en" ? "Waiting" : "En espera"}
           </div>
         </div>
       </section>
 
-      <section className="analysis-console" aria-label="Consola de análisis">
+      <section className="analysis-console" aria-label={locale === "en" ? "Analysis console" : "Consola de análisis"}>
         <div className="analysis-console__stage" data-analysis-state={analysisStageState}>
           <CornerMarks size={14} opacity={0.45} />
           <div className="video-radar video-radar--upload" data-analysis-state={analysisStageState}>
             {isFeaturedProcessing ? (
               <AnalysisProcessingPanel
-                filename={featured?.originalFilename ?? "Video en análisis"}
+                filename={featured?.originalFilename ?? (locale === "en" ? "Video under analysis" : "Video en análisis")}
                 progress={activeProgress}
-                note="Subir otro video está bloqueado hasta terminar el tracking y la generación del video anotado."
+                note={locale === "en" ? "You can cancel the analysis without deleting the original video." : "Puedes cancelar el análisis sin eliminar el video original."}
+                actionLabel={cancellingId === featured?.id ? (locale === "en" ? "Cancelling..." : "Cancelando...") : (locale === "en" ? "Cancel analysis" : "Cancelar análisis")}
+                onAction={featured && !cancellingId ? () => void cancelAnalysis(featured.id) : undefined}
+                actionDisabled={Boolean(cancellingId)}
               />
-            ) : featured?.status === "FAILED" ? (
+            ) : featured && isVideoFailed(featured) ? (
               <AnalysisProcessingPanel
                 variant="failed"
+                title={featured.latestJob?.cancelled ? (locale === "en" ? "Analysis cancelled" : "Análisis cancelado") : undefined}
                 filename={featured.originalFilename}
-                note={featured.latestJob?.error || "El análisis se interrumpió antes de generar el video anotado."}
-                actionLabel="Reintentar análisis"
+                note={
+                  featured.latestJob?.cancelled
+                    ? (locale === "en" ? "The original video is preserved. You can retry from history." : "El video original se conserva. Puedes reintentar el análisis desde el historial.")
+                    : featured.latestJob?.error || (locale === "en" ? "The analysis stopped before generating the annotated video." : "El análisis se interrumpió antes de generar el video anotado.")
+                }
+                actionLabel={featured.latestJob?.cancelled ? (locale === "en" ? "Analyze another match" : "Analizar otro partido") : (locale === "en" ? "Retry analysis" : "Reintentar análisis")}
                 onAction={() => {
+                  if (featured.latestJob?.cancelled) {
+                    openUploader();
+                    return;
+                  }
                   window.location.href = "/dashboard/videos";
                 }}
               />
@@ -359,20 +403,27 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
                     setItems((current) => current.map((item) => (item.id === video.id ? video : item)));
                   }}
                   onColorToast={(message) => pushToast(message, { durationMs: 7000, sound: true })}
+                  onReportToast={pushToast}
                   stepIndex={stepIndex}
                 />
               ) : (
-                <MissingProcessedOutputPanel video={featured} onUploadAnother={openUploader} />
+                <MissingProcessedOutputPanel video={featured} onReportToast={pushToast} onUploadAnother={openUploader} />
               )
             ) : (
               <VideoUploadDropzone
                 onUploaded={handleUploaded}
                 onNotify={(message, tone = "info") => pushToast(message, { tone, durationMs: 9000 })}
                 disabled={!canUpload}
-                disabledMessage={hasNoRemainingStorage ? "You have reached your storage limit." : `Analizando video... (${activeProgress}%)`}
+                disabledMessage={
+                  hasNoRemainingStorage
+                      ? (locale === "en" ? "You have reached your storage limit." : "Alcanzaste tu límite de almacenamiento.")
+                    : activeProgress === 0
+                      ? (locale === "en" ? "Waiting for worker..." : "Esperando worker...")
+                      : `${locale === "en" ? "Analyzing video" : "Analizando video"}... (${activeProgress}%)`
+                }
                 progress={hasProcessingVideo ? activeProgress : undefined}
-                label={items.length ? "Analizar otro partido" : "Selecciona o arrastra un partido"}
-                description={items.length ? "El resultado anterior queda guardado en historial." : "MP4, MOV, AVI o formatos compatibles con el pipeline."}
+                label={items.length ? (locale === "en" ? "Analyze another match" : "Analizar otro partido") : (locale === "en" ? "Select or drop a match" : "Selecciona o arrastra un partido")}
+                description={items.length ? (locale === "en" ? "The previous result remains saved in history." : "El resultado anterior queda guardado en historial.") : (locale === "en" ? "MP4, MOV, AVI, or formats supported by the pipeline." : "MP4, MOV, AVI o formatos compatibles con el pipeline.")}
               />
             )}
           </div>
@@ -462,6 +513,10 @@ function DashboardInsights({
   hasCompletedMetrics,
   radarData,
 }: DashboardInsightsProps) {
+  const { locale, theme } = useAppPreferences();
+  const chartTextColor = theme === "light" ? "rgba(36,27,23,0.62)" : "rgba(255,255,255,0.34)";
+  const rivalChartColor = theme === "light" ? "rgba(36,27,23,0.36)" : "rgba(255,255,255,0.26)";
+
   return (
     <aside className="match-panel">
       <CornerMarks size={12} opacity={0.35} />
@@ -488,27 +543,27 @@ function DashboardInsights({
       </div>
 
       <div className="player-stat-list">
-        <h2>Métricas del partido</h2>
+        <h2>{locale === "en" ? "Match metrics" : "Métricas del partido"}</h2>
         {matchMetrics.map((metric) => (
           <AnimatedMatchMetric
             key={metric.id}
             animationKey={`${metricAnimationSeed}|player|${metric.id}|${metric.valueTarget.toFixed(3)}|${metric.barTarget.toFixed(3)}|${metric.color ?? "default"}`}
             isLoading={!hasCompletedMetrics}
             metric={metric}
-            statusLabel={featured ? formatStatus(featured.status) : "sin video"}
+            statusLabel={featured ? getVideoStatusLabel(featured, locale) : locale === "en" ? "no video" : "sin video"}
           />
         ))}
       </div>
 
       <div className="radar-card">
-        <h2>Rendimiento global</h2>
+        <h2>{locale === "en" ? "Overall performance" : "Rendimiento global"}</h2>
         <ResponsiveContainer width="100%" height={170}>
           <RadarChart data={radarData}>
-            <PolarGrid stroke="rgba(255,107,43,0.13)" strokeDasharray="3 3" />
-            <PolarAngleAxis dataKey="subject" tick={{ fill: "rgba(255,255,255,0.34)", fontSize: 8 }} />
+            <PolarGrid stroke={theme === "light" ? "rgba(173,70,27,0.3)" : "rgba(255,107,43,0.16)"} strokeDasharray="3 3" />
+            <PolarAngleAxis dataKey="subject" tick={{ fill: chartTextColor, fontSize: 8 }} />
             <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-            <Radar dataKey="local" stroke="#ff6b2b" strokeWidth={1.6} fill="#ff6b2b" fillOpacity={0.12} />
-            <Radar dataKey="rival" stroke="rgba(255,255,255,0.26)" strokeWidth={1} fill="none" />
+            <Radar dataKey="local" stroke="#ff6b2b" strokeWidth={theme === "light" ? 2.4 : 1.8} fill="#ff6b2b" fillOpacity={theme === "light" ? 0.18 : 0.12} />
+            <Radar dataKey="rival" stroke={rivalChartColor} strokeWidth={theme === "light" ? 1.6 : 1} fill="none" />
             <Tooltip content={<GlobalRadarTooltip />} />
           </RadarChart>
         </ResponsiveContainer>
@@ -526,9 +581,18 @@ function DashboardCharts({
   metricAnimationSeed: string;
   hasCompletedMetrics: boolean;
 }) {
+  const { locale, theme } = useAppPreferences();
+  const chartTextColor = theme === "light" ? "rgba(36,27,23,0.58)" : "rgba(255,255,255,0.28)";
+  const chartAxisColor = theme === "light" ? "rgba(36,27,23,0.44)" : "rgba(255,255,255,0.2)";
+  const chartGridColor = theme === "light" ? "rgba(173,70,27,0.22)" : "rgba(255,107,43,0.1)";
+  const chartAccent = theme === "light" ? "#d94f16" : "#ff6b2b";
+  const tooltipStyle = theme === "light"
+    ? { background: "#ffffff", border: "1px solid rgba(173,70,27,0.34)", color: "#241b17" }
+    : { background: "#0b0b0b", border: "1px solid rgba(255,107,43,0.25)", color: "#f2f0ee" };
+
   return (
     <>
-      <section className="stat-strip" aria-label="métricas del partido">
+      <section className="stat-strip" aria-label={locale === "en" ? "match metrics" : "métricas del partido"}>
         {bottomStats.map((stat, index) => (
           <AnimatedBottomStat
             key={stat.id}
@@ -543,29 +607,46 @@ function DashboardCharts({
       <section className="chart-grid">
         <article className="chart-panel chart-panel--wide">
           <Crosshair className="chart-crosshair" size={15} opacity={0.16} />
-          <h2>Intensidad de detección</h2>
+          <h2>{locale === "en" ? "Detection intensity" : "Intensidad de detección"}</h2>
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={intensityData} margin={{ top: 8, right: 8, bottom: 0, left: -24 }}>
-              <CartesianGrid stroke="rgba(255,107,43,0.08)" strokeDasharray="3 3" />
-              <XAxis dataKey="minute" tick={{ fill: "rgba(255,255,255,0.28)", fontSize: 9 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 9 }} axisLine={false} tickLine={false} />
-              <Tooltip cursor={{ stroke: "rgba(255,107,43,0.2)" }} contentStyle={{ background: "#0b0b0b", border: "1px solid rgba(255,107,43,0.25)", color: "#f2f0ee" }} />
-              <Line type="monotone" dataKey="value" stroke="#ff6b2b" strokeWidth={1.6} dot={{ r: 2.5, fill: "#ff6b2b", strokeWidth: 0 }} />
+              <CartesianGrid stroke={chartGridColor} strokeDasharray="3 3" />
+              <XAxis dataKey="minute" tick={{ fill: chartTextColor, fontSize: 9 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: chartAxisColor, fontSize: 9 }} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{ stroke: "rgba(255,107,43,0.2)" }} contentStyle={tooltipStyle} />
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke={chartAccent}
+                strokeWidth={theme === "light" ? 2.8 : 2}
+                dot={{ r: theme === "light" ? 3.2 : 2.8, fill: chartAccent, stroke: theme === "light" ? "#fff7f1" : "#080808", strokeWidth: 1.2 }}
+              />
             </LineChart>
           </ResponsiveContainer>
         </article>
 
-        <article className="chart-panel">
-          <h2>Control por fase</h2>
+        <article className="chart-panel chart-panel--control">
+          <h2>{locale === "en" ? "Control by phase" : "Control por fase"}</h2>
           <ResponsiveContainer width="100%" height={160}>
             <BarChart data={zoneData} margin={{ top: 8, right: 8, bottom: 0, left: -24 }}>
-              <CartesianGrid stroke="rgba(255,107,43,0.08)" strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="zone" tick={{ fill: "rgba(255,255,255,0.28)", fontSize: 9 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.2)", fontSize: 9 }} axisLine={false} tickLine={false} />
-              <Tooltip cursor={{ fill: "rgba(255,107,43,0.04)" }} contentStyle={{ background: "#0b0b0b", border: "1px solid rgba(255,107,43,0.25)", color: "#f2f0ee" }} />
-              <Bar dataKey="value">
+              <CartesianGrid stroke={chartGridColor} strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="zone" tick={{ fill: chartTextColor, fontSize: 9 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: chartAccent, fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} />
+              <Tooltip cursor={{ fill: "rgba(255,107,43,0.04)" }} contentStyle={tooltipStyle} />
+              <Bar
+                dataKey="value"
+                fill={chartAccent}
+                stroke={theme === "light" ? "#9f3810" : "#ff8c4a"}
+                strokeWidth={theme === "light" ? 1.2 : 0.8}
+                background={{ fill: theme === "light" ? "rgba(217,79,22,0.1)" : "rgba(255,107,43,0.05)", stroke: theme === "light" ? "rgba(173,70,27,0.3)" : "rgba(255,107,43,0.12)", strokeWidth: 1 }}
+              >
                 {zoneData.map((zoneItem, index) => (
-                  <Cell key={zoneItem.zone} fill={`rgba(255,107,43,${0.25 + index * 0.16})`} stroke="#ff6b2b" strokeWidth={0.5} />
+                  <Cell
+                    key={zoneItem.zone}
+                    fill={theme === "light" ? `rgba(217,79,22,${0.62 + index * 0.1})` : `rgba(255,107,43,${0.38 + index * 0.16})`}
+                    stroke={chartAccent}
+                    strokeWidth={theme === "light" ? 1.2 : 0.8}
+                  />
                 ))}
               </Bar>
             </BarChart>
@@ -573,8 +654,8 @@ function DashboardCharts({
         </article>
 
         <article className="chart-panel chart-panel--field">
-          <h2>Mapa del modelo</h2>
-          <svg fill="none" aria-hidden="true" viewBox="0 0 240 130"><defs><radialGradient id="heat-hot" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="rgba(255,146,67,0.9)"/><stop offset="35%" stopColor="rgba(244,223,72,0.78)"/><stop offset="62%" stopColor="rgba(117,241,77,0.58)"/><stop offset="100%" stopColor="rgba(33,110,255,0)"/></radialGradient><filter id="heat-blur"><feGaussianBlur stdDeviation="7"/></filter></defs><path stroke="rgba(255,107,43,0.24)" strokeWidth=".75" d="M2 2h236v126H2z"/><path stroke="rgba(255,255,255,0.25)" strokeWidth=".75" d="M120 2v126"/><circle cx="120" cy="65" r="20" stroke="rgba(255,255,255,0.24)" strokeWidth=".75"/><path stroke="rgba(255,255,255,0.22)" strokeWidth=".75" d="M2 44h38v42H2zm198 0h38v42h-38z"/><g fill="url(#heat-hot)" filter="url(#heat-blur)"><circle cx="55" cy="40" r="24"/><circle cx="80" cy="95" r="30"/><circle cx="105" cy="58" r="20"/><circle cx="140" cy="70" r="22"/><circle cx="165" cy="40" r="18"/><circle cx="186" cy="88" r="16"/></g><path fill="url(#heat-hot)" d="M2 2h236v126H2z" opacity=".08"/></svg>
+          <h2>{locale === "en" ? "Model map" : "Mapa del modelo"}</h2>
+          <svg fill="none" aria-hidden="true" viewBox="0 0 240 130"><defs><radialGradient id="heat-hot" cx="50%" cy="50%" r="50%"><stop offset="0%" stopColor="rgba(255,146,67,0.9)"/><stop offset="35%" stopColor="rgba(244,223,72,0.78)"/><stop offset="62%" stopColor="rgba(117,241,77,0.58)"/><stop offset="100%" stopColor="rgba(33,110,255,0)"/></radialGradient><filter id="heat-blur"><feGaussianBlur stdDeviation="7"/></filter></defs><path stroke="rgba(255,107,43,0.34)" strokeWidth=".75" d="M2 2h236v126H2z"/><path stroke={chartAxisColor} strokeWidth=".75" d="M120 2v126"/><circle cx="120" cy="65" r="20" stroke={chartAxisColor} strokeWidth=".75"/><path stroke={chartAxisColor} strokeWidth=".75" d="M2 44h38v42H2zm198 0h38v42h-38z"/><g fill="url(#heat-hot)" filter="url(#heat-blur)"><circle cx="55" cy="40" r="24"/><circle cx="80" cy="95" r="30"/><circle cx="105" cy="58" r="20"/><circle cx="140" cy="70" r="22"/><circle cx="165" cy="40" r="18"/><circle cx="186" cy="88" r="16"/></g><path fill="url(#heat-hot)" d="M2 2h236v126H2z" opacity=".08"/></svg>
         </article>
       </section>
     </>
@@ -592,30 +673,32 @@ function DashboardRecentVideos({
   totalAnalysisLabel: number;
   onSelect: (videoId: string) => void;
 }) {
+  const { locale } = useAppPreferences();
+
   return (
     <section className="recent-videos lab-panel">
       <div className="panel-heading recent-videos__heading">
         <div>
           <div className="recent-videos__eyebrow">
-            <span>Archivo</span>
+            <span>{locale === "en" ? "Archive" : "Archivo"}</span>
             <span className="recent-videos__eyebrow-line" aria-hidden="true" />
-            <span>Partidos analizados</span>
+            <span>{locale === "en" ? "Analyzed matches" : "Partidos analizados"}</span>
           </div>
           <h2>
-            Historial <em>de videos</em>
+            {locale === "en" ? <>Video <em>history</em></> : <>Historial <em>de videos</em></>}
           </h2>
         </div>
         <Link href="/dashboard/videos" className="text-command">
           <History size={13} />
-          {totalAnalysisLabel} análisis
+          {totalAnalysisLabel} {locale === "en" ? "analyses" : "análisis"}
         </Link>
       </div>
 
       {items.length === 0 ? (
         <div className="empty-state">
           <ScanLine size={24} />
-          <strong>No hay videos registrados todavía.</strong>
-          <span>Sube tu primer partido desde la consola central.</span>
+          <strong>{locale === "en" ? "No videos have been registered yet." : "No hay videos registrados todavía."}</strong>
+          <span>{locale === "en" ? "Upload your first match from the main console." : "Sube tu primer partido desde la consola central."}</span>
         </div>
       ) : (
         <div className="video-list recent-videos__grid">
@@ -632,19 +715,19 @@ function DashboardRecentVideos({
                   <strong className="video-row__title" title={video.originalFilename}>
                     {video.originalFilename}
                   </strong>
-                  <span className="video-row__description" title={formatVideoOpponent(video)}>
-                    {formatVideoOpponent(video)}
+                  <span className="video-row__description" title={formatVideoOpponent(video, locale)}>
+                    {formatVideoOpponent(video, locale)}
                   </span>
                   <span className="video-row__meta-inline">
-                    <span>Fecha de subida: {formatDate(video.createdAt)}</span>
+                    <span>{locale === "en" ? "Uploaded" : "Fecha de subida"}: {formatDate(video.createdAt, locale)}</span>
                   </span>
                   <span className="video-row__meta-inline">
-                    <span>Duración: {getVideoDurationLabel(video)}</span>
+                    <span>{locale === "en" ? "Duration" : "Duración"}: {getVideoDurationLabel(video)}</span>
                   </span>
                 </div>
                 <span className="video-row__status-group">
-                  <span className="video-row__status-label">Estado</span>
-                  <span className={`status-pill ${video.status.toLowerCase()}`}>{formatStatus(video.status)}</span>
+                  <span className="video-row__status-label">{locale === "en" ? "Status" : "Estado"}</span>
+                  <span className={`status-pill ${getVideoStatusClass(video)}`}>{getVideoStatusLabel(video, locale)}</span>
                 </span>
               </button>
             </article>
@@ -810,6 +893,7 @@ function AnalyzedVideoPanel({
   onStreamError,
   onColorSaved,
   onColorToast,
+  onReportToast,
   stepIndex,
 }: {
   video: RecentVideo;
@@ -817,14 +901,18 @@ function AnalyzedVideoPanel({
   onStreamError: (message: string) => void;
   onColorSaved: (video: RecentVideo) => void;
   onColorToast: (message: string) => void;
+  onReportToast: (message: string, options?: ReportToastOptions) => void;
   stepIndex: number;
 }) {
+  const { locale } = useAppPreferences();
   const videoUrl = getProcessedVideoUrl(video) ?? `/api/videos/${video.id}/stream?variant=processed`;
+  const analysisSteps = analysisStepsByLocale[locale];
+
   return (
     <div className="analysis-result-panel">
       <div className="analysis-result-panel__header">
         <div className="analysis-result-panel__header-copy">
-          <span>Resultado listo</span>
+          <span>{locale === "en" ? "Result ready" : "Resultado listo"}</span>
           <strong>{video.originalFilename}</strong>
         </div>
         <div className="analysis-result-panel__header-actions">
@@ -834,9 +922,16 @@ function AnalyzedVideoPanel({
             onSaved={onColorSaved}
             onToast={onColorToast}
           />
+          {video.latestMetrics ? (
+            <ReportDownloadButton
+              videoId={video.id}
+              onToast={onReportToast}
+              className="button ghost command-button analysis-result-panel__header-cta"
+            />
+          ) : null}
           <button className="button primary command-button analysis-result-panel__header-cta" type="button" onClick={onUploadAnother}>
             <Upload size={14} />
-            Analizar otro partido
+            {locale === "en" ? "Analyze another match" : "Analizar otro partido"}
           </button>
         </div>
       </div>
@@ -860,8 +955,17 @@ function AnalyzedVideoPanel({
   );
 }
 
-function MissingProcessedOutputPanel({ video, onUploadAnother }: { video: RecentVideo; onUploadAnother: () => void }) {
-  const warning = getProcessedMissingWarning(video);
+function MissingProcessedOutputPanel({
+  video,
+  onReportToast,
+  onUploadAnother,
+}: {
+  video: RecentVideo;
+  onReportToast: (message: string, options?: ReportToastOptions) => void;
+  onUploadAnother: () => void;
+}) {
+  const { locale } = useAppPreferences();
+  const warning = getProcessedMissingWarning(video, locale);
   return (
     <div className="analysis-result-panel analysis-result-panel--processing">
       <MicroGrid />
@@ -873,22 +977,31 @@ function MissingProcessedOutputPanel({ video, onUploadAnother }: { video: Recent
           <strong>{video.originalFilename}</strong>
           <small>{warning}</small>
         </div>
-        <button className="button ghost command-button" type="button" onClick={onUploadAnother}>
-          <Upload size={14} />
-          Analizar otro partido
-        </button>
+        <div className="analysis-result-panel__header-actions">
+          {video.latestMetrics ? <ReportDownloadButton videoId={video.id} onToast={onReportToast} /> : null}
+          <button className="button ghost command-button" type="button" onClick={onUploadAnother}>
+            <Upload size={14} />
+            {locale === "en" ? "Analyze another match" : "Analizar otro partido"}
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function buildBottomStats(ownPossession: number, rivalPossession: number, ownDistanceKm: number, rivalDistanceKm: number): BottomStatConfig[] {
+function buildBottomStats(
+  ownPossession: number,
+  rivalPossession: number,
+  ownDistanceKm: number,
+  rivalDistanceKm: number,
+  locale: "es" | "en",
+): BottomStatConfig[] {
   const possessionGap = Math.abs(ownPossession - rivalPossession);
   const distanceGap = Math.abs(ownDistanceKm - rivalDistanceKm);
   return [
     {
       id: "strip-own-possession",
-      label: "Posesión Eq. 1",
+      label: locale === "en" ? "Team 1 possession" : "Posesión Eq. 1",
       unit: "%",
       valueTarget: ownPossession,
       barTarget: ownPossession || 0,
@@ -896,7 +1009,7 @@ function buildBottomStats(ownPossession: number, rivalPossession: number, ownDis
     },
     {
       id: "strip-rival-possession",
-      label: "Posesión Eq. 2",
+      label: locale === "en" ? "Team 2 possession" : "Posesión Eq. 2",
       unit: "%",
       valueTarget: rivalPossession,
       barTarget: rivalPossession || 0,
@@ -904,7 +1017,7 @@ function buildBottomStats(ownPossession: number, rivalPossession: number, ownDis
     },
     {
       id: "strip-own-distance",
-      label: "Dist. propio",
+      label: locale === "en" ? "Own distance" : "Dist. propio",
       unit: "km",
       valueTarget: ownDistanceKm,
       barTarget: Math.min(100, ownDistanceKm * 10),
@@ -912,7 +1025,7 @@ function buildBottomStats(ownPossession: number, rivalPossession: number, ownDis
     },
     {
       id: "strip-rival-distance",
-      label: "Dist. rival",
+      label: locale === "en" ? "Opponent distance" : "Dist. rival",
       unit: "km",
       valueTarget: rivalDistanceKm,
       barTarget: Math.min(100, rivalDistanceKm * 10),
@@ -920,7 +1033,7 @@ function buildBottomStats(ownPossession: number, rivalPossession: number, ownDis
     },
     {
       id: "strip-possession-gap",
-      label: "Dif. posesión",
+      label: locale === "en" ? "Possession gap" : "Dif. posesión",
       unit: "pp",
       valueTarget: possessionGap,
       barTarget: Math.min(100, possessionGap),
@@ -928,7 +1041,7 @@ function buildBottomStats(ownPossession: number, rivalPossession: number, ownDis
     },
     {
       id: "strip-distance-gap",
-      label: "Dif. distancia",
+      label: locale === "en" ? "Distance gap" : "Dif. distancia",
       unit: "km",
       valueTarget: distanceGap,
       barTarget: Math.min(100, distanceGap * 10),
@@ -937,8 +1050,19 @@ function buildBottomStats(ownPossession: number, rivalPossession: number, ownDis
   ];
 }
 
-function buildRadar(ownPossession: number, rivalPossession: number, ownDistanceKm: number, rivalDistanceKm: number) {
-  if (!Number.isFinite(ownPossession) || !Number.isFinite(rivalPossession)) return radarFallback;
+function buildRadar(
+  ownPossession: number,
+  rivalPossession: number,
+  ownDistanceKm: number,
+  rivalDistanceKm: number,
+  locale: "es" | "en",
+) {
+  if (!Number.isFinite(ownPossession) || !Number.isFinite(rivalPossession)) {
+    return radarFallback.map((item) => ({
+      ...item,
+      subject: locale === "en" && item.subject === "Distancia" ? "Distance" : item.subject,
+    }));
+  }
   const totalDistance = Math.max(ownDistanceKm + rivalDistanceKm, 1);
   const ownDistanceShare = (ownDistanceKm / totalDistance) * 100;
   const rivalDistanceShare = (rivalDistanceKm / totalDistance) * 100;
@@ -955,21 +1079,21 @@ function buildRadar(ownPossession: number, rivalPossession: number, ownDistanceK
       rivalValue: `${rivalPossession.toFixed(1)}%`,
     },
     {
-      subject: "Distancia",
+      subject: locale === "en" ? "Distance" : "Distancia",
       local: ownDistanceShare,
       rival: rivalDistanceShare,
       localValue: `${formatKm(ownDistanceKm)} km`,
       rivalValue: `${formatKm(rivalDistanceKm)} km`,
     },
     {
-      subject: "Dominio",
+      subject: locale === "en" ? "Dominance" : "Dominio",
       local: ownDominance,
       rival: rivalDominance,
       localValue: `${ownDominance.toFixed(0)}/100`,
       rivalValue: `${rivalDominance.toFixed(0)}/100`,
     },
     {
-      subject: "Ritmo",
+      subject: locale === "en" ? "Tempo" : "Ritmo",
       local: ownTempo,
       rival: rivalTempo,
       localValue: `${ownTempo.toFixed(0)}/100`,
@@ -1018,13 +1142,14 @@ function mapByColorAssignment(ownValue: number, rivalValue: number, isSwapped: b
 }
 
 function GlobalRadarTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ dataKey?: string; payload?: Record<string, unknown> }>; label?: string }) {
+  const { locale } = useAppPreferences();
   if (!active || !payload?.length) return null;
   const data = payload[0]?.payload ?? {};
   return (
     <div className="chart-tooltip">
       <strong>{label}</strong>
-      <span>Equipo propio: {String(data.localValue ?? "-")}</span>
-      <span>Equipo rival: {String(data.rivalValue ?? "-")}</span>
+      <span>{locale === "en" ? "Own team" : "Equipo propio"}: {String(data.localValue ?? "-")}</span>
+      <span>{locale === "en" ? "Opponent" : "Equipo rival"}: {String(data.rivalValue ?? "-")}</span>
     </div>
   );
 }
@@ -1051,6 +1176,30 @@ function isVideoProcessing(video: RecentVideo) {
   );
 }
 
+function isVideoFailed(video: RecentVideo) {
+  return video.status === "FAILED" || video.latestJob?.status === "FAILED";
+}
+
+function getVideoStatusLabel(video: RecentVideo, locale: "es" | "en" = "es") {
+  if (video.latestJob?.cancelled) return locale === "en" ? "Analysis cancelled" : "Análisis cancelado";
+  if (video.latestJob?.status === "QUEUED" && getVideoProgress(video) === 0) {
+    return locale === "en" ? "Waiting for worker" : "Esperando worker";
+  }
+  const labels: Record<string, { es: string; en: string }> = {
+    UPLOADING: { es: "subiendo", en: "uploading" },
+    UPLOADED: { es: "subido", en: "uploaded" },
+    PENDING_ANALYSIS: { es: "análisis pendiente", en: "analysis pending" },
+    PROCESSING: { es: "procesando", en: "processing" },
+    COMPLETED: { es: "completado", en: "completed" },
+    FAILED: { es: "fallido", en: "failed" },
+  };
+  return labels[video.status]?.[locale] ?? formatStatus(video.status);
+}
+
+function getVideoStatusClass(video: RecentVideo) {
+  return video.latestJob?.cancelled ? "failed" : video.status.toLowerCase();
+}
+
 function getProcessedVideoUrl(video: RecentVideo) {
   return video.processedVideoUrl || null;
 }
@@ -1070,12 +1219,12 @@ function getVideoMatchInfo(video: RecentVideo | null): MatchInfo {
   return matchInfo as MatchInfo;
 }
 
-function formatVideoOpponent(video: RecentVideo) {
+function formatVideoOpponent(video: RecentVideo, locale: "es" | "en" = "es") {
   const matchInfo = getVideoMatchInfo(video);
   if (matchInfo.ownTeam || matchInfo.rivalTeam) {
-    return `${matchInfo.ownTeam ?? "Equipo 1"} vs ${matchInfo.rivalTeam ?? "Equipo 2"}`;
+    return `${matchInfo.ownTeam ?? (locale === "en" ? "Team 1" : "Equipo 1")} vs ${matchInfo.rivalTeam ?? (locale === "en" ? "Team 2" : "Equipo 2")}`;
   }
-  return "Datos de partido";
+  return locale === "en" ? "Match data" : "Datos de partido";
 }
 
 function getVideoDurationLabel(video: RecentVideo) {
@@ -1106,14 +1255,18 @@ function getStorageLabels(video: RecentVideo) {
   return labels;
 }
 
-function getProcessedMissingWarning(video: RecentVideo) {
+function getProcessedMissingWarning(video: RecentVideo, locale: "es" | "en" = "es") {
   const metadata = getVideoMetadata(video);
   const warnings = getResilienceWarnings(video);
   const hasProcessedRemote = typeof metadata.processedObjectKey === "string" || typeof metadata.annotatedObjectKey === "string";
   const hasProcessedLocal = typeof metadata.processedLocalPath === "string" || typeof metadata.annotatedLocalPath === "string";
-  if (warnings.includes("PROCESSED_VIDEO_MISSING")) return "Video file missing.";
+  if (warnings.includes("PROCESSED_VIDEO_MISSING")) return locale === "en" ? "Video file missing." : "Falta el archivo de video.";
   if (video.status !== "COMPLETED") return "";
-  return hasProcessedRemote || hasProcessedLocal ? "" : "No se encontró la ubicación del video procesado.";
+  return hasProcessedRemote || hasProcessedLocal
+    ? ""
+    : locale === "en"
+      ? "The processed video location could not be found."
+      : "No se encontró la ubicación del video procesado.";
 }
 
 function getResilienceWarnings(video: RecentVideo) {
@@ -1133,10 +1286,11 @@ function getVideoMetadata(video: RecentVideo) {
 function pushCompletionStorageToast(
   video: RecentVideo,
   pushToast: (message: string, options?: { tone?: "success" | "info" | "warning"; durationMs?: number; dedupeKey?: string; sound?: boolean }) => void,
+  locale: "es" | "en" = "es",
 ) {
   const warning = getProcessedMissingWarning(video);
   if (warning) {
-    pushToast("Análisis finalizado, pero el video no está guardado en la nube.", {
+    pushToast(locale === "en" ? "Analysis complete, but the video is not stored in the cloud." : "Análisis finalizado, pero el video no está guardado en la nube.", {
       tone: "warning",
       dedupeKey: `${video.id}:processed-missing`,
       durationMs: 9000,
@@ -1146,13 +1300,13 @@ function pushCompletionStorageToast(
 
   const labels = getStorageLabels(video);
   if (labels.includes("Processed: R2")) {
-    pushToast("Análisis completado. Video guardado en la nube.", {
+    pushToast(locale === "en" ? "Analysis complete. Video stored in the cloud." : "Análisis completado. Video guardado en la nube.", {
       tone: "success",
       dedupeKey: `${video.id}:processed-r2`,
       durationMs: 9000,
     });
   } else if (labels.includes("Processed: Local")) {
-    pushToast("Análisis completado. Video guardado en el dispositivo.", {
+    pushToast(locale === "en" ? "Analysis complete. Video stored on this device." : "Análisis completado. Video guardado en el dispositivo.", {
       tone: "warning",
       dedupeKey: `${video.id}:processed-local`,
       durationMs: 9000,
@@ -1183,10 +1337,10 @@ function formatStatus(status: string) {
   return status.toLowerCase().replaceAll("_", " ");
 }
 
-function formatDate(value: string) {
+function formatDate(value: string, locale: "es" | "en" = "es") {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Fecha no disponible";
-  return date.toLocaleDateString("es-CR", { day: "2-digit", month: "short", year: "numeric" });
+  if (Number.isNaN(date.getTime())) return locale === "en" ? "Date unavailable" : "Fecha no disponible";
+  return videoDateFormatters[locale].format(date);
 }
 
 function parseStorageBigInt(value: string) {

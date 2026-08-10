@@ -1,7 +1,10 @@
-﻿import Link from "next/link";
-import Image from "next/image";
+"use client";
+
+import Link from "next/link";
 import { ArrowRight, BarChart2, ChevronRight, Cpu, FileVideo, TrendingUp } from "lucide-react";
 import { AnnotationLine, CornerMarks, Crosshair, MicroGrid } from "@/components/micro-graphics";
+import { useAppPreferences } from "@/components/app-preferences-provider";
+import { Logo } from "@/components/logo";
 import { SiteHeader } from "@/components/site-header";
 
 const processSteps = [
@@ -78,6 +81,32 @@ const testimonials = [
   },
 ];
 
+const processStepsEn = [
+  { step: "01", title: "Video upload", text: "Upload standard match footage from a drone, fixed camera, or mobile device.", icon: FileVideo },
+  { step: "02", title: "AI detection", text: "The model identifies players, referees, and the ball frame by frame with sub-pixel precision.", icon: Cpu },
+  { step: "03", title: "Data extraction", text: "It calculates ball control, distance by team, action zones, and defensive pressure.", icon: TrendingUp },
+  { step: "04", title: "Tactical report", text: "It delivers maps, charts, and comparisons ready for coaching and scouting teams.", icon: BarChart2 },
+];
+
+const capabilitiesEn = [
+  { title: "Positional tracking", value: "99.2%", label: "detection accuracy", text: "Tracks every player's exact position and builds continuous trajectories throughout the match." },
+  { title: "Team analysis", value: "2x", label: "team metrics", text: "Aggregated distance, ball control, and stable comparisons between your team and the opponent." },
+  { title: "Tactical intelligence", value: "4-3-3", label: "detected formation", text: "Infers defensive lines, pressing blocks, and attacking transitions without manual tagging." },
+  { title: "Key events", value: "<2s", label: "automatic tagging", text: "Detects goals, shots, key passes, duels, turnovers, and defensive risk situations." },
+];
+
+const techMetricsEn = [
+  { label: "Processing speed", value: 94 },
+  { label: "Detection accuracy", value: 99 },
+  { label: "Metrics per analysis", value: 78 },
+  { label: "Event coverage", value: 87 },
+];
+
+const testimonialsEn = [
+  { quote: "DRIVXIS gave us access to data that previously required a full analysis team. Now we have it in minutes.", name: "Carlos Mendoza", role: "Head coach, Club Atlético Norte" },
+  { quote: "The tactical visualization is precise and clear. We integrated the system into scouting without friction.", name: "Sofía Reyes", role: "Analysis coordinator, Academia Sur FC" },
+];
+
 const tacticalPlayers = [
   { team: "home", label: "DX", left: "18%", top: "50%" },
   { team: "home", label: "DF", left: "31%", top: "31%" },
@@ -103,23 +132,29 @@ const tacticalPlayers = [
 ];
 
 export default function HomePage() {
+  const { locale } = useAppPreferences();
+  const english = locale === "en";
+  const localizedProcessSteps = english ? processStepsEn : processSteps;
+  const localizedCapabilities = english ? capabilitiesEn : capabilities;
+  const localizedTechMetrics = english ? techMetricsEn : techMetrics;
+  const localizedTestimonials = english ? testimonialsEn : testimonials;
   return (
     <main className="site-shell">
       <SiteHeader
         navItems={[
-          { href: "#inicio", label: "Inicio" },
-          { href: "#proceso", label: "Proceso" },
-          { href: "#capacidades", label: "Capacidades" },
-          { href: "#contacto", label: "Contacto" },
+          { href: "#inicio", label: english ? "Home" : "Inicio" },
+          { href: "#proceso", label: english ? "Process" : "Proceso" },
+          { href: "#capacidades", label: english ? "Capabilities" : "Capacidades" },
+          { href: "#contacto", label: english ? "Contact" : "Contacto" },
         ]}
         action={
           <>
             <span className="live-chip live-chip--small">
               <span />
-              En línea
+              {english ? "Online" : "En línea"}
             </span>
             <Link className="button primary" href="/login">
-              Iniciar sesión
+              {english ? "Log in" : "Iniciar sesión"}
             </Link>
           </>
         }
@@ -141,18 +176,19 @@ export default function HomePage() {
           <h1>
             DRI<span>V</span>XIS
           </h1>
-          <p className="hero-kicker">análisis táctico con inteligencia artificial</p>
+          <p className="hero-kicker">{english ? "AI-powered tactical analysis" : "análisis táctico con inteligencia artificial"}</p>
           <p className="hero-lead">
-            Convierte cualquier grabación de partido en datos tácticos y físicos procesables.
-            Diseñado para cuerpos técnicos que trabajan con evidencia.
+            {english
+              ? "Turn any match recording into actionable tactical and physical data. Built for coaching teams that work with evidence."
+              : "Convierte cualquier grabación de partido en datos tácticos y físicos procesables. Diseñado para cuerpos técnicos que trabajan con evidencia."}
           </p>
           <div className="hero-actions">
             <Link className="button primary command-button" href="/register">
-              Comenzar análisis
+              {english ? "Start analysis" : "Comenzar análisis"}
               <ArrowRight size={14} />
             </Link>
             <a className="button ghost command-button" href="#proceso">
-              Ver proceso
+              {english ? "See process" : "Ver proceso"}
               <ChevronRight size={14} />
             </a>
           </div>
@@ -160,17 +196,17 @@ export default function HomePage() {
 
         <div className="scroll-indicator" aria-hidden="true">
           <span />
-          Scroll
+          {english ? "Scroll" : "Desliza"}
         </div>
       </section>
 
-      <section className="metrics-band" aria-label="métricas de plataforma">
+      <section className="metrics-band" aria-label={english ? "Platform metrics" : "Métricas de plataforma"}>
         <MicroGrid />
         {[
-          { value: "40+", label: "métricas por partido" },
-          { value: "99.2%", label: "Precisión de detección" },
-          { value: "<5min", label: "Tiempo de procesamiento" },
-          { value: "24/7", label: "Acceso al sistema" },
+          { value: "40+", label: english ? "metrics per match" : "métricas por partido" },
+          { value: "99.2%", label: english ? "Detection accuracy" : "Precisión de detección" },
+          { value: "<5min", label: english ? "Processing time" : "Tiempo de procesamiento" },
+          { value: "24/7", label: english ? "System access" : "Acceso al sistema" },
         ].map((metric) => (
           <article className="metric-tile" key={metric.label}>
             <strong>{metric.value}</strong>
@@ -182,15 +218,15 @@ export default function HomePage() {
       <section className="section-block" id="proceso">
         <MicroGrid />
         <div className="section-heading">
-          <AnnotationLine label="sección" value="02 / PROCESO" />
+          <AnnotationLine label={english ? "section" : "sección"} value={english ? "02 / PROCESS" : "02 / PROCESO"} />
           <h2>
-            Cómo funciona<span>.</span>
+            {english ? "How it works" : "Cómo funciona"}<span>.</span>
           </h2>
-          <p>Un pipeline automatizado transforma video crudo en inteligencia táctica en menos de cinco minutos.</p>
+          <p>{english ? "An automated pipeline turns raw video into tactical intelligence in under five minutes." : "Un pipeline automatizado transforma video crudo en inteligencia táctica en menos de cinco minutos."}</p>
         </div>
 
         <div className="process-grid">
-          {processSteps.map((step) => {
+          {localizedProcessSteps.map((step) => {
             const Icon = step.icon;
             return (
               <article className="process-card" key={step.step}>
@@ -210,15 +246,15 @@ export default function HomePage() {
         <MicroGrid />
         <div className="section-heading">
           <div>
-            <AnnotationLine label="sección" value="03 / CAPACIDADES" />
+            <AnnotationLine label={english ? "section" : "sección"} value={english ? "03 / CAPABILITIES" : "03 / CAPACIDADES"} />
             <h2>
-              Qué analiza<span>.</span>
+              {english ? "What it analyzes" : "Qué analiza"}<span>.</span>
             </h2>
           </div>
         </div>
 
         <div className="capability-grid">
-          {capabilities.map((capability, index) => (
+          {localizedCapabilities.map((capability, index) => (
             <article className="capability-card" key={capability.title}>
               <CornerMarks size={10} opacity={0.25} />
               <div className="capability-card__top">
@@ -236,9 +272,9 @@ export default function HomePage() {
 
         <div className="tech-panel">
           <CornerMarks size={12} opacity={0.35} />
-          <h3>Indicadores técnicos del sistema</h3>
+          <h3>{english ? "System technical indicators" : "Indicadores técnicos del sistema"}</h3>
           <div className="tech-bars">
-            {techMetrics.map((metric) => (
+            {localizedTechMetrics.map((metric) => (
               <div className="tech-bar" key={metric.label}>
                 <div>
                   <span>{metric.label}</span>
@@ -255,16 +291,17 @@ export default function HomePage() {
 
       <section className="visual-section">
         <div className="visual-copy">
-          <AnnotationLine label="visualización" value="04 / RADAR" />
+          <AnnotationLine label={english ? "visualization" : "visualización"} value="04 / RADAR" />
           <h2>
-            Campo táctico en tiempo real<span>.</span>
+            {english ? "Real-time tactical field" : "Campo táctico en tiempo real"}<span>.</span>
           </h2>
           <p>
-            Cada análisis genera un mapa táctico interactivo: formaciónes, zonas de acción, líneas
-            defensivas y movimientos colectivos por tramo.
+            {english
+              ? "Every analysis generates an interactive tactical map with formations, action zones, defensive lines, and collective movements by match segment."
+              : "Cada análisis genera un mapa táctico interactivo: formaciones, zonas de acción, líneas defensivas y movimientos colectivos por tramo."}
           </p>
           <div className="feature-list">
-            {["Formación automática", "Heatmaps individuales", "Líneas y bloques", "Control territorial"].map((item) => (
+            {(english ? ["Automatic formation", "Individual heatmaps", "Lines and blocks", "Territorial control"] : ["Formación automática", "Heatmaps individuales", "Líneas y bloques", "Control territorial"]).map((item) => (
               <span key={item}>{item}</span>
             ))}
           </div>
@@ -294,7 +331,7 @@ export default function HomePage() {
       </section>
 
       <section className="testimonial-section">
-        {testimonials.map((testimonial) => (
+        {localizedTestimonials.map((testimonial) => (
           <article className="testimonial-card" key={testimonial.name}>
             <p>{testimonial.quote}</p>
             <strong>{testimonial.name}</strong>
@@ -304,23 +341,21 @@ export default function HomePage() {
       </section>
 
       <section className="final-cta" id="contacto">
-        <h2>Empieza a analizar tu próximo partido</h2>
-        <p>Inicia sesión para acceder al módulo de análisis. Sin instalaciones, sin hardware adicional.</p>
+        <h2>{english ? "Start analyzing your next match" : "Empieza a analizar tu próximo partido"}</h2>
+        <p>{english ? "Log in to access the analysis module. No installations or additional hardware." : "Inicia sesión para acceder al módulo de análisis. Sin instalaciones, sin hardware adicional."}</p>
         <Link className="button primary command-button" href="/login">
-          Entrar al sistema
+          {english ? "Enter system" : "Entrar al sistema"}
           <ArrowRight size={14} />
         </Link>
       </section>
 
       <footer className="site-footer">
-        <span className="footer-brand">
-          <Image src="/logos/drivxis-logo-claro.svg" alt="DRIVXIS" width={86} height={21} />
-        </span>
+        <span className="footer-brand"><Logo href="#inicio" /></span>
         <span>2026 / Football intelligence system</span>
         <div>
-          <a href="#inicio">Privacidad</a>
-          <a href="#inicio">Términos</a>
-          <a href="#inicio">Contacto</a>
+          <a href="#inicio">{english ? "Privacy" : "Privacidad"}</a>
+          <a href="#inicio">{english ? "Terms" : "Términos"}</a>
+          <a href="#inicio">{english ? "Contact" : "Contacto"}</a>
         </div>
       </footer>
     </main>

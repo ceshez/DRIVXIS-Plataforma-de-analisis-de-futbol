@@ -166,8 +166,8 @@ def build_pdf(payload: dict) -> bytes:
 
     full_width = PAGE_WIDTH - (margin * 2)
     stat_teams = report.get("statTeams") or {}
-    primary_team = str(stat_teams.get("primary") or "Equipo detectado 1")
-    secondary_team = str(stat_teams.get("secondary") or "Equipo detectado 2")
+    primary_team = str(stat_teams.get("primary") or report.get("ownTeam") or "Equipo 1")
+    secondary_team = str(stat_teams.get("secondary") or report.get("rivalTeam") or "Equipo 2")
     mapping = report.get("teamMapping") or {}
     coverage = report.get("coverage") or {}
 
@@ -176,13 +176,7 @@ def build_pdf(payload: dict) -> bytes:
     pdf.drawString(margin, PAGE_HEIGHT - 111, "REPORTE DE ANÁLISIS")
     pdf.setFillColor(TEXT)
     pdf.setFont(FONT_BOLD, 22)
-    pdf.drawString(margin, PAGE_HEIGHT - 141, truncate(report.get("ownTeam", "Equipo 1"), 26))
-    pdf.setFillColor(MUTED)
-    pdf.setFont(FONT_BOLD, 10)
-    pdf.drawString(margin, PAGE_HEIGHT - 158, "VS")
-    pdf.setFillColor(TEXT)
-    pdf.setFont(FONT_BOLD, 22)
-    pdf.drawString(margin + 24, PAGE_HEIGHT - 158, truncate(report.get("rivalTeam", "Equipo 2"), 26))
+    pdf.drawString(margin, PAGE_HEIGHT - 146, f"{truncate(report.get('ownTeam', 'Equipo 1'), 18)} vs {truncate(report.get('rivalTeam', 'Equipo 2'), 18)}")
     pdf.setFillColor(MUTED)
     pdf.setFont(FONT_REGULAR, 8)
     pdf.drawRightString(PAGE_WIDTH - margin, PAGE_HEIGHT - 114, "GENERADO POR EL MOTOR DE ANÁLISIS")
@@ -197,7 +191,7 @@ def build_pdf(payload: dict) -> bytes:
     pdf.drawString(margin + 12, mapping_y + 21, "ASIGNACIÓN DE EQUIPOS")
     pdf.setFillColor(TEXT)
     pdf.setFont(FONT_REGULAR, 7.4)
-    mapping_status = "Confirmada: las métricas están asociadas a los clubes por sus colores detectados." if mapping.get("confirmed") else "Pendiente: las métricas se muestran por equipo detectado hasta confirmar los colores."
+    mapping_status = "Confirmada: las métricas están asociadas a los clubes por sus colores detectados." if mapping.get("confirmed") else "Revisión sugerida: confirma que el orden de los equipos coincida con el video."
     pdf.drawString(margin + 12, mapping_y + 9, mapping_status)
 
     draw_section_heading(pdf, margin, PAGE_HEIGHT - 234, full_width, "01", "Control y actividad")
@@ -231,10 +225,9 @@ def build_pdf(payload: dict) -> bytes:
     speed_detail = f"Media {format_number(speed.get('avgKmh'))} km/h" if isinstance(speed, dict) else "Calibración insuficiente"
     ball_value = f"{format_number(coverage.get('ballDetectionPct'))}%" if coverage.get("ballDetectionPct") is not None else "Sin dato"
     possession_value = f"{format_number(coverage.get('possessionCoveragePct'))}%" if coverage.get("possessionCoveragePct") is not None else "Sin dato"
-    goalkeeper_detail = f"{coverage.get('goalkeepersDetected', 0) or 0} detectados · {coverage.get('goalkeepersAssigned', 0) or 0} asignados"
     color_detail = f"Colores: {format_number(coverage.get('teamColorConfidencePct'))}% confianza" if coverage.get("teamColorConfidencePct") is not None else "Colores sin dato"
     draw_detail_tile(pdf, margin, PAGE_HEIGHT - 517, tile_width, "Muestra de video", format_duration(report.get("durationSeconds")), f"{coverage.get('frameCount', 0)} fotogramas · {format_number(coverage.get('fps'))} FPS")
-    draw_detail_tile(pdf, margin + tile_width + 8, PAGE_HEIGHT - 517, tile_width, "Jugadores y porteros", f"{report.get('detectedPlayers', 0)} jugadores", goalkeeper_detail)
+    draw_detail_tile(pdf, margin + tile_width + 8, PAGE_HEIGHT - 517, tile_width, "Partido analizado", f"{truncate(primary_team, 16)} vs {truncate(secondary_team, 16)}", "Nombres configurados")
     draw_detail_tile(pdf, margin, PAGE_HEIGHT - 569, tile_width, "Cobertura del balón", ball_value, "Fotogramas con balón detectado")
     draw_detail_tile(pdf, margin + tile_width + 8, PAGE_HEIGHT - 569, tile_width, "Posesión asignada", possession_value, f"{coverage.get('possessionAssignedFrames', 0) or 0} fotogramas asignados")
     draw_detail_tile(pdf, margin, PAGE_HEIGHT - 621, tile_width, "Velocidad", speed_value, speed_detail)

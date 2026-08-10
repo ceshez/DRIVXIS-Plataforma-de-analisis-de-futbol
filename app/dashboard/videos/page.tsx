@@ -1,11 +1,8 @@
 import { DashboardHeader } from "@/components/dashboard-header";
 import { DashboardHeaderUserAction } from "@/components/dashboard-header-user-action";
 import { VideoHistory } from "@/components/video-history";
-import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { serializeVideos } from "@/lib/video-serialization";
-
-const HISTORY_PAGE_SIZE = 25;
+import { DEFAULT_VIDEO_PAGE_SIZE, getVideoListPage, parseVideoListQuery } from "@/lib/video-list";
 
 export default async function VideosPage() {
   const user = await requireUser();
@@ -28,59 +25,15 @@ export default async function VideosPage() {
         }
       />
 
-      <VideoHistory initialNextCursor={videosPage.nextCursor} initialVideos={videosPage.videos} />
+      <VideoHistory initialPagination={videosPage.pagination} initialVideos={videosPage.videos} />
     </main>
   );
 }
 
 async function getVideos(ownerId: string) {
   try {
-    const videos = await prisma.video.findMany({
-      where: { ownerId },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      take: HISTORY_PAGE_SIZE + 1,
-      select: {
-        id: true,
-        originalFilename: true,
-        status: true,
-        sizeBytes: true,
-        durationSeconds: true,
-        metadata: true,
-        createdAt: true,
-        updatedAt: true,
-        objectKey: true,
-        analysisJobs: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: {
-            id: true,
-            status: true,
-            progress: true,
-            error: true,
-            createdAt: true,
-            startedAt: true,
-            endedAt: true,
-          },
-        },
-        metricSnapshots: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-          select: {
-            id: true,
-            jobId: true,
-            metrics: true,
-            createdAt: true,
-          },
-        },
-      },
-    });
-
-    const visibleVideos = videos.slice(0, HISTORY_PAGE_SIZE);
-    return {
-      videos: serializeVideos(visibleVideos),
-      nextCursor: videos.length > HISTORY_PAGE_SIZE ? visibleVideos.at(-1)?.id ?? null : null,
-    };
+    return await getVideoListPage(ownerId, parseVideoListQuery(new URLSearchParams({ limit: String(DEFAULT_VIDEO_PAGE_SIZE) })));
   } catch {
-    return { videos: [], nextCursor: null };
+    return { videos: [], pagination: { page: 1, pageSize: DEFAULT_VIDEO_PAGE_SIZE, totalItems: 0, totalPages: 1 } };
   }
 }

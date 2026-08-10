@@ -1,0 +1,14 @@
+.git
+.github
+.next
+.drivxis
+.venv-analysis
+node_modules
+coverage
+dist
+*.tsbuildinfo
+.env
+.env.*
+analysis/__pycache__
+analysis/**/__pycache__
+analysis/models

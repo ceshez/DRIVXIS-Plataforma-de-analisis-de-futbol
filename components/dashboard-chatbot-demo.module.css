@@ -6,6 +6,90 @@
   overflow: hidden;
 }
 
+:global(html[data-theme="light"]) .shell {
+  color: var(--text);
+}
+
+:global(html[data-theme="light"]) :is(.layout, .workspace) {
+  background: linear-gradient(180deg, #f7f3ee, #eee8e1);
+}
+
+:global(html[data-theme="light"]) :is(.sidebar, .mobileHeader, .desktopHeader, .mobileTopbar, .userDock) {
+  border-color: var(--line-strong);
+  background: rgba(251, 248, 244, 0.98);
+}
+
+:global(html[data-theme="light"]) :is(.brandWordmark, .collapseButton, .backLink, .navItem, .recentRow, .recentMenuButton, .mobileHeader button, .mobileTopbar button) {
+  color: var(--text);
+}
+
+:global(html[data-theme="light"]) :is(.backLink, .mobileHeader button, .recentMenu, .composer, .suggestionChip, .toolButton) {
+  border-color: var(--line-strong);
+  background: #fff;
+  color: var(--text);
+}
+
+:global(html[data-theme="light"]) .messageAssistant {
+  border-color: transparent;
+  background: transparent;
+}
+
+:global(html[data-theme="light"]) :is(
+  .collapseButton,
+  .backLink,
+  .navItem,
+  .recentRow,
+  .recentMenuButton,
+  .mobileHeader button,
+  .mobileTopbar button,
+  .suggestionChip,
+  .toolButton,
+  .assistantPicker
+) svg {
+  color: #241b17;
+  stroke: currentColor;
+}
+
+:global(html[data-theme="light"]) .navItemActive svg {
+  color: #211008;
+}
+
+:global(html[data-theme="light"]) :is(.recentTitle, .recentRow span, .heroSubtitle, .privacyNote, .composerTextarea::placeholder) {
+  color: var(--muted);
+}
+
+:global(html[data-theme="light"]) .composerTextarea::placeholder {
+  color: var(--muted);
+}
+
+:global(html[data-theme="light"]) :is(.heroTitle, .composerTextarea, .assistantPicker strong, .messageAssistant p) {
+  color: var(--text);
+}
+
+:global(html[data-theme="light"]) .recentMenu button {
+  color: var(--text);
+}
+
+:global(html[data-theme="light"]) .navItemActive {
+  background: var(--accent);
+  color: #211008;
+}
+
+:global(html[data-theme="light"]) .messageUser {
+  border-color: rgba(217, 79, 22, 0.45);
+  background: #f8dfd2;
+  color: var(--text);
+}
+
+:global(html[data-theme="light"]) :is(.composerDock, .composerDockInner) {
+  border-color: var(--line);
+  background: linear-gradient(180deg, rgba(247, 243, 238, 0.55), rgba(247, 243, 238, 0.98));
+}
+
+:global(html[data-theme="light"]) .overlay {
+  background: rgba(36, 27, 23, 0.34);
+}
+
 .layout {
   display: grid;
   grid-template-columns: 286px minmax(0, 1fr);
@@ -824,6 +908,10 @@
   line-height: 1.64;
 }
 
+:global(html[data-theme="light"]) .messageAssistant p {
+  color: var(--text);
+}
+
 .messageUser {
   justify-self: end;
   border: 1px solid rgba(255, 107, 43, 0.42);
@@ -1323,5 +1411,3 @@
     padding: 0;
   }
 }
-
-

@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 
 from analysis.pipeline.ball import assign_ball_control, interpolate_ball_positions
+from analysis.pipeline.annotator import draw_player_marker
 from analysis.pipeline.goalkeepers import assign_goalkeeper_teams
 from analysis.pipeline.metrics import build_metrics
 from analysis.pipeline.reid import assign_stable_player_ids
@@ -34,6 +35,22 @@ class AnalysisPipelineTests(unittest.TestCase):
             ]
         )
         assigner.sample_count = 8
+        assigner._fit_team_colors(
+            [
+                np.array([230, 230, 230], dtype=float),
+                np.array([232, 232, 232], dtype=float),
+                np.array([20, 40, 200], dtype=float),
+                np.array([22, 42, 202], dtype=float),
+            ]
+        )
+
+        self.assertLess(np.linalg.norm(assigner.team_colors[1] - np.array([21, 41, 201])), 3)
+        self.assertLess(np.linalg.norm(assigner.team_colors[2] - np.array([231, 231, 231])), 3)
+
+    def test_single_team_color_anchor_orients_both_detected_clusters(self) -> None:
+        assigner = TeamAssigner(DummyKMeans, color_anchors={1: np.array([20, 40, 200], dtype=float)})
+        assigner.sample_count = 4
+
         assigner._fit_team_colors(
             [
                 np.array([230, 230, 230], dtype=float),
@@ -103,6 +120,68 @@ class AnalysisPipelineTests(unittest.TestCase):
         self.assertEqual(assigner.contaminated_players, {1, 17})
         self.assertTrue(frame_players[1]["team_color_contaminated"])
         self.assertNotIn("team_color_contaminated", frame_players[8])
+
+    def test_new_occluded_track_stays_unassigned_instead_of_defaulting_to_team_one(self) -> None:
+        assigner = TeamAssigner(DummyKMeans)
+        assigner.contaminated_players = {77}
+
+        info = assigner.get_player_team_info(np.zeros((24, 24, 3), dtype=np.uint8), [2, 2, 18, 22], 77)
+
+        self.assertEqual(info["team"], 0)
+        self.assertEqual(info["team_assignment_state"], "occluded_unassigned")
+
+    def test_reidentified_fragment_inherits_last_confident_team_color(self) -> None:
+        tracks = {
+            "players": [
+                {
+                    10: {
+                        **player([10, 10, 20, 30], [20, 20], 2),
+                        "team_color": (240, 240, 240),
+                        "team_confidence": 0.91,
+                    }
+                },
+                {},
+                {
+                    81: {
+                        **player([11, 10, 21, 30], [20.2, 20], 0),
+                        "team_color": (128, 128, 128),
+                        "team_confidence": 0.0,
+                        "team_assignment_state": "occluded_unassigned",
+                    }
+                },
+            ],
+            "referees": [{}, {}, {}],
+            "ball": [{}, {}, {}],
+        }
+
+        assign_stable_player_ids(tracks, fps=25, frame_size=(100, 100))
+
+        recovered = next(iter(tracks["players"][2].values()))
+        self.assertEqual(recovered["display_id"], 1)
+        self.assertEqual(recovered["team"], 2)
+        self.assertEqual(recovered["team_color"], (240, 240, 240))
+        self.assertEqual(recovered["team_assignment_state"], "reidentified_team_inherited")
+
+    def test_player_marker_uses_full_high_contrast_team_ring(self) -> None:
+        cv2 = RecordingCv2()
+        canvas = np.zeros((100, 160, 3), dtype=np.uint8)
+
+        draw_player_marker(cv2, canvas, [40, 20, 70, 72], (80, 240, 100), track_id=12)
+
+        self.assertGreaterEqual(len(cv2.ellipses), 3)
+        self.assertTrue(all(call[4:6] == (0, 360) for call in cv2.ellipses[:3]))
+        self.assertEqual(cv2.ellipses[0][6], (0, 0, 0))
+        self.assertEqual(cv2.ellipses[-1][6], (80, 240, 100))
+
+    def test_draw_color_keeps_detected_hue_but_increases_marker_contrast(self) -> None:
+        assigner = TeamAssigner(DummyKMeans)
+        detected_green = np.array([148, 242, 178], dtype=float)
+        assigner.team_colors[1] = detected_green
+
+        marker_color = assigner.get_draw_color(1)
+
+        self.assertGreater(max(marker_color) - min(marker_color), max(detected_green) - min(detected_green))
+        self.assertEqual(assigner.get_draw_color(0), (142, 142, 142))
 
     def test_stable_id_mapping_does_not_duplicate_ids_in_same_frame(self) -> None:
         tracks = {
@@ -401,10 +480,21 @@ class AnalysisPipelineTests(unittest.TestCase):
             {"directAssignments": 1, "carriedAssignments": 0, "unknownFrames": 0},
             {"ownTeam": "A", "rivalTeam": "B"},
             {"team1": "#ffffff", "team2": "#000000", "confidence": 0.8, "sampleCount": 20, "tentative": False},
+            {
+                "model": "nvidia/LocateAnything-3B",
+                "revision": "c32291ca5e996f5a7a485845b4f57a233936bba0",
+                "generationMode": "hybrid",
+                "detectionFps": 5,
+                "batchSize": 4,
+                "framesProcessed": 1,
+                "slowRetries": 0,
+                "parseFailures": 0,
+            },
         )
         self.assertEqual(metrics["version"], 1)
         self.assertIn("quality", metrics)
         self.assertEqual(metrics["match"]["detectedTeamColors"]["sampleCount"], 20)
+        self.assertEqual(metrics["inference"]["model"], "nvidia/LocateAnything-3B")
 
 
 def player(bbox: list[float], transformed: list[float], team: int) -> dict:
@@ -439,6 +529,27 @@ class DummyKMeans:
         value = np.asarray(values, dtype=float)[0]
         distances = [np.linalg.norm(value - center) for center in self.cluster_centers_]
         return np.array([int(np.argmin(distances))])
+
+
+class RecordingCv2:
+    LINE_AA = 16
+    FILLED = -1
+    FONT_HERSHEY_SIMPLEX = 0
+
+    def __init__(self) -> None:
+        self.ellipses: list[tuple] = []
+
+    def ellipse(self, _canvas, center, axes, angle, start, end, color, thickness, line_type) -> None:
+        self.ellipses.append((center, axes, angle, thickness, start, end, color, line_type))
+
+    def addWeighted(self, _source, _alpha, _destination, _beta, _gamma, _output) -> None:
+        return None
+
+    def rectangle(self, _canvas, _top_left, _bottom_right, _color, _thickness, *_args) -> None:
+        return None
+
+    def putText(self, _canvas, _text, _origin, _font, _scale, _color, _thickness, _line_type) -> None:
+        return None
 
 
 if __name__ == "__main__":

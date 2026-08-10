@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { MicroGrid } from "@/components/micro-graphics";
+import { useAppPreferences } from "@/components/app-preferences-provider";
 
 type AnalysisProcessingPanelProps = {
   variant?: "processing" | "failed";
@@ -11,6 +12,7 @@ type AnalysisProcessingPanelProps = {
   note: string;
   actionLabel?: string;
   onAction?: () => void;
+  actionDisabled?: boolean;
 };
 
 export function AnalysisProcessingPanel({
@@ -21,8 +23,13 @@ export function AnalysisProcessingPanel({
   note,
   actionLabel,
   onAction,
+  actionDisabled = false,
 }: AnalysisProcessingPanelProps) {
+  const { locale } = useAppPreferences();
+  const english = locale === "en";
   const safeProgress = Math.max(0, Math.min(100, Number.isFinite(progress) ? Math.round(progress) : 0));
+  const isWaitingForWorker = variant === "processing" && safeProgress === 0;
+  const processingLabel = isWaitingForWorker ? (english ? "Waiting for worker..." : "Esperando worker...") : `${english ? "Analyzing video" : "Analizando video"}... (${safeProgress}%)`;
 
   return (
     <div
@@ -37,17 +44,23 @@ export function AnalysisProcessingPanel({
           {variant === "failed" ? <AlertTriangle size={30} /> : <Loader2 className="spin" size={30} aria-hidden="true" />}
         </span>
         <div>
-          <strong>{title ?? (variant === "failed" ? "Analisis fallido" : filename)}</strong>
-          <small>{variant === "failed" ? filename : `Analizando video... (${safeProgress}%)`}</small>
+          <strong>{title ?? (variant === "failed" ? (english ? "Analysis failed" : "Análisis fallido") : filename)}</strong>
+          <small>{variant === "failed" ? filename : processingLabel}</small>
         </div>
         {variant === "processing" ? (
-          <span className="analysis-upload__progress" aria-label={`Progreso ${safeProgress}%`}>
+          <span className="analysis-upload__progress" aria-label={isWaitingForWorker ? (english ? "Waiting for worker" : "Esperando worker") : `${english ? "Progress" : "Progreso"} ${safeProgress}%`}>
             <span style={{ width: `${safeProgress}%` }} />
           </span>
         ) : null}
         <span className="analysis-result-panel__meta">{note}</span>
-        {variant === "failed" && actionLabel && onAction ? (
-          <button className="button ghost command-button analysis-result-panel__action" type="button" onClick={onAction}>
+        {actionLabel ? (
+          <button
+            className="button ghost command-button analysis-result-panel__action"
+            type="button"
+            onClick={onAction}
+            disabled={actionDisabled || !onAction}
+            aria-busy={actionDisabled}
+          >
             {actionLabel}
           </button>
         ) : null}

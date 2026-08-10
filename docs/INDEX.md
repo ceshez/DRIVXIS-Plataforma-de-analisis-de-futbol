@@ -13,7 +13,7 @@ Usa este indice para saber que documento leer antes de pedirle una tarea a Codex
 - `docs/ARCHITECTURE.md` - arquitectura general del sistema.
 - `docs/DATABASE.md` - modelos, relaciones y decisiones de base de datos.
 - `docs/API.md` - endpoints, contratos y flujo de subida/analisis.
-- `docs/ANALYSIS_PIPELINE.md` - worker, YOLO, jobs y metricas.
+- `docs/ANALYSIS_PIPELINE.md` - worker YOLO/LocateAnything, jobs y metricas.
 - `docs/CLOUDFLARE_R2.md` - configuracion de Cloudflare R2 para videos.
 - `docs/RUNNING.md` - como ejecutar el proyecto localmente.
 
@@ -51,7 +51,7 @@ Leer:
 - `docs/CODEX.md`
 - `docs/DATABASE.md`
 
-### Worker, YOLO o analisis de video
+### Worker, YOLO, LocateAnything o analisis de video
 
 Leer:
 

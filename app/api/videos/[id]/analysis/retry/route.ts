@@ -22,6 +22,25 @@ export async function POST(_request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Video no encontrado." }, { status: 404 });
   }
 
+  const activeJob = await prisma.analysisJob.findFirst({
+    where: {
+      videoId: video.id,
+      status: { in: ["QUEUED", "RUNNING"] },
+    },
+    select: { id: true, status: true },
+  });
+
+  if (activeJob) {
+    return NextResponse.json(
+      {
+        error: "El video ya tiene un análisis activo.",
+        code: "ANALYSIS_ALREADY_ACTIVE",
+        jobStatus: activeJob.status,
+      },
+      { status: 409 },
+    );
+  }
+
   const updated = await prisma.video.update({
     where: { id },
     data: {

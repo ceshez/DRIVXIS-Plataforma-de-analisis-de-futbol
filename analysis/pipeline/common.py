@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import math
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,14 +20,6 @@ DEFAULT_TEAM_COLORS_BGR = {
     1: (43, 107, 255),
     2: (235, 235, 235),
 }
-EXPECTED_CLASS_ALIASES = {
-    "player": {"player", "players", "person"},
-    "goalkeeper": {"goalkeeper", "goalie", "keeper", "gk"},
-    "referee": {"referee", "ref", "official"},
-    "ball": {"ball", "football", "soccer_ball", "soccer-ball"},
-}
-
-
 def log(message: str) -> None:
     print(f"[DRIVXIS analysis] {message}", flush=True)
 
@@ -50,7 +41,6 @@ def load_runtime_dependencies() -> dict[str, Any]:
         import numpy as np
         import supervision as sv
         from sklearn.cluster import KMeans
-        from ultralytics import YOLO
     except ModuleNotFoundError as error:
         fail("Missing Python dependency " f"'{error.name}'. Run: pip install -r analysis/requirements.txt")
 
@@ -60,7 +50,6 @@ def load_runtime_dependencies() -> dict[str, Any]:
         "np": np,
         "sv": sv,
         "KMeans": KMeans,
-        "YOLO": YOLO,
     }
 
 
@@ -119,49 +108,6 @@ def detection_arrays(detections: Any) -> tuple[Any, Any, Any]:
     class_id = getattr(detections, "class_id", [])
     tracker_id = getattr(detections, "tracker_id", None)
     return xyxy, class_id, tracker_id
-
-
-def normalize_class_name(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", name.strip().lower()).strip("_")
-
-
-def iter_model_classes(class_names: Any) -> list[tuple[int, str]]:
-    if isinstance(class_names, dict):
-        return [(int(class_id), str(name)) for class_id, name in class_names.items()]
-    if isinstance(class_names, (list, tuple)):
-        return [(class_id, str(name)) for class_id, name in enumerate(class_names)]
-    fail("The YOLO model did not expose readable class names.")
-
-
-def canonical_class_name(name: str) -> str | None:
-    normalized = normalize_class_name(name)
-    for canonical, aliases in EXPECTED_CLASS_ALIASES.items():
-        if normalized in aliases:
-            return canonical
-    return None
-
-
-def build_class_mapping(class_names: Any) -> tuple[dict[int, str], dict[str, int]]:
-    mapped_names: dict[int, str] = {}
-    class_ids_by_name: dict[str, int] = {}
-
-    for class_id, raw_name in iter_model_classes(class_names):
-        canonical = canonical_class_name(raw_name)
-        normalized = normalize_class_name(raw_name)
-        mapped_names[class_id] = canonical or normalized
-        if canonical and canonical not in class_ids_by_name:
-            class_ids_by_name[canonical] = class_id
-
-    missing = [name for name in ("player", "ball") if name not in class_ids_by_name]
-    if missing:
-        available = ", ".join(raw_name for _, raw_name in iter_model_classes(class_names)) or "none"
-        fail(
-            "The YOLO model is missing required classes "
-            f"{missing}. Available classes: {available}. "
-            "Expected aliases include player/person and ball/football."
-        )
-
-    return mapped_names, class_ids_by_name
 
 
 def format_detection_counts(counts: dict[str, int]) -> str:

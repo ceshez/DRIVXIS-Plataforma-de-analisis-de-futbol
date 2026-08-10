@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import { Bot } from "lucide-react";
+import { useAppPreferences } from "@/components/app-preferences-provider";
 import { UserProfileMenu } from "@/components/user-profile-menu";
 
 type DashboardHeaderUserActionProps = {
@@ -21,12 +24,17 @@ export function DashboardHeaderUserAction({
   showProfileMenu = true,
   profileMenuDirection = "down",
 }: DashboardHeaderUserActionProps) {
+  const { locale, t } = useAppPreferences();
   return (
     <div className="dashboard-header-action">
       {showChatbotShortcut ? (
-        <Link className="dashboard-chatbot-link" href="/dashboard/chatbot" aria-label="Abrir chatbot">
+        <Link
+          className="dashboard-chatbot-link"
+          href="/dashboard/chatbot"
+          aria-label={locale === "en" ? "Open chatbot" : "Abrir chatbot"}
+        >
           <Bot size={14} />
-          <span>Chatbot</span>
+          <span>{t("chatbot")}</span>
         </Link>
       ) : null}
       {showProfileMenu ? (
