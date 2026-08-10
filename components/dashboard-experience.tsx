@@ -150,6 +150,12 @@ const analysisStepsByLocale = {
   en: ["Upload validated", "AI queue", "YOLO tracking", "Metrics", "Report"],
 } as const;
 
+async function fetchStorageUsage(): Promise<StorageUsagePayload | null> {
+  const response = await fetch("/api/storage/usage", { cache: "no-store" }).catch(() => null);
+  if (!response?.ok) return null;
+  return (await response.json().catch(() => null)) as StorageUsagePayload | null;
+}
+
 export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = true }: DashboardExperienceProps) {
   const { locale } = useAppPreferences();
   const [items, setItems] = useState(() => videos);
@@ -249,10 +255,6 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
   const analysisStageState = uploadOpen ? "fresh" : isFeaturedProcessing ? "processing" : showCompletedPanel ? "completed" : "idle";
   const analysisSteps = analysisStepsByLocale[locale];
 
-  useEffect(() => {
-    void refreshStorageUsage();
-  }, []);
-
   function handleUploaded(video: UploadedVideo) {
     setItems((current) => [video as RecentVideo, ...current.filter((item) => item.id !== video.id)]);
     setActiveId(video.id);
@@ -307,9 +309,7 @@ export function DashboardExperience({ videos, totalAnalyses, pollingEnabled = tr
   }
 
   async function refreshStorageUsage() {
-    const response = await fetch("/api/storage/usage", { cache: "no-store" }).catch(() => null);
-    if (!response?.ok) return;
-    const payload = (await response.json().catch(() => null)) as StorageUsagePayload | null;
+    const payload = await fetchStorageUsage();
     if (!payload) return;
     setStorageUsage(payload);
   }

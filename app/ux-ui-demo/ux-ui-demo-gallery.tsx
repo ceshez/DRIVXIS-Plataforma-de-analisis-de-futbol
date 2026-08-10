@@ -136,7 +136,8 @@ export function UxUiDemoGallery() {
 
   const ToastIcon = toast ? getToastIcon(toast.tone) : null;
 
-  return (
+  function renderGallery() {
+    return (
     <main className={styles.page}>
       <MicroGrid />
       <header className={styles.header}>
@@ -202,22 +203,26 @@ export function UxUiDemoGallery() {
           <h2>Decidir el patron correcto</h2>
           <p>La skill prioriza severidad, persistencia y accion requerida antes de elegir un componente.</p>
         </div>
-        <div className={styles.matrix} role="table" aria-label="Matriz de decision UX">
-          <div className={`${styles.matrixRow} ${styles.matrixHeader}`} role="row">
-            <span role="columnheader">Patron</span>
-            <span role="columnheader">Usar cuando</span>
-            <span role="columnheader">Evitar cuando</span>
-            <span role="columnheader">Ejemplo</span>
-          </div>
+        <table className={styles.matrix} aria-label="Matriz de decision UX">
+          <thead>
+            <tr className={`${styles.matrixRow} ${styles.matrixHeader}`}>
+              <th>Patron</th>
+              <th>Usar cuando</th>
+              <th>Evitar cuando</th>
+              <th>Ejemplo</th>
+            </tr>
+          </thead>
+          <tbody>
           {matrixRows.map((row) => (
-            <div className={styles.matrixRow} role="row" key={row.pattern}>
-              <strong role="cell">{row.pattern}</strong>
-              <span role="cell">{row.use}</span>
-              <span role="cell">{row.avoid}</span>
-              <span role="cell">{row.example}</span>
-            </div>
+            <tr className={styles.matrixRow} key={row.pattern}>
+              <th scope="row">{row.pattern}</th>
+              <td>{row.use}</td>
+              <td>{row.avoid}</td>
+              <td>{row.example}</td>
+            </tr>
           ))}
-        </div>
+          </tbody>
+        </table>
       </section>
 
       <section className={styles.section} id="feedback">
@@ -410,6 +415,7 @@ export function UxUiDemoGallery() {
                 <div className={styles.switchRow}>
                   <span>Modo compacto</span>
                   <button
+                    aria-label={compactMode ? "Desactivar modo compacto" : "Activar modo compacto"}
                     aria-pressed={compactMode}
                     className={compactMode ? styles.switchOn : styles.switchOff}
                     type="button"
@@ -507,14 +513,13 @@ export function UxUiDemoGallery() {
       ) : null}
 
       {modalOpen ? (
-        <div className={styles.modalBackdrop} role="presentation">
-          <section
+        <dialog
+          open
+          className={styles.modalBackdrop}
             aria-labelledby="delete-title"
             aria-describedby="delete-copy"
-            aria-modal="true"
-            className={styles.modal}
-            role="dialog"
-          >
+        >
+          <div className={styles.modal}>
             <button
               ref={modalCloseRef}
               className={styles.modalClose}
@@ -545,9 +550,12 @@ export function UxUiDemoGallery() {
                 Eliminar analisis
               </button>
             </div>
-          </section>
-        </div>
+          </div>
+        </dialog>
       ) : null}
     </main>
-  );
+    );
+  }
+
+  return renderGallery();
 }

@@ -14,6 +14,11 @@ import { VideoEventSubscription } from "@/components/video-event-subscription";
 import { type AnalysisMetrics } from "@/lib/analysis-metrics";
 import { type AppLocale, type UiCopyKey } from "@/lib/preferences";
 
+const HISTORY_DATE_FORMATTERS = {
+  es: new Intl.DateTimeFormat("es-CR", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }),
+  en: new Intl.DateTimeFormat("en-US", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }),
+};
+
 export type HistoryVideo = {
   id: string;
   originalFilename: string;
@@ -262,8 +267,9 @@ export function VideoHistory({ initialPagination, initialVideos }: VideoHistoryP
 
   async function refreshVideo(videoId: string) {
     const response = await fetch(`/api/videos/${videoId}`, { method: "GET", cache: "no-store" });
+    if (!response.ok) return;
     const data = (await response.json().catch(() => ({}))) as { video?: HistoryVideo };
-    if (!response.ok || !data.video) return;
+    if (!data.video) return;
     setVideos((current) => {
       const previous = current.find((video) => video.id === data.video!.id);
       if (previous?.status !== "COMPLETED" && data.video!.status === "COMPLETED") {
@@ -282,9 +288,10 @@ export function VideoHistory({ initialPagination, initialVideos }: VideoHistoryP
     if (!selected) return;
     dispatchUi({ type: "patch", changes: { retrying: true } });
     const response = await fetch(`/api/videos/${selected.id}/analysis/retry`, { method: "POST" });
-    const data = (await response.json().catch(() => ({}))) as { video?: HistoryVideo };
     dispatchUi({ type: "patch", changes: { retrying: false } });
-    if (!response.ok || !data.video) return;
+    if (!response.ok) return;
+    const data = (await response.json().catch(() => ({}))) as { video?: HistoryVideo };
+    if (!data.video) return;
     setVideos((current) => current.map((video) => (video.id === data.video!.id ? data.video! : video)));
     setSelectedId(data.video.id);
     dispatchUi({ type: "patch", changes: { openMenu: null } });
@@ -1196,7 +1203,7 @@ function getVideoProgress(video: HistoryVideo) {
 function formatDate(value: string, locale: AppLocale = "es") {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return locale === "en" ? "Date unavailable" : "Fecha no disponible";
-  return date.toLocaleDateString(locale === "en" ? "en-US" : "es-CR", { day: "2-digit", month: "short", year: "numeric" });
+  return HISTORY_DATE_FORMATTERS[locale === "en" ? "en" : "es"].format(date);
 }
 
 function formatBytes(bytes: number) {

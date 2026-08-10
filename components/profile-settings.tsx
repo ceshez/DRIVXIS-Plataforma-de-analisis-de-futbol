@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Languages, Loader2, LockKeyhole, Moon, Sun, UserRound, XCircle } from "lucide-react";
 import { useAppPreferences } from "@/components/app-preferences-provider";
@@ -22,7 +22,7 @@ export function ProfileSettings(props: ProfileSettingsProps) {
   const [profileBusy, setProfileBusy] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [passwordStep, setPasswordStep] = useState<"password" | "code">("password");
-  const [pendingPassword, setPendingPassword] = useState("");
+  const pendingPassword = useRef("");
   const [profileFeedback, setProfileFeedback] = useState<Feedback>(null);
   const [passwordFeedback, setPasswordFeedback] = useState<Feedback>(null);
   const [preferenceFeedback, setPreferenceFeedback] = useState<Feedback>(null);
@@ -55,7 +55,7 @@ export function ProfileSettings(props: ProfileSettingsProps) {
     setPasswordFeedback(null);
     const form = new FormData(event.currentTarget);
     const english = locale === "en";
-    const newPassword = passwordStep === "password" ? String(form.get("newPassword") || "") : pendingPassword;
+    const newPassword = passwordStep === "password" ? String(form.get("newPassword") || "") : pendingPassword.current;
     if (passwordStep === "password" && newPassword !== String(form.get("confirmPassword") || "")) {
       setPasswordFeedback({ tone: "error", message: english ? "The new passwords do not match." : "Las contraseñas nuevas no coinciden." });
       return;
@@ -78,7 +78,7 @@ export function ProfileSettings(props: ProfileSettingsProps) {
     }
 
     if (passwordStep === "password") {
-      setPendingPassword(newPassword);
+      pendingPassword.current = newPassword;
       setPasswordStep("code");
       setPasswordFeedback({
         tone: "success",
@@ -90,7 +90,7 @@ export function ProfileSettings(props: ProfileSettingsProps) {
     }
 
     event.currentTarget.reset();
-    setPendingPassword("");
+    pendingPassword.current = "";
     setPasswordStep("password");
     setPasswordFeedback({ tone: "success", message: english ? "Password updated and previous sessions invalidated." : "Contraseña actualizada y sesiones anteriores invalidadas." });
   }
@@ -141,7 +141,7 @@ export function ProfileSettings(props: ProfileSettingsProps) {
             )}
             <div className="settings-form__actions">
               {passwordStep === "code" ? (
-                <button className="button ghost" type="button" disabled={passwordBusy} onClick={() => { setPasswordStep("password"); setPendingPassword(""); setPasswordFeedback(null); }}>
+                <button className="button ghost" type="button" disabled={passwordBusy} onClick={() => { setPasswordStep("password"); pendingPassword.current = ""; setPasswordFeedback(null); }}>
                   {locale === "en" ? "Cancel" : "Cancelar"}
                 </button>
               ) : null}

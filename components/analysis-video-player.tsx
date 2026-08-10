@@ -76,23 +76,23 @@ export function AnalysisVideoPlayer({ src, title, className = "", onStreamError 
         headers: { range: "bytes=0-1" },
         cache: "no-store",
       });
-      if (response.ok) {
-        setStreamError({ src, message: fallbackMessage });
-        onStreamError?.(fallbackMessage);
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          code?: string;
+          details?: { remoteError?: string };
+        };
+        const detail = payload.details?.remoteError ? ` (${payload.details.remoteError})` : "";
+        const message = payload.error
+          ? `${payload.error}${payload.code ? ` [${payload.code}]` : ""}${detail}`
+          : `${fallbackMessage}${detail}`;
+        setStreamError({ src, message });
+        onStreamError?.(message);
         return;
       }
 
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: string;
-        code?: string;
-        details?: { remoteError?: string };
-      };
-      const detail = payload.details?.remoteError ? ` (${payload.details.remoteError})` : "";
-      const message = payload.error
-        ? `${payload.error}${payload.code ? ` [${payload.code}]` : ""}${detail}`
-        : `${fallbackMessage}${detail}`;
-      setStreamError({ src, message });
-      onStreamError?.(message);
+      setStreamError({ src, message: fallbackMessage });
+      onStreamError?.(fallbackMessage);
     } catch {
       const networkMessage = english ? "The stream could not be loaded. Check the network, session, or storage configuration." : "No se pudo cargar el stream. Verifica la red, sesión o configuración de almacenamiento.";
       setStreamError({ src, message: networkMessage });

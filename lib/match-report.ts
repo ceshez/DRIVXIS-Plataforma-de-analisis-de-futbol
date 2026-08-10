@@ -230,13 +230,11 @@ function describeAdvantage(metric: string, ownTeam: string, rivalTeam: string, o
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat("es-CR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(
-    Number.isFinite(value) ? value : 0,
-  );
+  return REPORT_NUMBER_FORMATTER.format(Number.isFinite(value) ? value : 0);
 }
 
 function formatDate(value: Date) {
-  return new Intl.DateTimeFormat("es-CR", { dateStyle: "long", timeStyle: "short" }).format(value);
+  return REPORT_DATE_FORMATTER.format(value);
 }
 
 function formatDuration(seconds: number) {
@@ -245,3 +243,5 @@ function formatDuration(seconds: number) {
   const remainingSeconds = totalSeconds % 60;
   return `${minutes} min ${remainingSeconds.toString().padStart(2, "0")} s`;
 }
+const REPORT_NUMBER_FORMATTER = new Intl.NumberFormat("es-CR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+const REPORT_DATE_FORMATTER = new Intl.DateTimeFormat("es-CR", { dateStyle: "long", timeStyle: "short" });

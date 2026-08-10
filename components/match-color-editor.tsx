@@ -69,8 +69,12 @@ function MatchColorEditorContent<TVideo extends VideoWithMatch>({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ matchInfo: nextPair }),
     });
+    if (!response.ok) {
+      setState("error");
+      return;
+    }
     const data = (await response.json().catch(() => ({}))) as { video?: TVideo };
-    if (!response.ok || !data.video) {
+    if (!data.video) {
       setState("error");
       return;
     }

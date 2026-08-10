@@ -1,4 +1,5 @@
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { rm, writeFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { NextResponse } from "next/server";
 import { ensureLocalObjectDirectory, getLocalObjectPath } from "@/lib/local-storage";
@@ -10,6 +11,7 @@ export const runtime = "nodejs";
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const ALLOWED_AVATAR_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const PRIVATE_NO_STORE_HEADERS = { "cache-control": "private, no-store, max-age=0" };
 
 export async function POST(request: Request) {
   const [user, formData] = await Promise.all([requireUser(), request.formData().catch(() => null)]);
@@ -79,9 +81,7 @@ export async function GET() {
   const user = await requireUser();
   const avatarObjectKey = user.avatarObjectKey;
   const avatarMimeType = user.avatarMimeType || "";
-  const headers = {
-    "cache-control": "private, no-store, max-age=0",
-  };
+  const headers = PRIVATE_NO_STORE_HEADERS;
 
   if (!avatarObjectKey) {
     return new Response(buildFallbackAvatarSvg(user.name, user.email), {
@@ -110,8 +110,8 @@ export async function GET() {
 
   try {
     const localPath = getLocalObjectPath(avatarObjectKey);
-    const bytes = await readFile(localPath);
-    return new Response(bytes, {
+    const stream = createReadStream(localPath);
+    return new Response(Readable.toWeb(stream) as BodyInit, {
       headers: {
         ...headers,
         "content-type": avatarMimeType || inferContentTypeFromObjectKey(avatarObjectKey),

@@ -14,7 +14,7 @@ export const runtime = "nodejs";
 
 const MAX_REPORT_PDF_BYTES = 5 * 1024 * 1024;
 
-export async function GET(_request: Request, context: RouteContext) {
+export async function POST(_request: Request, context: RouteContext) {
   const [user, { id }] = await Promise.all([requireUser(), context.params]);
   const video = await prisma.video.findFirst({
     where: { id, ownerId: user.id },

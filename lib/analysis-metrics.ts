@@ -138,14 +138,22 @@ function finiteNumber(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function mapRecords<T>(value: unknown, mapper: (record: Record<string, unknown>) => T): T[] {
+  if (!Array.isArray(value)) return [];
+  const result: T[] = [];
+  for (const item of value) {
+    if (isRecord(item)) result.push(mapper(item));
+  }
+  return result;
+}
+
 export function parseAnalysisMetrics(value: unknown): AnalysisMetrics | null {
   if (!isRecord(value) || value.version !== 1) return null;
   if (!isRecord(value.possession) || !isRecord(value.speed) || !isRecord(value.distance) || !isRecord(value.video)) {
     return null;
   }
 
-  const players = Array.isArray(value.speed.players)
-    ? value.speed.players.filter(isRecord).map((player) => {
+  const players = mapRecords(value.speed.players, (player) => {
         const team: 1 | 2 | null = player.team === 1 ? 1 : player.team === 2 ? 2 : null;
         return {
           id: typeof player.id === "string" || typeof player.id === "number" ? player.id : "sin-id",
@@ -158,8 +166,7 @@ export function parseAnalysisMetrics(value: unknown): AnalysisMetrics | null {
           trusted: typeof player.trusted === "boolean" ? player.trusted : undefined,
           untrustedReason: typeof player.untrustedReason === "string" ? player.untrustedReason : null,
         };
-      })
-    : [];
+  });
 
   const rejectionReasons = isRecord(value.speed.rejectionReasons)
     ? Object.fromEntries(
@@ -167,13 +174,11 @@ export function parseAnalysisMetrics(value: unknown): AnalysisMetrics | null {
       )
     : {};
 
-  const untrustedPlayers = Array.isArray(value.speed.untrustedPlayers)
-    ? value.speed.untrustedPlayers.filter(isRecord).map((player) => ({
+  const untrustedPlayers = mapRecords(value.speed.untrustedPlayers, (player) => ({
         id: typeof player.id === "string" || typeof player.id === "number" ? player.id : "sin-id",
         reason: typeof player.reason === "string" ? player.reason : "low_confidence",
         validSamples: finiteNumber(player.validSamples),
-      }))
-    : [];
+  }));
 
   return {
     version: 1,
@@ -284,15 +289,13 @@ export function parseAnalysisMetrics(value: unknown): AnalysisMetrics | null {
             ? {
                 detected: finiteNumber(value.quality.goalkeepers.detected),
                 assigned: finiteNumber(value.quality.goalkeepers.assigned),
-                items: Array.isArray(value.quality.goalkeepers.items)
-                  ? value.quality.goalkeepers.items.filter(isRecord).map((item) => ({
+                items: mapRecords(value.quality.goalkeepers.items, (item) => ({
                       id: typeof item.id === "string" || typeof item.id === "number" ? item.id : "sin-id",
                       team: item.team === 1 ? 1 : item.team === 2 ? 2 : null,
                       teamConfidence: finiteNumber(item.teamConfidence),
                       reason: typeof item.reason === "string" ? item.reason : undefined,
                       frames: finiteNumber(item.frames),
-                    }))
-                  : [],
+                })),
               }
             : undefined,
           ball: isRecord(value.quality.ball) ? value.quality.ball : undefined,

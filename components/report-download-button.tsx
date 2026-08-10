@@ -38,7 +38,7 @@ export function ReportDownloadButton({
 
     setDownload({ phase: "preparing", bytesPerSecond: 0 });
     try {
-      const response = await fetch(`/api/videos/${videoId}/analysis/report`, { cache: "no-store" });
+      const response = await fetch(`/api/videos/${videoId}/analysis/report`, { method: "POST", cache: "no-store" });
       if (!response.ok) {
         const data = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error || (english ? "The PDF report could not be prepared." : "No se pudo preparar el reporte PDF."));

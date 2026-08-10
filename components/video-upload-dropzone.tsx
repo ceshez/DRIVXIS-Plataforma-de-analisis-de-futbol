@@ -199,6 +199,10 @@ export function VideoUploadDropzone({
         headers: { "content-type": "application/json" },
         body: JSON.stringify(metadata),
       });
+      if (!presignResponse.ok) {
+        const errorPayload = (await presignResponse.json().catch(() => ({}))) as { error?: string; details?: string };
+        throw new Error(errorPayload.details || errorPayload.error || (english ? "The upload could not be prepared." : "No se pudo preparar la carga."));
+      }
       const presign = (await presignResponse.json().catch(() => ({}))) as {
         error?: string;
         details?: string;
@@ -211,7 +215,7 @@ export function VideoUploadDropzone({
         configErrors?: string[];
       };
 
-      if (!presignResponse.ok || !presign.objectKey) {
+      if (!presign.objectKey) {
         throw new Error(presign.details || presign.error || (english ? "The upload could not be prepared." : "No se pudo preparar la carga."));
       }
 
@@ -305,10 +309,11 @@ export function VideoUploadDropzone({
           headers: { "Content-Type": metadata.mimeType },
           body: file,
         });
-        const localUpload = (await localUploadResponse.json().catch(() => ({}))) as { error?: string };
         if (!localUploadResponse.ok) {
+          const localUpload = (await localUploadResponse.json().catch(() => ({}))) as { error?: string };
           throw new Error(localUpload.error || (english ? "The local file could not be saved." : "No se pudo guardar el archivo local."));
         }
+        const localUpload = (await localUploadResponse.json().catch(() => ({}))) as { error?: string };
         const localSuccessMessage = english ? "Original video saved locally; it was not uploaded to the cloud." : "Video original guardado localmente. No se subió a la nube.";
         dispatchUploadForm({ type: "patch", changes: { message: localSuccessMessage } });
         onNotify?.(localSuccessMessage, "warning");
@@ -320,8 +325,12 @@ export function VideoUploadDropzone({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ ...metadata, objectKey: presign.objectKey, uploadMode: presign.uploadMode || "local", matchInfo }),
       });
+      if (!createResponse.ok) {
+        const errorPayload = (await createResponse.json().catch(() => ({}))) as { error?: string };
+        throw new Error(errorPayload.error || (english ? "The video could not be registered." : "No se pudo registrar el video."));
+      }
       const created = (await createResponse.json().catch(() => ({}))) as { error?: string; video?: UploadedVideo };
-      if (!createResponse.ok || !created.video) {
+      if (!created.video) {
         throw new Error(created.error || (english ? "The video could not be registered." : "No se pudo registrar el video."));
       }
 

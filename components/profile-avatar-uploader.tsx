@@ -121,15 +121,15 @@ export function ProfileAvatarUploader({ name, email, hasAvatar, avatarVersion }:
         method: "POST",
         body: payload,
       });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as { error?: string };
+        dispatchUpload({ type: "uploadFailed", message: data.error || (english ? "The image could not be uploaded." : "No se pudo subir la imagen.") });
+        return;
+      }
       const data = (await response.json().catch(() => ({}))) as {
         avatar?: { updatedAt?: string };
         error?: string;
       };
-
-      if (!response.ok) {
-        dispatchUpload({ type: "uploadFailed", message: data.error || (english ? "The image could not be uploaded." : "No se pudo subir la imagen.") });
-        return;
-      }
 
       const updatedAt = data.avatar?.updatedAt || String(Date.now());
       if (previewUrl) URL.revokeObjectURL(previewUrl);
