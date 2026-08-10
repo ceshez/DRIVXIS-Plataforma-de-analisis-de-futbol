@@ -2,12 +2,114 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getDetectedColorPair, isAllowedDetectedColorSwap } from "@/lib/detected-color-pair";
+import { ANALYSIS_CANCELLED_BY_USER, isAnalysisCancelled } from "@/lib/analysis-cancellation";
 import { parseAnalysisMetrics } from "@/lib/analysis-metrics";
+import { shouldAutoStartAnalysisWorker } from "@/lib/analysis-worker";
 import { buildMatchReport, createMatchReportData, createMatchReportFilename } from "@/lib/match-report";
 import { pickLocale } from "@/lib/i18n";
+import { normalizeLocale, normalizeTheme, translate } from "@/lib/preferences";
 import { getAnalysisOutputDirectory, getLocalObjectPath, isManagedAnalysisPath, isManagedLocalUploadPath } from "@/lib/local-storage";
 import { createVideoObjectKey } from "@/lib/storage";
-import { createVideoSchema, loginSchema, presignVideoSchema, registerSchema } from "@/lib/validators";
+import {
+  changePasswordSchema,
+  createVideoSchema,
+  forgotPasswordSchema,
+  loginSchema,
+  presignVideoSchema,
+  registerSchema,
+  resetPasswordSchema,
+  updatePreferencesSchema,
+  updateProfileSchema,
+} from "@/lib/validators";
+import { parseVideoListQuery } from "@/lib/video-list";
+import { serializeVideo } from "@/lib/video-serialization";
+import { getVideoEventRetryDelay, isVideoEventTerminal } from "@/lib/video-event-stream";
+import { isTransientUploadError } from "../scripts/analysis-upload-retry.mjs";
+
+describe("analysis worker placement", () => {
+  it("auto-starts local YOLO with opt-in but keeps LocateAnything on Linux GPU workers", () => {
+    expect(shouldAutoStartAnalysisWorker({ autoStart: "true", platform: "win32", detector: "yolo" })).toBe(true);
+    expect(shouldAutoStartAnalysisWorker({ autoStart: "", platform: "linux", detector: "yolo" })).toBe(false);
+    expect(shouldAutoStartAnalysisWorker({ autoStart: "true", platform: "win32", detector: "locateanything" })).toBe(false);
+    expect(shouldAutoStartAnalysisWorker({ autoStart: "true", platform: "linux", detector: "locateanything" })).toBe(true);
+  });
+});
+
+describe("analysis output upload retry", () => {
+  it("retries recoverable TLS record failures from an R2 streaming PUT", () => {
+    expect(
+      isTransientUploadError(
+        new Error(
+          "SSL routines:ssl3_read_bytes:ssl/tls alert bad record mac:openssl/ssl/record/rec_layer_s3.c:918:SSL alert number 20",
+        ),
+      ),
+    ).toBe(true);
+    expect(isTransientUploadError({ code: "ERR_SSL_BAD_RECORD_MAC" })).toBe(true);
+    expect(isTransientUploadError(new Error("SignatureDoesNotMatch"))).toBe(false);
+  });
+});
+
+describe("analysis cancellation", () => {
+  it("serializes user cancellations without changing the persisted status enum", () => {
+    const video = serializeVideo({
+      id: "video_123",
+      originalFilename: "match.mp4",
+      status: "UPLOADED",
+      sizeBytes: 1024n,
+      createdAt: new Date("2026-08-07T00:00:00Z"),
+      analysisJobs: [
+        {
+          id: "job_123",
+          status: "FAILED",
+          progress: 37,
+          error: ANALYSIS_CANCELLED_BY_USER,
+          createdAt: new Date("2026-08-07T00:00:01Z"),
+          endedAt: new Date("2026-08-07T00:00:02Z"),
+        },
+      ],
+    });
+
+    expect(isAnalysisCancelled(ANALYSIS_CANCELLED_BY_USER)).toBe(true);
+    expect(isAnalysisCancelled("CUDA out of memory")).toBe(false);
+    expect(video.latestJob?.cancelled).toBe(true);
+    expect(video.latestJob?.progress).toBe(37);
+  });
+
+  it("stops the Python child and protects cancelled jobs from failure writeback", () => {
+    const worker = readFileSync(join(process.cwd(), "scripts", "analysis-worker.mjs"), "utf8");
+
+    expect(worker).toContain('child.kill("SIGTERM")');
+    expect(worker).toContain('child.kill("SIGKILL")');
+    expect(worker).toContain('where: { id: job.id, status: "RUNNING" }');
+    expect(worker).toContain("error instanceof AnalysisCancelledError");
+  });
+});
+
+describe("video event stream resilience", () => {
+  it("keeps queued jobs open but closes completed or failed jobs", () => {
+    expect(isVideoEventTerminal({ status: "PENDING_ANALYSIS", latestJob: { status: "QUEUED" } })).toBe(false);
+    expect(isVideoEventTerminal({ status: "PROCESSING", latestJob: { status: "RUNNING" } })).toBe(false);
+    expect(isVideoEventTerminal({ status: "UPLOADED", latestJob: { status: "FAILED" } })).toBe(true);
+    expect(isVideoEventTerminal({ status: "COMPLETED", latestJob: null })).toBe(true);
+  });
+
+  it("backs off transient database failures without retrying indefinitely at full speed", () => {
+    expect(getVideoEventRetryDelay(1)).toBe(2_000);
+    expect(getVideoEventRetryDelay(2)).toBe(4_000);
+    expect(getVideoEventRetryDelay(3)).toBe(8_000);
+    expect(getVideoEventRetryDelay(20)).toBe(15_000);
+  });
+
+  it("catches stream read failures and lets EventSource reconnect transport errors", () => {
+    const route = readFileSync(join(process.cwd(), "app", "api", "videos", "[id]", "events", "route.ts"), "utf8");
+    const subscription = readFileSync(join(process.cwd(), "components", "video-event-subscription.tsx"), "utf8");
+
+    expect(route).toContain("consecutiveFailures += 1");
+    expect(route).toContain("VIDEO_EVENT_MAX_CONSECUTIVE_FAILURES");
+    expect(subscription).toContain("eventSource.readyState === EventSource.CLOSED");
+    expect(subscription).toContain('addEventListener("video-error"');
+  });
+});
 
 describe("i18n locale detection", () => {
   it("uses the first browser language as the target locale", () => {
@@ -18,6 +120,52 @@ describe("i18n locale detection", () => {
   it("falls back to Spanish when no browser language exists", () => {
     expect(pickLocale(null)).toBe("es");
     expect(pickLocale("")).toBe("es");
+  });
+});
+
+describe("account preferences", () => {
+  it("limits persisted preferences to supported languages and themes", () => {
+    expect(normalizeLocale("en-US")).toBe("es");
+    expect(normalizeLocale("en")).toBe("en");
+    expect(normalizeTheme("light")).toBe("light");
+    expect(normalizeTheme("system")).toBe("dark");
+    expect(updatePreferencesSchema.safeParse({ locale: "en", theme: "light" }).success).toBe(true);
+    expect(updatePreferencesSchema.safeParse({ locale: "fr" }).success).toBe(false);
+    expect(translate("en", "settings")).toBe("Settings");
+  });
+});
+
+describe("video history query", () => {
+  it("parses search, advanced filters, sorting, and page size", () => {
+    const query = parseVideoListQuery(new URLSearchParams({
+      q: "final",
+      status: "COMPLETED",
+      dateFrom: "2026-01-01",
+      dateTo: "2026-08-09",
+      minSizeMb: "50",
+      maxSizeMb: "500",
+      sort: "name-asc",
+      page: "3",
+      limit: "25",
+    }));
+
+    expect(query).toMatchObject({
+      q: "final",
+      status: "COMPLETED",
+      page: 3,
+      limit: 25,
+      sort: "name-asc",
+      minSizeMb: 50,
+      maxSizeMb: 500,
+    });
+  });
+
+  it("falls back to safe pagination defaults for invalid query values", () => {
+    expect(parseVideoListQuery(new URLSearchParams({ page: "0", limit: "500" }))).toMatchObject({
+      page: 1,
+      limit: 10,
+      sort: "newest",
+    });
   });
 });
 
@@ -109,12 +257,35 @@ describe("request validation", () => {
   it("accepts login credentials shape", () => {
     expect(loginSchema.safeParse({ email: "analyst@club.com", password: "secret" }).success).toBe(true);
   });
+
+  it("validates profile and password recovery requests", () => {
+    expect(updateProfileSchema.safeParse({ name: "Carlos", email: "carlos@club.com" }).success).toBe(true);
+    expect(changePasswordSchema.safeParse({ action: "request", newPassword: "new-password" }).success).toBe(true);
+    expect(changePasswordSchema.safeParse({ action: "confirm", code: "123456", newPassword: "new-password" }).success).toBe(true);
+    expect(forgotPasswordSchema.safeParse({ email: "carlos@club.com" }).success).toBe(true);
+    expect(resetPasswordSchema.safeParse({ email: "carlos@club.com", code: "123456", newPassword: "new-password" }).success).toBe(true);
+    expect(resetPasswordSchema.safeParse({ email: "carlos@club.com", code: "12", newPassword: "short" }).success).toBe(false);
+  });
 });
 
 describe("analysis metrics contract", () => {
   it("parses the v1 model output used by dashboard stats", () => {
     const metrics = parseAnalysisMetrics({
       version: 1,
+      inference: {
+        detector: "yolo",
+        model: "nvidia/LocateAnything-3B",
+        revision: "c32291ca5e996f5a7a485845b4f57a233936bba0",
+        generationMode: "hybrid",
+        format: "onnx",
+        device: "cpu",
+        detectionFps: 5,
+        batchSize: 4,
+        analysisSize: { width: 1920, height: 1080 },
+        framesProcessed: 250,
+        slowRetries: 2,
+        parseFailures: 0,
+      },
       possession: { team1Pct: 57.2, team2Pct: 42.8, unknownPct: 0 },
       ballControl: { ownTeam: 57.2, rivalTeam: 42.8, unknown: 0 },
       speed: {
@@ -150,6 +321,10 @@ describe("analysis metrics contract", () => {
     expect(metrics?.teamDistances?.rivalTeam).toBe(11600);
     expect(metrics?.quality?.goalkeepers?.items?.[0]?.team).toBe(1);
     expect(metrics?.video.annotatedAvailable).toBe(true);
+    expect(metrics?.inference?.model).toBe("nvidia/LocateAnything-3B");
+    expect(metrics?.inference?.detector).toBe("yolo");
+    expect(metrics?.inference?.format).toBe("onnx");
+    expect(metrics?.inference?.analysisSize?.width).toBe(1920);
   });
 
   it("rejects unknown metric versions", () => {
@@ -169,7 +344,7 @@ describe("analysis metrics contract", () => {
 });
 
 describe("match analysis report", () => {
-  it("does not attribute team metrics until the detected colors are confirmed", () => {
+  it("uses match team names in the report even when color confirmation is pending", () => {
     const metrics = parseAnalysisMetrics({
       version: 1,
       match: {
@@ -186,8 +361,9 @@ describe("match analysis report", () => {
     const report = createMatchReportData({ metrics: metrics!, originalFilename: "match.mp4" });
 
     expect(report.teamMapping.confirmed).toBe(false);
-    expect(report.statTeams.primary).toBe("Equipo detectado 1");
-    expect(report.insights.some((insight) => insight.includes("Equipo detectado 1"))).toBe(true);
+    expect(report.statTeams.primary).toBe("Club Azul");
+    expect(report.statTeams.secondary).toBe("Club Rojo");
+    expect(report.insights.some((insight) => insight.includes("Club Azul"))).toBe(true);
   });
 
   it("builds a written report from the completed analysis metrics", () => {
@@ -222,7 +398,7 @@ describe("match analysis report", () => {
 
     expect(report).toContain("Partido: Club Azul vs Club Rojo");
     expect(report).toContain("Club Azul 62,0%");
-    expect(report).toContain("Jugadores detectados: 18");
+    expect(report).not.toContain("Jugadores detectados");
     expect(createMatchReportFilename("Final/jornada 12.mp4", "pdf")).toBe("Final-jornada 12-reporte-de-analisis.pdf");
   });
 });

@@ -1,4 +1,5 @@
 import { isRecord, parseAnalysisMetrics } from "@/lib/analysis-metrics";
+import { isAnalysisCancelled } from "@/lib/analysis-cancellation";
 
 type JobLike = {
   id: string;
@@ -89,6 +90,7 @@ export function serializeVideo(video: VideoLike) {
           status: latestJob.status,
           progress: Number.isFinite(latestJob.progress) ? latestJob.progress : 0,
           error: latestJob.error,
+          cancelled: isAnalysisCancelled(latestJob.error),
           createdAt: toIsoString(latestJob.createdAt) ?? new Date(0).toISOString(),
           startedAt: toIsoString(latestJob.startedAt),
           endedAt: toIsoString(latestJob.endedAt),

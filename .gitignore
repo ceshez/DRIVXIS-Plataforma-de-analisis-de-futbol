@@ -7,8 +7,12 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+__pycache__/
+*.py[cod]
 .agents/skills/
 .drivxis/
+deploy/analysis-gpu.env
+deploy/analysis-worker.env
 analysis/models/*.pt
 analysis/models/*.onnx
 analysis/models/*.engine

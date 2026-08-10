@@ -8,7 +8,7 @@ La version actual incluye:
 - Dashboard protegido.
 - Biblioteca de videos.
 - Subida local o a storage compatible con S3.
-- Cola de analisis conectada a un motor Python basado en YOLO.
+- Cola de analisis con YOLO/ONNX por defecto y NVIDIA LocateAnything-3B opcional para investigacion.
 - Persistencia con PostgreSQL y Prisma.
 
 ## Stack principal
@@ -20,7 +20,7 @@ La version actual incluye:
 - Zod
 - bcryptjs + cookie de sesion firmada
 - Storage S3/R2/MinIO o fallback local
-- Python + YOLO/Ultralytics + OpenCV
+- Python + YOLO/ONNX Runtime + ByteTrack + OpenCV
 - Vitest
 
 ## Ejecutar en local
@@ -45,11 +45,13 @@ Abrir:
 http://localhost:3000
 ```
 
-Para ejecutar el worker:
+En desarrollo local, `.env` puede usar `ANALYSIS_AUTO_START=true` para iniciar un worker YOLO por subida. Tambien puede ejecutarse manualmente:
 
 ```bash
-npm run analysis:worker -- --once
+npm run analysis:worker
 ```
+
+En produccion, la app web conserva `ANALYSIS_AUTO_START=false` y el consumidor se despliega por separado con `compose.analysis-worker.yml`. LocateAnything permanece disponible con `ANALYSIS_DETECTOR=locateanything` y `compose.analysis-gpu.yml`.
 
 ## Documentacion
 

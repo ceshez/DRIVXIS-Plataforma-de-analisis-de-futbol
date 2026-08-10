@@ -11,6 +11,40 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Ingresa tu contraseña."),
 });
 
+const passwordSchema = z.string().min(8, "La contraseña debe tener al menos 8 caracteres.").max(128);
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().email("Ingresa un correo valido.").toLowerCase(),
+});
+
+export const resetPasswordSchema = forgotPasswordSchema.extend({
+  code: z.string().trim().regex(/^\d{6}$/, "Ingresa el codigo de 6 digitos."),
+  newPassword: passwordSchema,
+});
+
+export const updateProfileSchema = z.object({
+  name: z.string().trim().min(2, "El nombre debe tener al menos 2 caracteres.").max(80),
+  email: z.string().trim().email("Ingresa un correo valido.").toLowerCase(),
+});
+
+export const changePasswordSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("request"), newPassword: passwordSchema }),
+  z.object({
+    action: z.literal("confirm"),
+    code: z.string().trim().regex(/^\d{6}$/, "Ingresa el codigo de 6 digitos."),
+    newPassword: passwordSchema,
+  }),
+]);
+
+export const updatePreferencesSchema = z
+  .object({
+    locale: z.enum(["es", "en"]).optional(),
+    theme: z.enum(["dark", "light"]).optional(),
+  })
+  .refine((value) => value.locale !== undefined || value.theme !== undefined, {
+    message: "Selecciona al menos una preferencia.",
+  });
+
 export const presignVideoSchema = z.object({
   filename: z.string().trim().min(1).max(240),
   mimeType: z.string().trim().startsWith("video/"),
@@ -36,22 +70,4 @@ export const updateVideoMatchSchema = z.object({
     ownTeamColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/),
     rivalTeamColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/),
   }),
-});
-
-export const createTeamSchema = z.object({
-  name: z.string().trim().min(2, "El nombre del equipo debe tener al menos 2 caracteres.").max(100),
-  season: z.string().trim().min(2).max(40).optional(),
-});
-
-export const createPlayerSchema = z.object({
-  name: z.string().trim().min(2, "El nombre del jugador debe tener al menos 2 caracteres.").max(100),
-  position: z.string().trim().min(2, "Indica una posición.").max(60),
-  shirtNumber: z.number().int().min(0).max(99).optional(),
-  birthDate: z.string().date().optional(),
-  status: z.enum(["ACTIVE", "INJURED", "INACTIVE"]).default("ACTIVE"),
-});
-
-export const createTeamInvitationSchema = z.object({
-  email: z.string().trim().email("Ingresa un correo válido.").toLowerCase(),
-  role: z.enum(["ADMIN", "ANALYST", "COACH", "VIEWER"]),
 });

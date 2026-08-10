@@ -34,22 +34,27 @@ def draw_player_marker(cv2: Any, canvas: Any, bbox: list[float], color: tuple[in
     x1, _y1, x2, y2 = [int(value) for value in bbox]
     x_center = int((x1 + x2) / 2)
     width = max(18, abs(x2 - x1))
-    axes = (max(12, int(width * 0.55)), max(5, int(width * 0.18)))
+    axes = (max(13, int(width * 0.62)), max(5, int(width * 0.20)))
+    ring_center = (x_center, max(0, min(canvas.shape[0] - 1, y2 - 1)))
     shadow = canvas.copy()
-    cv2.ellipse(shadow, (x_center, y2), axes, 0, -45, 235, (0, 0, 0), 6, cv2.LINE_AA)
-    cv2.addWeighted(shadow, 0.24, canvas, 0.76, 0, canvas)
-    cv2.ellipse(canvas, (x_center, y2), axes, 0, -45, 235, color, 2, cv2.LINE_AA)
+    cv2.ellipse(shadow, ring_center, axes, 0, 0, 360, (0, 0, 0), 8, cv2.LINE_AA)
+    cv2.addWeighted(shadow, 0.32, canvas, 0.68, 0, canvas)
+    cv2.ellipse(canvas, ring_center, axes, 0, 0, 360, (245, 245, 238), 5, cv2.LINE_AA)
+    cv2.ellipse(canvas, ring_center, axes, 0, 0, 360, color, 3, cv2.LINE_AA)
 
     if track_id is None:
         return
 
-    badge_width = max(32, 20 + len(str(track_id)) * 8)
+    canvas_height, canvas_width = canvas.shape[:2]
+    badge_width = max(30, 16 + len(str(track_id)) * 8)
     badge_height = 18
-    x1_badge = int(x_center - badge_width / 2)
-    y1_badge = int(y2 + 8)
-    text_color = (255, 255, 255) if sum(color) < 300 else (0, 0, 0)
-    cv2.rectangle(canvas, (x1_badge, y1_badge), (x1_badge + badge_width, y1_badge + badge_height), color, cv2.FILLED)
-    cv2.putText(canvas, str(track_id), (x1_badge + 8, y1_badge + 13), cv2.FONT_HERSHEY_SIMPLEX, 0.42, text_color, 1, cv2.LINE_AA)
+    x1_badge = max(2, min(canvas_width - badge_width - 2, int(x_center - badge_width / 2)))
+    y1_badge = y2 + axes[1] + 4
+    if y1_badge + badge_height >= canvas_height:
+        y1_badge = max(2, y2 - axes[1] - badge_height - 5)
+    cv2.rectangle(canvas, (x1_badge, y1_badge), (x1_badge + badge_width, y1_badge + badge_height), (8, 8, 8), cv2.FILLED)
+    cv2.rectangle(canvas, (x1_badge, y1_badge), (x1_badge + badge_width, y1_badge + badge_height), color, 2, cv2.LINE_AA)
+    cv2.putText(canvas, str(track_id), (x1_badge + 7, y1_badge + 13), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (245, 245, 238), 1, cv2.LINE_AA)
 
 
 def draw_player_metrics(cv2: Any, canvas: Any, bbox: list[float], player: dict[str, Any]) -> None:
@@ -191,7 +196,8 @@ def annotate_frame(frame: Any, frame_num: int, tracks: dict[str, list[dict[int, 
     metric_overlay_ids = select_metric_overlay_ids(cv2, canvas, players)
     for player_id, player in players.items():
         team = int(player.get("team", 1))
-        color = tuple(int(channel) for channel in player.get("team_color") or (orange if team == 1 else white))
+        fallback_color = orange if team == 1 else white if team == 2 else gray
+        color = tuple(int(channel) for channel in player.get("team_color") or fallback_color)
         draw_player_marker(cv2, canvas, player["bbox"], color, player_id)
         if player.get("isGoalkeeper") or player.get("role") == "goalkeeper":
             x1, y1, _x2, _y2 = [int(value) for value in player["bbox"]]

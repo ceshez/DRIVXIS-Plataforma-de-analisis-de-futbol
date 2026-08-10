@@ -1,73 +1,52 @@
 # Instalar y probar en otra computadora (Windows)
 
-## 1) Clonar proyecto
+Windows puede ejecutar la aplicacion web y el worker YOLO local.
+
+## 1) Clonar e instalar
+
 ```powershell
 git clone <URL_DEL_REPO>
 cd DRIVXIS-Plataforma-de-analisis-de-futbol
-```
-
-## 2) Configurar variables de entorno
-1. Copia `.env.example` a `.env`
-2. Completa:
-- `DATABASE_URL`
-- `PYTHON_BIN` (recomendado: `.venv-analysis/Scripts/python.exe`)
-- `ANALYSIS_MODEL_PATH` (`analysis/models/best.pt`)
-- `LOCAL_STORAGE_ROOT`
-- `ANALYSIS_STORAGE_ROOT`
-
-## 3) Instalar dependencias Node
-```powershell
 npm install
-```
-
-## 4) Instalar dependencias Python de análisis
-```powershell
-py -3.12 -m venv .venv-analysis
-.\.venv-analysis\Scripts\python.exe -m pip install --upgrade pip
+python -m venv .venv-analysis
 .\.venv-analysis\Scripts\python.exe -m pip install -r analysis\requirements.txt
-```
-
-## 5) Preparar base de datos
-```powershell
 npx prisma migrate deploy
 npx prisma generate
 ```
 
-Si estás en desarrollo nuevo:
-```powershell
-npx prisma migrate dev
+## 2) Configurar `.env`
+
+Completa base de datos, storage y secretos. Para desarrollo local usa:
+
+```env
+PYTHON_BIN=".venv-analysis/Scripts/python.exe"
+ANALYSIS_AUTO_START="true"
+ANALYSIS_DETECTOR="yolo"
+ANALYSIS_MODEL_PATH="analysis/models/best.onnx"
+ANALYSIS_DETECTION_FPS="5"
+ANALYSIS_BATCH_SIZE="4"
+ANALYSIS_MAX_WIDTH="1280"
+YOLO_DEVICE="cpu"
 ```
 
-## 6) Verificación técnica
-```powershell
-.\.venv-analysis\Scripts\python.exe -c "import cv2, numpy, supervision, sklearn, ultralytics, imageio_ffmpeg; print('python ok')"
-npm run typecheck
-npm test
-```
+El modelo no se confirma en Git. Copia/exporta `analysis/models/best.onnx` antes de iniciar el worker.
 
-## 7) Levantar app y worker
-Terminal 1:
+## 3) Probar
+
 ```powershell
+.\.venv-analysis\Scripts\python.exe analysis\check_runtime.py
+npm run analysis:worker -- --once
 npm run dev
 ```
 
-Terminal 2:
-```powershell
-npm run analysis:worker
-```
+Sube un video. Debe mostrar `Esperando worker`, cambiar a `processing` cuando el worker lo reclame y terminar en `completed`.
 
-## 8) Prueba funcional
-1. Abrir `http://localhost:3000`
-2. Subir un video.
-3. Confirmar estados: `pending analysis -> processing -> completed`.
-4. Confirmar que se ve el video procesado.
+## 4) Produccion
 
-## Troubleshooting corto
-1. Si falla OpenCV o YOLO:
-- Reinstalar requirements en `.venv-analysis`.
+Mantener `ANALYSIS_AUTO_START=false` en la web y desplegar `compose.analysis-worker.yml`. El contenedor descarga `models/best.onnx` desde R2 a su volumen persistente.
 
-2. Si worker no arranca:
-- Verificar `PYTHON_BIN` en `.env`.
+## Troubleshooting
 
-3. Si no aparecen videos:
-- Revisar `DATABASE_URL` y migraciones Prisma.
+- Si el preflight falla, revisar `ANALYSIS_MODEL_PATH` y `analysis/requirements.txt`.
+- Si el job queda en cola, comprobar que el worker comparte `DATABASE_URL` con la web.
+- Si falla la descarga, comprobar `ANALYSIS_MODEL_OBJECT_KEY` y las credenciales R2.

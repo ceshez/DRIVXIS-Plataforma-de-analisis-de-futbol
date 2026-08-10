@@ -125,7 +125,6 @@ export function buildMatchReport(options: BuildMatchReportOptions) {
     "---------------",
     `- Posesión/control del balón: ${report.statTeams.primary} ${formatNumber(report.possession.primary)}% · ${report.statTeams.secondary} ${formatNumber(report.possession.secondary)}%.`,
     `- Distancia recorrida: ${report.statTeams.primary} ${formatNumber(report.distanceKm.primary)} km · ${report.statTeams.secondary} ${formatNumber(report.distanceKm.secondary)} km.`,
-    `- Jugadores detectados: ${report.detectedPlayers}.`,
     speedLine,
     "",
     "LECTURA DEL PARTIDO",
@@ -193,9 +192,9 @@ function resolveTeamMapping(matchInfo: MatchInfo, metrics: AnalysisMetrics, ownT
   return {
     confirmed: false,
     swapped: false,
-    primaryLabel: "Equipo detectado 1",
-    secondaryLabel: "Equipo detectado 2",
-    message: "La asociación entre los clubes y los colores detectados aún no está confirmada. Las métricas se muestran por equipo detectado para no atribuir datos al club equivocado.",
+    primaryLabel: ownTeam,
+    secondaryLabel: rivalTeam,
+    message: "La asociación entre los clubes y los colores detectados aún no está confirmada. Revisa que el orden de los equipos coincida con el video antes de usar comparaciones por club.",
   };
 }
 

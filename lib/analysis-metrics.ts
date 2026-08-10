@@ -1,6 +1,22 @@
 export type AnalysisMetrics = {
   version: 1;
   source?: string;
+  inference?: {
+    detector?: string;
+    model: string;
+    revision: string;
+    generationMode: string;
+    format?: string;
+    device?: string;
+    detectionFps: number;
+    batchSize: number;
+    analysisSize?: { width: number; height: number };
+    framesProcessed: number;
+    slowRetries: number;
+    parseFailures: number;
+    invalidBoxes?: number;
+    unknownLabels?: number;
+  };
   match?: {
     ownTeam: string;
     rivalTeam: string;
@@ -162,6 +178,30 @@ export function parseAnalysisMetrics(value: unknown): AnalysisMetrics | null {
   return {
     version: 1,
     source: typeof value.source === "string" ? value.source : undefined,
+    inference: isRecord(value.inference)
+      ? {
+          detector: typeof value.inference.detector === "string" ? value.inference.detector : undefined,
+          model: typeof value.inference.model === "string" ? value.inference.model : "unknown",
+          revision: typeof value.inference.revision === "string" ? value.inference.revision : "unknown",
+          generationMode:
+            typeof value.inference.generationMode === "string" ? value.inference.generationMode : "unknown",
+          format: typeof value.inference.format === "string" ? value.inference.format : undefined,
+          device: typeof value.inference.device === "string" ? value.inference.device : undefined,
+          detectionFps: finiteNumber(value.inference.detectionFps),
+          batchSize: finiteNumber(value.inference.batchSize),
+          analysisSize: isRecord(value.inference.analysisSize)
+            ? {
+                width: finiteNumber(value.inference.analysisSize.width),
+                height: finiteNumber(value.inference.analysisSize.height),
+              }
+            : undefined,
+          framesProcessed: finiteNumber(value.inference.framesProcessed),
+          slowRetries: finiteNumber(value.inference.slowRetries),
+          parseFailures: finiteNumber(value.inference.parseFailures),
+          invalidBoxes: finiteNumber(value.inference.invalidBoxes),
+          unknownLabels: finiteNumber(value.inference.unknownLabels),
+        }
+      : undefined,
     match: isRecord(value.match)
       ? {
           ownTeam: typeof value.match.ownTeam === "string" ? value.match.ownTeam : "Equipo 1",

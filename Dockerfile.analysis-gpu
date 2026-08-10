@@ -1,0 +1,64 @@
+FROM node:22-bookworm-slim AS node-dependencies
+
+WORKDIR /app
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+RUN npm ci --omit=dev && npx prisma generate
+
+
+FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHON_BIN=python \
+    LOCAL_STORAGE_ROOT=/work/uploads \
+    ANALYSIS_STORAGE_ROOT=/work/analysis \
+    ANALYSIS_AUTO_START=false \
+    ANALYSIS_DETECTOR=locateanything \
+    ANALYSIS_REQUIRED_GPU_NAME=H100 \
+    ANALYSIS_CANCEL_POLL_MS=1000 \
+    ANALYSIS_HEARTBEAT_INTERVAL_MS=60000 \
+    ANALYSIS_STALE_JOB_MINUTES=30 \
+    ANALYSIS_MAX_WIDTH=1920 \
+    HF_HOME=/models/huggingface \
+    LOCATEANYTHING_MODEL_ID=nvidia/LocateAnything-3B \
+    LOCATEANYTHING_REVISION=c32291ca5e996f5a7a485845b4f57a233936bba0 \
+    LOCATEANYTHING_DETECTION_FPS=5 \
+    LOCATEANYTHING_BATCH_SIZE=4
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates ffmpeg libglib2.0-0 libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python -c "import sys; assert sys.version_info[:2] == (3, 11), sys.version"
+
+COPY --from=node-dependencies /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-dependencies /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
+WORKDIR /app
+COPY --from=node-dependencies /app/node_modules ./node_modules
+COPY package.json package-lock.json ./
+COPY prisma ./prisma
+COPY scripts ./scripts
+COPY analysis ./analysis
+
+RUN python -m pip install --upgrade pip \
+    && python -m pip install -r analysis/requirements-locateanything.txt \
+    && python -m pip install --no-build-isolation flash-attn==2.8.3
+
+RUN groupadd --gid 10001 drivxis \
+    && useradd --uid 10001 --gid drivxis --create-home drivxis \
+    && mkdir -p /work/uploads /work/analysis /models/huggingface \
+    && chown -R drivxis:drivxis /app /work /models
+
+USER drivxis
+
+VOLUME ["/work", "/models/huggingface"]
+
+HEALTHCHECK --interval=30s --timeout=15s --start-period=10m --retries=3 \
+    CMD test -f /tmp/drivxis-analysis-ready || exit 1
+
+ENTRYPOINT ["bash", "scripts/start-analysis-worker.sh"]

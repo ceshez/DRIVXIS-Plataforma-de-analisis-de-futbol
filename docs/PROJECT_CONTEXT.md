@@ -10,7 +10,7 @@ La version actual incluye:
 - Dashboard protegido.
 - Biblioteca de videos.
 - Subida local o a storage compatible con S3.
-- Cola de analisis conectada a un motor Python basado en YOLO.
+- Cola de analisis con YOLO/ONNX predeterminado y LocateAnything-3B como backend opcional de investigacion.
 - Persistencia en PostgreSQL usando Prisma.
 
 ## Objetivo principal
@@ -38,7 +38,8 @@ Centralizar el flujo completo de analisis de video deportivo:
 - Cookie de sesion firmada con HMAC
 - Storage compatible con S3/R2/MinIO o fallback local
 - Python
-- YOLO/Ultralytics
+- YOLO/Ultralytics/ONNX Runtime (CPU o GPU)
+- NVIDIA LocateAnything-3B/Transformers/CUDA (opcional, no comercial)
 - OpenCV
 - Supervision
 - scikit-learn
@@ -121,8 +122,7 @@ Responsabilidades:
 4. Agregar timeline de eventos.
 5. Agregar mapas de calor.
 6. Agregar reportes PDF/CSV.
-7. Mejorar permisos por equipos/clubes.
-8. Separar worker del servidor web si el proyecto escala.
+7. Separar worker del servidor web si el proyecto escala.
 
 ## Como debe pensar Codex
 

@@ -61,6 +61,58 @@ Efecto:
 
 - Borra cookie de sesion.
 
+### Solicitar recuperacion de contraseña
+
+```txt
+POST /api/auth/password/forgot
+```
+
+Body:
+
+- `email`
+
+Devuelve siempre un mensaje generico para no revelar si una cuenta existe. Si el correo esta registrado, crea un codigo de seis digitos con vigencia de 15 minutos y lo envia mediante Resend. En desarrollo sin proveedor configurado, la respuesta incluye `developmentCode` para pruebas locales.
+
+### Restablecer contraseña con codigo
+
+```txt
+POST /api/auth/password/reset
+```
+
+Body:
+
+- `email`
+- `code`
+- `newPassword`
+
+El codigo es de un solo uso, admite un maximo de cinco intentos e invalida las sesiones anteriores al cambiar la contraseña.
+
+## Perfil y preferencias
+
+### Actualizar perfil
+
+```txt
+PATCH /api/profile
+```
+
+Permite cambiar `name` y `email`. Para cambiar el correo exige `currentPassword`.
+
+### Cambiar contraseña autenticada
+
+```txt
+POST /api/profile/password
+```
+
+Requiere `currentPassword` y `newPassword`; al completarse invalida las sesiones anteriores.
+
+### Guardar idioma y tema
+
+```txt
+PATCH /api/profile/preferences
+```
+
+Acepta `locale` (`es` o `en`) y/o `theme` (`dark` o `light`). Guarda la preferencia en la cuenta y en cookies de interfaz.
+
 ## Videos
 
 ### Preparar carga
@@ -108,6 +160,18 @@ GET /api/videos
 Requiere sesion.
 
 Devuelve videos del usuario actual.
+
+Admite busqueda, filtros y paginacion con los parametros:
+
+- `q`: nombre de archivo.
+- `status`: estado exacto del video.
+- `dateFrom` / `dateTo`: rango de fecha `YYYY-MM-DD`.
+- `minSizeMb` / `maxSizeMb`: rango de tamaño.
+- `sort`: `newest`, `oldest`, `name-asc` o `name-desc`.
+- `page`: pagina desde 1.
+- `limit`: 1 a 50 resultados.
+
+La respuesta incluye `pagination` con `page`, `pageSize`, `totalItems` y `totalPages`.
 
 ### Registrar metadata de video
 
@@ -235,6 +299,24 @@ POST /api/videos/:id/analysis/retry
 ```
 
 Debe crear un nuevo `AnalysisJob` en estado `QUEUED`.
+
+Rechaza con HTTP `409` si el video ya tiene un job `QUEUED` o `RUNNING`.
+
+### Cancelar analisis
+
+```txt
+POST /api/videos/:id/analysis/cancel
+```
+
+Requiere sesion y propiedad sobre el video.
+
+Comportamiento:
+
+- Cancela los jobs `QUEUED` o `RUNNING` del video.
+- Conserva el video original y devuelve el video a estado `UPLOADED`.
+- El worker detiene el proceso Python de un job en ejecucion y evita publicar sus resultados.
+- Devuelve HTTP `409` con `ANALYSIS_NOT_ACTIVE` cuando ya no existe un analisis activo.
+- El analisis cancelado puede reencolarse posteriormente con el endpoint de reintento.
 
 ### Descargar reporte de análisis
 

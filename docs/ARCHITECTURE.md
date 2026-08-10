@@ -99,7 +99,9 @@ flowchart LR
   API --> S3[Storage S3-compatible]
   U --> S3
   Worker[Analysis Worker] --> DB
-  Worker --> PY[Python + YOLO]
+  Worker --> PY[Python + detector seleccionable]
+  PY --> YOLO[YOLO / ONNX por defecto]
+  PY --> LA[LocateAnything opcional]
   PY --> Worker
 ```
 

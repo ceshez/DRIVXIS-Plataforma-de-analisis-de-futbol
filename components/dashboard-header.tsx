@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAppPreferences } from "@/components/app-preferences-provider";
 import { Logo } from "@/components/logo";
 
 type DashboardNavItem = {
@@ -24,6 +25,14 @@ export function DashboardHeader({
   action,
 }: DashboardHeaderProps) {
   const pathname = usePathname();
+  const { t } = useAppPreferences();
+
+  function localizeLabel(label: string) {
+    if (label === "Panel") return t("dashboard");
+    if (label === "Historial") return t("history");
+    if (label === "Uso") return t("usage");
+    return label;
+  }
 
   function isActive(item: DashboardNavItem) {
     if (item.exact) return pathname === item.href;
@@ -36,7 +45,7 @@ export function DashboardHeader({
       <nav className="app-header__nav" aria-label={navLabel}>
         {navItems.map((item) => (
           <Link href={item.href} key={item.href} className={isActive(item) ? "is-active" : undefined}>
-            {item.label}
+            {localizeLabel(item.label)}
           </Link>
         ))}
       </nav>

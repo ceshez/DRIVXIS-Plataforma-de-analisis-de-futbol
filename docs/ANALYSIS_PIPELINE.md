@@ -4,7 +4,7 @@ Este documento explica como debe entenderse el flujo de analisis de video dentro
 
 ## Objetivo
 
-Procesar videos de partidos de futbol para generar metricas tacticas y fisicas usando un motor Python basado en YOLO.
+Procesar videos de partidos de futbol para generar metricas tacticas y fisicas usando YOLO como detector predeterminado y el pipeline temporal existente de DRIVXIS. NVIDIA LocateAnything-3B se conserva como opcion de investigacion/evaluacion no comercial.
 
 ## Flujo general
 
@@ -45,6 +45,8 @@ Estados:
 - `COMPLETED`
 - `FAILED`
 
+Una cancelacion solicitada por el usuario se mantiene compatible con este enum: el job termina como `FAILED` con el marcador `ANALYSIS_CANCELLED_BY_USER`, mientras el video vuelve a `UPLOADED`. La API serializa `latestJob.cancelled: true` para que la interfaz lo presente como cancelado y no como un fallo tecnico.
+
 Campos importantes:
 
 - `videoId`
@@ -83,7 +85,7 @@ El archivo real vive en:
 
 ## Worker
 
-Comando principal:
+Comando principal del consumidor de cola:
 
 ```bash
 npm run analysis:worker -- --once
@@ -91,12 +93,14 @@ npm run analysis:worker -- --once
 
 Reglas:
 
-- El worker debe poder ejecutarse localmente.
+- El worker solo reclama jobs despues de validar el backend seleccionado y su modelo.
+- YOLO admite Windows/Linux y CPU/GPU. LocateAnything exige Linux, CUDA, BF16 y al menos 24 GB de VRAM.
 - Si falla el analisis, debe marcar el job como `FAILED` y guardar error.
 - Si termina correctamente, debe marcar el job como `COMPLETED` y guardar metricas.
+- Debe consultar cancelaciones durante la inferencia, terminar el proceso Python y evitar uploads, snapshots o estados `COMPLETED` posteriores.
 - No debe bloquear el dashboard.
 
-## Python / YOLO
+## Python / detectores
 
 Dependencias esperadas:
 
@@ -104,11 +108,31 @@ Dependencias esperadas:
 pip install -r analysis/requirements.txt
 ```
 
-Peso esperado del modelo:
+Configuracion predeterminada YOLO/ONNX:
 
-```txt
-analysis/models/best.pt
+```env
+ANALYSIS_DETECTOR="yolo"
+ANALYSIS_MODEL_PATH="analysis/models/best.onnx"
+ANALYSIS_MODEL_OBJECT_KEY="models/best.onnx"
+ANALYSIS_DETECTION_FPS="5"
+ANALYSIS_BATCH_SIZE="4"
+ANALYSIS_MAX_WIDTH="1280"
 ```
+
+El worker usa el archivo local si existe. Si falta, lo descarga una vez desde `ANALYSIS_MODEL_OBJECT_KEY` en R2 o desde `ANALYSIS_MODEL_URL` y lo conserva en el volumen `/models`. Procesa frames a 5 FPS, mantiene ByteTrack e interpola las trayectorias al FPS original.
+
+LocateAnything se activa explicitamente:
+
+```env
+ANALYSIS_DETECTOR="locateanything"
+LOCATEANYTHING_MODEL_ID="nvidia/LocateAnything-3B"
+LOCATEANYTHING_REVISION="c32291ca5e996f5a7a485845b4f57a233936bba0"
+LOCATEANYTHING_DETECTION_FPS="5"
+LOCATEANYTHING_BATCH_SIZE="4"
+ANALYSIS_MAX_WIDTH="1920"
+```
+
+Produccion usa `Dockerfile.analysis-worker`/`compose.analysis-worker.yml` para YOLO CPU y `Dockerfile.analysis-gpu`/`compose.analysis-gpu.yml` para LocateAnything. Ningun contenedor expone puertos; ambos consumen PostgreSQL y R2 mediante conexiones salientes. La aplicacion web debe mantener `ANALYSIS_AUTO_START=false`.
 
 ## Reglas para Codex
 

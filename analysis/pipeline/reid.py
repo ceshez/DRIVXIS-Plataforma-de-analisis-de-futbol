@@ -41,9 +41,20 @@ def assign_stable_player_ids(
                 next_stable_id += 1
                 source_to_stable[source_id] = stable_id
 
+            previous_stable = stable_last_seen.get(stable_id)
             mapped_player = dict(player)
             mapped_player["source_track_id"] = source_id
             mapped_player["display_id"] = stable_id
+            if (
+                mapped_player.get("team") not in (1, 2)
+                and previous_stable is not None
+                and previous_stable.get("team") in (1, 2)
+            ):
+                mapped_player["team"] = previous_stable["team"]
+                if previous_stable.get("team_color") is not None:
+                    mapped_player["team_color"] = previous_stable["team_color"]
+                mapped_player["team_confidence"] = 0.0
+                mapped_player["team_assignment_state"] = "reidentified_team_inherited"
             next_frame_players[stable_id] = mapped_player
             used_stable_ids.add(stable_id)
             stable_last_seen[stable_id] = {
@@ -51,6 +62,7 @@ def assign_stable_player_ids(
                 "position": tracking_position(mapped_player),
                 "bbox": mapped_player.get("bbox"),
                 "team": mapped_player.get("team"),
+                "team_color": mapped_player.get("team_color"),
             }
 
         tracks["players"][frame_num] = next_frame_players

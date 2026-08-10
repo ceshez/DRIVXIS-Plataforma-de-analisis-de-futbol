@@ -26,7 +26,9 @@ import {
 } from "lucide-react";
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useReducer, useRef } from "react";
 import { UserProfileMenu } from "@/components/user-profile-menu";
+import { useAppPreferences } from "@/components/app-preferences-provider";
 import { getDemoAssistantResponse } from "@/lib/chatbot-demo";
+import type { AppLocale } from "@/lib/preferences";
 import styles from "./dashboard-chatbot-demo.module.css";
 
 type DashboardChatbotDemoProps = {
@@ -48,7 +50,7 @@ type PendingReply = {
 };
 
 type AssistantPhase = "idle" | "thinking" | "typing";
-type NavItemId = (typeof navItems)[number]["id"];
+type NavItemId = "new" | "search" | "season" | "custom";
 
 type ChatbotState = {
   messages: ChatMessage[];
@@ -71,31 +73,31 @@ type ChatbotAction =
   | { type: "update"; update: (state: ChatbotState) => Partial<ChatbotState> }
   | { type: "resetConversation"; activeNavItem: NavItemId };
 
-const navItems = [
-  { id: "new", label: "Nuevo chat", icon: Plus },
-  { id: "search", label: "Buscar chat", icon: Search },
-  { id: "season", label: "Temporadas", icon: CalendarDays },
-  { id: "custom", label: "Personalizar", icon: SlidersHorizontal },
-];
+const navItemsByLocale = {
+  es: [
+    { id: "new", label: "Nuevo chat", icon: Plus },
+    { id: "search", label: "Buscar chat", icon: Search },
+    { id: "season", label: "Temporadas", icon: CalendarDays },
+    { id: "custom", label: "Personalizar", icon: SlidersHorizontal },
+  ],
+  en: [
+    { id: "new", label: "New chat", icon: Plus },
+    { id: "search", label: "Search chats", icon: Search },
+    { id: "season", label: "Seasons", icon: CalendarDays },
+    { id: "custom", label: "Customize", icon: SlidersHorizontal },
+  ],
+} satisfies Record<AppLocale, Array<{ id: NavItemId; label: string; icon: typeof Plus }>>;
 
-const recentItems = [
-  { id: "recent-1", label: "Análisis táctico jornada 3" },
-  { id: "recent-2", label: "Patrones de presión alta" },
-  { id: "recent-3", label: "Transiciones defensivas vs Real" },
-  { id: "recent-4", label: "Rendimiento mediocampo Q1" },
-  { id: "recent-5", label: "Errores defensivos vs Saprissa" },
-  { id: "recent-6", label: "Comparación entre extremos" },
-] as const;
+const recentItemsByLocale = {
+  es: ["Análisis táctico jornada 3", "Patrones de presión alta", "Transiciones defensivas vs Real", "Rendimiento mediocampo Q1", "Errores defensivos vs Saprissa", "Comparación entre extremos"],
+  en: ["Matchday 3 tactical analysis", "High-pressing patterns", "Defensive transitions vs Real", "Midfield performance Q1", "Defensive errors vs Saprissa", "Winger comparison"],
+} satisfies Record<AppLocale, string[]>;
 
 const starterPromptIcons = [Target, Activity, Bot, Users, GitBranch, FileText];
-const starterPrompts = [
-  "Análisis táctico",
-  "Rendimiento físico",
-  "Presión y posesión",
-  "Comparar equipos",
-  "Plan de juego",
-  "Resumen del partido",
-];
+const starterPromptsByLocale = {
+  es: ["Análisis táctico", "Rendimiento físico", "Presión y posesión", "Comparar equipos", "Plan de juego", "Resumen del partido"],
+  en: ["Tactical analysis", "Physical performance", "Pressing and possession", "Compare teams", "Game plan", "Match summary"],
+} satisfies Record<AppLocale, string[]>;
 
 const INITIAL_CHATBOT_STATE: ChatbotState = {
   messages: [],
@@ -163,15 +165,19 @@ function ChatbotSidebar({
   dispatch,
   onNavAction,
 }: ChatbotSidebarProps) {
+  const { locale } = useAppPreferences();
+  const english = locale === "en";
+  const navItems = navItemsByLocale[locale];
+  const recentItems = recentItemsByLocale[locale].map((label, index) => ({ id: `recent-${index + 1}`, label }));
   const { sidebarCollapsed, activeNavItem, openRecentMenuId } = state;
   return (
-    <aside className={className} aria-label="Navegación de chatbot">
+    <aside className={className} aria-label={english ? "Chatbot navigation" : "Navegación del chatbot"}>
       <div className={styles.sidebarInner}>
         <div className={styles.mobileHeader}>
           <BrandWordmark compact />
           <button
             type="button"
-            aria-label="Cerrar panel"
+            aria-label={english ? "Close panel" : "Cerrar panel"}
             onClick={() => dispatch({ type: "patch", changes: { mobileSidebarOpen: false } })}
           >
             <X size={14} />
@@ -192,18 +198,18 @@ function ChatbotSidebar({
                   update: (current) => ({ sidebarCollapsed: !current.sidebarCollapsed }),
                 })
               }
-              aria-label={sidebarCollapsed ? "Expandir sidebar" : "Colapsar sidebar"}
-              data-tooltip={sidebarCollapsed ? "Abrir barra lateral" : "Cerrar barra lateral"}
+              aria-label={sidebarCollapsed ? (english ? "Expand sidebar" : "Expandir barra lateral") : (english ? "Collapse sidebar" : "Colapsar barra lateral")}
+              data-tooltip={sidebarCollapsed ? (english ? "Open sidebar" : "Abrir barra lateral") : (english ? "Close sidebar" : "Cerrar barra lateral")}
             >
               {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
             </button>
           </div>
 
-          <Link href="/dashboard" className={`${styles.backLink} ${styles.collapsedTooltipTrigger}`} data-tooltip="Volver al dashboard">
+          <Link href="/dashboard" className={`${styles.backLink} ${styles.collapsedTooltipTrigger}`} data-tooltip={english ? "Back to dashboard" : "Volver al panel"}>
             <span className={styles.backLinkIcon} aria-hidden="true">
               <ArrowLeft size={12} />
             </span>
-            <span className={styles.backLinkLabel}>Volver al dashboard</span>
+            <span className={styles.backLinkLabel}>{english ? "Back to dashboard" : "Volver al panel"}</span>
           </Link>
         </div>
 
@@ -229,7 +235,7 @@ function ChatbotSidebar({
           </ul>
 
           <div className={styles.recentSection}>
-            <p className={styles.recentTitle}>Recientes</p>
+            <p className={styles.recentTitle}>{english ? "Recent" : "Recientes"}</p>
             <ul className={styles.recentList}>
               {recentItems.map((item) => (
                 <li key={item.id} className={styles.recentItem} data-recent-menu-root="true">
@@ -240,7 +246,7 @@ function ChatbotSidebar({
                   <button
                     type="button"
                     className={styles.recentMenuButton}
-                    aria-label={`Opciones para ${item.label}`}
+                    aria-label={`${english ? "Options for" : "Opciones para"} ${item.label}`}
                     aria-haspopup="menu"
                     aria-expanded={openRecentMenuId === item.id}
                     onClick={() =>
@@ -255,8 +261,8 @@ function ChatbotSidebar({
                     <Ellipsis size={12} />
                   </button>
                   {openRecentMenuId === item.id ? (
-                    <ul className={styles.recentMenu} role="menu" aria-label={`Acciones para ${item.label}`}>
-                      {["Editar nombre", "Eliminar", "Agregar a temporada"].map((label) => (
+                    <ul className={styles.recentMenu} role="menu" aria-label={`${english ? "Actions for" : "Acciones para"} ${item.label}`}>
+                      {(english ? ["Rename", "Delete", "Add to season"] : ["Editar nombre", "Eliminar", "Agregar a temporada"]).map((label) => (
                         <li key={label}>
                           <button
                             type="button"
@@ -325,6 +331,9 @@ function ChatbotWorkspace({
   onInputKeyDown,
   onApplyPrompt,
 }: ChatbotWorkspaceProps) {
+  const { locale } = useAppPreferences();
+  const english = locale === "en";
+  const starterPrompts = starterPromptsByLocale[locale];
   const {
     messages,
     draft,
@@ -350,7 +359,7 @@ function ChatbotWorkspace({
       <header className={styles.mobileTopbar}>
         <button
           type="button"
-          aria-label="Abrir sidebar"
+          aria-label={english ? "Open sidebar" : "Abrir barra lateral"}
           onClick={() => dispatch({ type: "patch", changes: { mobileSidebarOpen: true } })}
         >
           <Menu size={15} />
@@ -373,7 +382,7 @@ function ChatbotWorkspace({
               ))}
 
               {isAssistantThinking ? (
-                <article className={`${styles.message} ${styles.messageAssistant} ${styles.messageThinking}`} aria-label="Asistente pensando">
+                <article className={`${styles.message} ${styles.messageAssistant} ${styles.messageThinking}`} aria-label={english ? "Assistant thinking" : "Asistente pensando"}>
                   <span />
                   <span />
                   <span />
@@ -395,7 +404,7 @@ function ChatbotWorkspace({
             <div className={styles.composerDockInner}>
               <form className={`${styles.composer} ${styles.composerChat}`} onSubmit={onSubmit}>
                 <label className="visually-hidden" htmlFor="chatbot-composer-input-active">
-                  Escribe tu mensaje
+                  {english ? "Write your message" : "Escribe tu mensaje"}
                 </label>
                 <textarea
                   id="chatbot-composer-input-active"
@@ -411,7 +420,7 @@ function ChatbotWorkspace({
                     });
                   }}
                   onKeyDown={onInputKeyDown}
-                  placeholder="Escribe tu consulta para el asistente..."
+                  placeholder={english ? "Write your question for the assistant..." : "Escribe tu consulta para el asistente..."}
                 />
                 <ComposerFooter
                   canSend={trimmedDraft.length > 0 && !isAssistantResponding}
@@ -426,15 +435,15 @@ function ChatbotWorkspace({
           <div className={styles.centerStack}>
             {showEmptyIntro ? (
               <div className={styles.hero}>
-                <h1 className={styles.heroTitle}>Buenas noches, {greetingName}</h1>
-                <p className={styles.heroSubtitle}>Tu asistente de análisis táctico e inteligencia deportiva</p>
+                <h1 className={styles.heroTitle}>{english ? "Good evening" : "Buenas noches"}, {greetingName}</h1>
+                <p className={styles.heroSubtitle}>{english ? "Your tactical analysis and sports intelligence assistant" : "Tu asistente de análisis táctico e inteligencia deportiva"}</p>
               </div>
             ) : null}
 
             <div className={styles.composerStack}>
               <form className={`${styles.composer} ${styles.composerEmpty}`} onSubmit={onSubmit}>
                 <label className="visually-hidden" htmlFor="chatbot-composer-input">
-                  Escribe tu mensaje
+                  {english ? "Write your message" : "Escribe tu mensaje"}
                 </label>
                 <textarea
                   id="chatbot-composer-input"
@@ -450,13 +459,13 @@ function ChatbotWorkspace({
                     });
                   }}
                   onKeyDown={onInputKeyDown}
-                  placeholder="¿Cómo puedo ayudarte hoy?"
+                  placeholder={english ? "How can I help you today?" : "¿Cómo puedo ayudarte hoy?"}
                 />
                 <ComposerFooter canSend={trimmedDraft.length > 0 && !isAssistantResponding} />
               </form>
 
               {showStarterPrompts ? (
-                <div className={styles.suggestionGrid} aria-label="Sugerencias iniciales">
+                <div className={styles.suggestionGrid} aria-label={english ? "Starter suggestions" : "Sugerencias iniciales"}>
                   {starterPrompts.map((prompt, index) => {
                     const Icon = starterPromptIcons[index % starterPromptIcons.length];
                     return (
@@ -477,7 +486,7 @@ function ChatbotWorkspace({
           </div>
 
           <p className={styles.privacyNote}>
-            <span>◌</span> Tus datos están protegidos. DRIVXIS nunca comparte tu información.
+            <span>◌</span> {english ? "Your data is protected. DRIVXIS never shares your information." : "Tus datos están protegidos. DRIVXIS nunca comparte tu información."}
           </p>
         </div>
       )}
@@ -486,23 +495,25 @@ function ChatbotWorkspace({
 }
 
 function ComposerFooter({ canSend, submitAlways = false }: { canSend: boolean; submitAlways?: boolean }) {
+  const { locale } = useAppPreferences();
+  const english = locale === "en";
   return (
     <div className={styles.composerFooter}>
       <div className={styles.composerTools}>
-        <button type="button" className={styles.toolButton} aria-label="Agregar recurso">
+        <button type="button" className={styles.toolButton} aria-label={english ? "Add resource" : "Agregar recurso"}>
           <Plus size={15} />
         </button>
-        <button type="button" className={styles.toolButton} aria-label="Adjuntar archivo">
+        <button type="button" className={styles.toolButton} aria-label={english ? "Attach file" : "Adjuntar archivo"}>
           <Paperclip size={14} />
         </button>
       </div>
       {canSend || submitAlways ? (
-        <button className={styles.sendButton} type="submit" disabled={!canSend} aria-label="Enviar mensaje">
+        <button className={styles.sendButton} type="submit" disabled={!canSend} aria-label={english ? "Send message" : "Enviar mensaje"}>
           <ArrowUp size={14} />
         </button>
       ) : (
-        <div className={styles.assistantPicker} aria-label="Seleccionar asistente">
-          <strong>Asistente táctico</strong>
+        <div className={styles.assistantPicker} aria-label={english ? "Select assistant" : "Seleccionar asistente"}>
+          <strong>{english ? "Tactical assistant" : "Asistente táctico"}</strong>
           <ChevronDown size={15} />
           <AudioLines size={16} />
         </div>
@@ -517,6 +528,8 @@ export function DashboardChatbotDemo({
   hasAvatar = false,
   avatarVersion = null,
 }: DashboardChatbotDemoProps) {
+  const { locale } = useAppPreferences();
+  const english = locale === "en";
   const [chatbotState, dispatchChatbot] = useReducer(chatbotReducer, INITIAL_CHATBOT_STATE);
   const {
     messages,
@@ -568,25 +581,23 @@ export function DashboardChatbotDemo({
   useEffect(() => {
     if (!activeReply) return;
 
-    let typingInterval: ReturnType<typeof setInterval> | null = null;
     let thinkingTimeout: ReturnType<typeof setTimeout> | null = null;
-    let cursor = 0;
+    let typingFrame = 0;
 
     dispatchChatbot({ type: "patch", changes: { assistantPhase: "thinking", typingText: "" } });
 
     thinkingTimeout = setTimeout(() => {
       dispatchChatbot({ type: "patch", changes: { assistantPhase: "typing" } });
+      const startedAt = performance.now();
+      const durationMs = Math.max(420, activeReply.content.length * 8);
 
-      typingInterval = setInterval(() => {
-        const chunk = Math.max(1, Math.min(4, Math.floor(Math.random() * 4) + 1));
-        cursor = Math.min(activeReply.content.length, cursor + chunk);
+      const typeNextFrame = (now: number) => {
+        const cursor = Math.min(activeReply.content.length, Math.max(1, Math.floor(((now - startedAt) / durationMs) * activeReply.content.length)));
         dispatchChatbot({ type: "patch", changes: { typingText: activeReply.content.slice(0, cursor) } });
 
-        if (cursor < activeReply.content.length) return;
-
-        if (typingInterval) {
-          clearInterval(typingInterval);
-          typingInterval = null;
+        if (cursor < activeReply.content.length) {
+          typingFrame = window.requestAnimationFrame(typeNextFrame);
+          return;
         }
 
         dispatchChatbot({
@@ -605,12 +616,14 @@ export function DashboardChatbotDemo({
             activeReply: null,
           }),
         });
-      }, 26);
+      };
+
+      typingFrame = window.requestAnimationFrame(typeNextFrame);
     }, 320);
 
     return () => {
       if (thinkingTimeout) clearTimeout(thinkingTimeout);
-      if (typingInterval) clearInterval(typingInterval);
+      if (typingFrame) window.cancelAnimationFrame(typingFrame);
     };
   }, [activeReply]);
 
@@ -691,7 +704,7 @@ export function DashboardChatbotDemo({
   }
 
   function queueAssistantReply(message: string) {
-    const response = getDemoAssistantResponse(message);
+    const response = getDemoAssistantResponse(message, locale);
     const reply = { id: nextMessageId("assistant"), content: response };
     dispatchChatbot({
       type: "update",
@@ -793,7 +806,7 @@ export function DashboardChatbotDemo({
         <button
           type="button"
           className={styles.overlay}
-          aria-label="Cerrar sidebar"
+          aria-label={english ? "Close sidebar" : "Cerrar barra lateral"}
           onClick={() => dispatchChatbot({ type: "patch", changes: { mobileSidebarOpen: false } })}
         />
       ) : null}
