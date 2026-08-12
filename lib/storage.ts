@@ -59,6 +59,12 @@ export function isStorageConfigured() {
   return getStorageConfigStatus().configured;
 }
 
+export function createChatAttachmentObjectKey({ userId, filename }: StorageInput) {
+  const date = new Date().toISOString().slice(0, 10);
+  const random = crypto.randomUUID();
+  return `users/${userId}/chat-attachments/${date}/${random}-${cleanFilename(filename) || "documento"}`;
+}
+
 function shouldForcePathStyle(endpoint?: string) {
   if (!endpoint) return false;
   return endpoint.includes("localhost") || endpoint.includes("127.0.0.1") || endpoint.includes("r2.cloudflarestorage.com");

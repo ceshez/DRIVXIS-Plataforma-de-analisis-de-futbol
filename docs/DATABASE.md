@@ -142,7 +142,23 @@ erDiagram
   User ||--o{ PasswordResetCode : solicita
   Video ||--o{ AnalysisJob : genera
   Video ||--o{ MetricSnapshot : tiene
+  User ||--o{ ChatThread : conversa
+  ChatThread ||--o{ ChatMessage : contiene
+  ChatMessage }o--o{ Video : referencia
+  ChatThread ||--o{ ChatAttachment : adjunta
 ```
+
+### ChatThread, ChatMessage y ChatMessageVideo
+
+`ChatThread` persiste título, modo y orden reciente por `lastMessageAt`. `ChatMessage` guarda rol, estado de streaming, comando y metadata de uso del modelo. `ChatMessageVideo` conserva las referencias explícitas `@video` sin copiar métricas al mensaje.
+
+### ChatAttachment
+
+Guarda únicamente metadata y `objectKey`; el documento vive en R2/S3. Se asocia al usuario, chat y, al enviarse, al mensaje. Su tamaño participa en `storageUsedBytes`.
+
+### Fechas del partido
+
+`Video.playedAt` y `Video.competition` son opcionales. El chatbot ordena por `playedAt` y usa `createdAt` como fallback para datos históricos existentes.
 
 ## Reglas importantes
 
