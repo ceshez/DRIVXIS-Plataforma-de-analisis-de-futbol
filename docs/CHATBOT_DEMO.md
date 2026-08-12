@@ -1,74 +1,54 @@
-﻿# Chatbot Demo - Dashboard DRIVXIS
+# Chatbot de producción - Dashboard DRIVXIS
 
-## Ruta
+## Rutas de interfaz
 
-- `/dashboard/chatbot`
+- `/dashboard/chatbot`: nuevo chat.
+- `/dashboard/chatbot/:threadId`: conversación persistida.
 
-## Proposito
+## Proveedor de IA
 
-Pantalla demo de asistente conversacional con fidelidad visual al diseno de referencia (Figma + capturas), sin integracion con backend de IA real.
+El chatbot usa Vercel AI SDK y Vercel AI Gateway. No tiene respuestas locales ni un modo de demostración.
 
-## Layout principal
+- Chat: `CHAT_MODEL_ID`, por defecto `openai/gpt-5.4-mini`, verificado con los créditos gratuitos actuales. Usa `openai/gpt-5.4-nano` como fallback.
+- Voz: `CHAT_TRANSCRIPTION_MODEL_ID`, por defecto `openai/gpt-4o-mini-transcribe`.
+- En Vercel la autenticación se resuelve mediante `VERCEL_OIDC_TOKEN` administrado por la plataforma.
+- Fuera de Vercel se puede usar `AI_GATEWAY_API_KEY` o ejecutar `vercel env pull` después de vincular el proyecto.
 
-- Workspace de pantalla completa (`100dvh`) dedicado al chatbot.
-- Sin header superior del dashboard en esta ruta.
-- Sidebar tactico propio del chatbot con estados:
-  - Expandido (desktop)
-  - Colapsado (desktop)
-  - Drawer movil
-- Area principal centrada para estado vacio y area scrollable para conversacion activa.
+Nunca se debe exponer una clave en variables `NEXT_PUBLIC_*` ni enviarla desde el navegador.
 
-## Estado vacio
+## Datos reales y límites
 
-- Mensaje central de bienvenida.
-- Composer principal con placeholder y controles visuales del asistente.
-- Chips de sugerencia inicial.
-- El texto central desaparece al primer caracter ingresado.
+Antes de llamar al modelo, el servidor consulta únicamente videos del usuario autenticado y crea un contexto estructurado a partir del último `MetricSnapshot` compatible.
 
-## Estado de conversacion activa
+- Los promedios de posesión, el mejor partido y el peor partido se calculan en el servidor.
+- Si la consulta dice "últimos N partidos", se seleccionan hasta 12 partidos por `playedAt` y, en ausencia de esa fecha, por `createdAt`.
+- Una referencia `@video` limita el contexto a los videos seleccionados.
+- La IA no recibe ni afirma haber visto el metraje original; recibe métricas y, cuando aplica, documentos.
+- La velocidad solo se publica cuando `speed.publishable` es verdadero.
+- El pipeline actual no publica una métrica validada de presión. El asistente debe señalar esa ausencia y no inventar valores.
+- Cuando la asociación entre club y color detectado no está confirmada, la respuesta debe advertirlo.
 
-- Se activa al enviar el primer mensaje.
-- Se oculta el estado introductorio completo.
-- Los mensajes pasan a un hilo dedicado con scroll independiente.
-- El composer queda anclado de forma estable en la zona inferior del hilo.
+## Funciones de interfaz
 
-## Tipeo progresivo (demo IA)
+- Historial de chats recientes, apertura individual, búsqueda, cambio de nombre y eliminación.
+- Modos General, Táctico y Físico persistidos por chat.
+- Comandos `/analisis-tactico`, `/rendimiento-fisico`, `/presion-posesion`, `/comparar-equipos`, `/plan-de-juego` y `/resumen-partido`.
+- Autocompletado `@` con videos propios y estado de métricas.
+- Carga desde `+` de PDF, TXT, CSV, Markdown, JSON, PNG, JPEG o WebP de hasta 4 MB mediante el storage configurado.
+- Dictado mediante grabación del navegador y transcripción remota.
+- Respuesta NDJSON transmitida progresivamente y persistida al terminar.
 
-- El mensaje del usuario aparece inmediatamente.
-- La respuesta del asistente entra con micro-delay de "thinking".
-- Luego se renderiza progresivamente por chunks.
-- Se usa cola de respuestas para evitar respuestas duplicadas o solapadas.
-- Los timers se limpian correctamente al desmontar para evitar fugas.
+## Seguridad y costos
 
-## Scroll durante respuesta
+- Todos los endpoints requieren la cookie de sesión actual y verifican propiedad de threads, videos y documentos.
+- AI Gateway recibe el `userId` para atribución y límites por usuario, además de tags por función y modo.
+- Se solicita a Gateway excluir rutas que entrenen con prompts (`disallowPromptTraining`).
+- Configurar presupuesto y límites por usuario en Vercel antes de producción.
 
-- El hilo de mensajes mantiene `overflow-y` propio.
-- Si el usuario esta cerca del final, el autoscroll sigue el crecimiento del texto.
-- Si el usuario se aleja manualmente del final, se pausa autoscroll hasta volver cerca del bottom.
+## Despliegue
 
-## Respuestas locales de demo
-
-Archivo:
-
-- `lib/chatbot-demo.ts`
-
-Reglas:
-
-- Consultas sobre `computadora`, `pc`, `rendimiento`, etc. -> respuesta de rendimiento tecnico.
-- Consultas sobre `partido`, `jugadores`, `video`, `posesion`, `estadisticas`, etc. -> respuesta estilo analisis DRIVXIS.
-- Cualquier otro texto -> fallback profesional de producto.
-
-## Avatar y menu de usuario
-
-- Reusa `UserProfileMenu`.
-- En chatbot se usa trigger tipo tarjeta en sidebar.
-- El dropdown abre hacia arriba con `dropdownDirection="up"`.
-- Se mantiene la misma logica de perfil, accesos y logout.
-
-## Acceso desde header de dashboard
-
-El acceso a `/dashboard/chatbot` se mantiene desde el header compartido en otras paginas del dashboard mediante el shortcut "Chatbot".
-
-## Preparado para integracion futura
-
-La arquitectura de UI mantiene separada la logica de respuestas (`lib/chatbot-demo.ts`) para poder sustituirla por un endpoint real de IA sin rehacer la estructura visual del chat.
+1. Aplicar `npm run prisma:deploy` contra la base de producción.
+2. Activar AI Gateway en el proyecto de Vercel.
+3. Confirmar que el storage R2/S3 ya configurado admite documentos.
+4. Opcionalmente sobrescribir los IDs de modelo en variables de entorno.
+5. Ejecutar un chat de prueba con un partido analizado y revisar uso/logs en AI Gateway.

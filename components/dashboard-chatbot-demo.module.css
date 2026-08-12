@@ -50,6 +50,17 @@
   stroke: currentColor;
 }
 
+:global(html[data-theme="light"]) .mobileTopbar > button {
+  border-color: var(--line-strong);
+  background: #fff;
+  color: var(--text);
+}
+
+:global(html[data-theme="light"]) .mobileTopbar > button svg {
+  color: var(--text);
+  stroke: currentColor;
+}
+
 :global(html[data-theme="light"]) .navItemActive svg {
   color: #211008;
 }
@@ -374,9 +385,53 @@
 }
 
 .recentRow span {
+  display: grid;
+  gap: 0.08rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.recentRow strong {
+  overflow: hidden;
+  font-weight: 520;
+  text-overflow: ellipsis;
+}
+
+.recentRow small {
+  color: rgba(242, 240, 238, 0.3);
+  font-size: 0.56rem;
+}
+
+.recentItemActive {
+  background: rgba(255, 107, 43, 0.1);
+}
+
+.recentItemActive .recentRow {
+  color: rgba(242, 240, 238, 0.9);
+}
+
+.emptyRecent {
+  padding: 0.35rem 0;
+  color: rgba(242, 240, 238, 0.3);
+  font-size: 0.68rem;
+}
+
+.chatSearchInput {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(255, 107, 43, 0.24);
+  border-radius: 2px;
+  background: rgba(8, 8, 8, 0.82);
+  padding: 0 0.62rem;
+  color: rgba(242, 240, 238, 0.9);
+  font: inherit;
+  font-size: 0.74rem;
+  outline: none;
+}
+
+.chatSearchInput:focus {
+  border-color: rgba(255, 107, 43, 0.58);
 }
 
 .recentRow:hover,
@@ -671,6 +726,11 @@
   gap: 1rem;
 }
 
+.composerWrapper {
+  position: relative;
+  width: 100%;
+}
+
 .suggestionGrid {
   display: flex;
   flex-wrap: wrap;
@@ -692,6 +752,19 @@
   letter-spacing: 0.01em;
   cursor: pointer;
   transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
+}
+
+.suggestionChip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.suggestionChip strong {
+  color: #ff8c4a;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
 }
 
 .suggestionChip svg {
@@ -764,6 +837,39 @@
   color: rgba(242, 240, 238, 0.7);
 }
 
+.contextChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.34rem;
+  padding: 0 0.82rem 0.36rem;
+}
+
+.contextChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  max-width: min(100%, 280px);
+  min-height: 25px;
+  border: 1px solid rgba(255, 107, 43, 0.28);
+  border-radius: 2px;
+  background: rgba(255, 107, 43, 0.08);
+  padding: 0 0.45rem;
+  color: rgba(242, 240, 238, 0.72);
+  font: inherit;
+  font-size: 0.65rem;
+  cursor: pointer;
+}
+
+.contextChip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contextChip svg:first-child {
+  color: #ff6b2b;
+}
+
 .composerFooter {
   display: flex;
   align-items: center;
@@ -795,6 +901,24 @@
   color: rgba(242, 240, 238, 0.95);
 }
 
+.toolButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.hiddenFileInput {
+  display: none;
+}
+
+.recordingButton {
+  background: rgba(255, 74, 54, 0.17);
+  color: #ff6b57;
+}
+
+.spin {
+  animation: rotate 800ms linear infinite;
+}
+
 .toolButton:focus-visible {
   outline: 2px solid rgba(255, 107, 43, 0.38);
   outline-offset: 2px;
@@ -804,8 +928,13 @@
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  border: 0;
+  background: transparent;
+  padding: 0.2rem 0.22rem;
   color: rgba(242, 240, 238, 0.48);
+  font-family: inherit;
   font-size: 1rem;
+  cursor: pointer;
 }
 
 .assistantPicker strong {
@@ -814,6 +943,129 @@
 
 .assistantPicker svg:last-child {
   color: #ff6b2b;
+}
+
+.modePickerRoot {
+  position: relative;
+}
+
+.modeMenu {
+  position: absolute;
+  bottom: calc(100% + 0.45rem);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  min-width: 190px;
+  border: 1px solid rgba(255, 107, 43, 0.3);
+  border-radius: 2px;
+  background: rgba(9, 9, 9, 0.99);
+  padding: 0.22rem;
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.48);
+}
+
+.modeMenu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  gap: 0.6rem;
+  border: 0;
+  background: transparent;
+  padding: 0 0.55rem;
+  color: rgba(242, 240, 238, 0.76);
+  font: inherit;
+  font-size: 0.72rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.modeMenu button:hover,
+.modeMenu button:focus-visible {
+  background: rgba(255, 107, 43, 0.13);
+  color: rgba(242, 240, 238, 0.98);
+  outline: none;
+}
+
+.modeMenu button svg {
+  color: #ff6b2b;
+}
+
+.composerPalette {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.42rem);
+  left: 0;
+  z-index: 25;
+  display: grid;
+  max-height: 270px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 107, 43, 0.3);
+  border-radius: 2px;
+  background: rgba(8, 8, 8, 0.99);
+  padding: 0.28rem;
+  box-shadow: 0 22px 45px rgba(0, 0, 0, 0.52);
+}
+
+.composerPalette button {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 43px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 107, 43, 0.07);
+  background: transparent;
+  padding: 0.38rem 0.55rem;
+  color: rgba(242, 240, 238, 0.72);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composerPalette button:last-child {
+  border-bottom: 0;
+}
+
+.composerPalette button:hover,
+.composerPalette button:focus-visible {
+  background: rgba(255, 107, 43, 0.12);
+  color: rgba(242, 240, 238, 0.96);
+  outline: none;
+}
+
+.composerPalette button > svg {
+  color: #ff6b2b;
+}
+
+.composerPalette button span {
+  display: grid;
+  gap: 0.08rem;
+  overflow: hidden;
+  font-size: 0.68rem;
+}
+
+.composerPalette button strong {
+  overflow: hidden;
+  color: rgba(242, 240, 238, 0.94);
+  font-size: 0.74rem;
+  font-weight: 620;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composerError,
+.recordingStatus {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0.38rem 0 0;
+  color: #ff8d78;
+  font-size: 0.68rem;
+  line-height: 1.35;
+}
+
+.recordingStatus {
+  color: rgba(242, 240, 238, 0.58);
 }
 
 .sendButton {
@@ -895,6 +1147,11 @@
   line-height: 1.62;
 }
 
+.messageText {
+  white-space: pre-wrap;
+  line-height: 1.62;
+}
+
 .messageAssistant {
   justify-self: start;
   border: 0;
@@ -906,6 +1163,69 @@
   color: rgba(242, 240, 238, 0.9);
   font-weight: 540;
   line-height: 1.64;
+}
+
+.messageAssistant .messageText {
+  color: rgba(242, 240, 238, 0.9);
+  font-weight: 540;
+}
+
+.messageFailed .messageText {
+  color: #ff9b86;
+}
+
+.messageSources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.55rem;
+}
+
+.messageSources span,
+.aiSourceLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border: 1px solid rgba(255, 107, 43, 0.2);
+  border-radius: 2px;
+  padding: 0.2rem 0.36rem;
+  color: rgba(242, 240, 238, 0.48);
+  font-size: 0.58rem;
+  font-weight: 500;
+}
+
+.aiSourceLabel {
+  width: fit-content;
+  margin-top: 0.54rem;
+  border-color: transparent;
+  padding-left: 0;
+  color: rgba(255, 140, 74, 0.62);
+}
+
+.thinkingDots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-height: 24px;
+}
+
+.thinkingDots i {
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 50%;
+  background: rgba(255, 107, 43, 0.75);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.thinkingDots i:nth-child(2) { animation-delay: 120ms; }
+.thinkingDots i:nth-child(3) { animation-delay: 240ms; }
+
+.threadLoading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: rgba(242, 240, 238, 0.48);
+  font-size: 0.72rem;
 }
 
 :global(html[data-theme="light"]) .messageAssistant p {
@@ -1341,6 +1661,22 @@
     font-size: 0.82rem;
   }
 
+  .assistantPicker strong {
+    max-width: 92px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .composerPalette {
+    max-height: 220px;
+  }
+
+  .contextChips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
   .sendButton {
     width: 34px;
     height: 34px;
@@ -1410,4 +1746,8 @@
     background: rgba(0, 0, 0, 0.55);
     padding: 0;
   }
+}
+
+@keyframes rotate {
+  to { transform: rotate(360deg); }
 }

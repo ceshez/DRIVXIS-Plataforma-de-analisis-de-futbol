@@ -1,815 +1,752 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Activity,
   ArrowLeft,
   ArrowUp,
   AudioLines,
   Bot,
-  CalendarDays,
+  Check,
   ChevronDown,
   Clock3,
+  Database,
   Ellipsis,
   FileText,
   GitBranch,
+  LoaderCircle,
   Menu,
+  Mic,
   PanelLeftClose,
   PanelLeftOpen,
-  Paperclip,
   Plus,
   Search,
-  SlidersHorizontal,
+  Square,
   Target,
   Users,
   X,
 } from "lucide-react";
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useReducer, useRef } from "react";
+import {
+  FormEvent,
+  KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { UserProfileMenu } from "@/components/user-profile-menu";
 import { useAppPreferences } from "@/components/app-preferences-provider";
-import { getDemoAssistantResponse } from "@/lib/chatbot-demo";
-import type { AppLocale } from "@/lib/preferences";
+import { CHAT_COMMANDS } from "@/lib/chatbot";
 import styles from "./dashboard-chatbot-demo.module.css";
 
-type DashboardChatbotDemoProps = {
-  userName?: string | null;
-  userEmail?: string | null;
-  hasAvatar?: boolean;
-  avatarVersion?: string | null;
+type ChatMode = "GENERAL" | "TACTICAL" | "PHYSICAL";
+
+type ChatThread = {
+  id: string;
+  title: string;
+  mode: ChatMode;
+  lastMessageAt: string;
+  messageCount: number;
+};
+
+type VideoReference = {
+  id: string;
+  label: string;
+  ownTeam?: string | null;
+  rivalTeam?: string | null;
+  status?: string;
+  hasMetrics?: boolean;
+  playedAt?: string;
+};
+
+type ChatAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
 };
 
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
+  status: "PENDING" | "STREAMING" | "COMPLETED" | "FAILED";
+  mode: ChatMode;
   content: string;
+  command?: string | null;
+  errorCode?: string | null;
+  createdAt: string;
+  videos: VideoReference[];
+  attachments: ChatAttachment[];
 };
 
-type PendingReply = {
-  id: string;
-  content: string;
+type DashboardChatbotProps = {
+  userName?: string | null;
+  userEmail?: string | null;
+  hasAvatar?: boolean;
+  avatarVersion?: string | null;
+  initialThreadId?: string | null;
 };
 
-type AssistantPhase = "idle" | "thinking" | "typing";
-type NavItemId = "new" | "search" | "season" | "custom";
+const MODE_OPTIONS: Array<{ id: ChatMode; label: string; shortLabel: string }> = [
+  { id: "TACTICAL", label: "Asistente táctico", shortLabel: "Táctico" },
+  { id: "PHYSICAL", label: "Asistente físico", shortLabel: "Físico" },
+  { id: "GENERAL", label: "Asistente general", shortLabel: "General" },
+];
 
-type ChatbotState = {
-  messages: ChatMessage[];
-  draft: string;
-  hasSentFirstMessage: boolean;
-  sidebarCollapsed: boolean;
-  mobileSidebarOpen: boolean;
-  assistantPhase: AssistantPhase;
-  typingText: string;
-  selectedPrompt: string;
-  replyQueue: PendingReply[];
-  activeReply: PendingReply | null;
-  activeNavItem: NavItemId;
-  openRecentMenuId: string | null;
-  isMobileLayout: boolean;
-};
-
-type ChatbotAction =
-  | { type: "patch"; changes: Partial<ChatbotState> }
-  | { type: "update"; update: (state: ChatbotState) => Partial<ChatbotState> }
-  | { type: "resetConversation"; activeNavItem: NavItemId };
-
-const navItemsByLocale = {
-  es: [
-    { id: "new", label: "Nuevo chat", icon: Plus },
-    { id: "search", label: "Buscar chat", icon: Search },
-    { id: "season", label: "Temporadas", icon: CalendarDays },
-    { id: "custom", label: "Personalizar", icon: SlidersHorizontal },
-  ],
-  en: [
-    { id: "new", label: "New chat", icon: Plus },
-    { id: "search", label: "Search chats", icon: Search },
-    { id: "season", label: "Seasons", icon: CalendarDays },
-    { id: "custom", label: "Customize", icon: SlidersHorizontal },
-  ],
-} satisfies Record<AppLocale, Array<{ id: NavItemId; label: string; icon: typeof Plus }>>;
-
-const recentItemsByLocale = {
-  es: ["Análisis táctico jornada 3", "Patrones de presión alta", "Transiciones defensivas vs Real", "Rendimiento mediocampo Q1", "Errores defensivos vs Saprissa", "Comparación entre extremos"],
-  en: ["Matchday 3 tactical analysis", "High-pressing patterns", "Defensive transitions vs Real", "Midfield performance Q1", "Defensive errors vs Saprissa", "Winger comparison"],
-} satisfies Record<AppLocale, string[]>;
-
-const starterPromptIcons = [Target, Activity, Bot, Users, GitBranch, FileText];
-const starterPromptsByLocale = {
-  es: ["Análisis táctico", "Rendimiento físico", "Presión y posesión", "Comparar equipos", "Plan de juego", "Resumen del partido"],
-  en: ["Tactical analysis", "Physical performance", "Pressing and possession", "Compare teams", "Game plan", "Match summary"],
-} satisfies Record<AppLocale, string[]>;
-
-const INITIAL_CHATBOT_STATE: ChatbotState = {
-  messages: [],
-  draft: "",
-  hasSentFirstMessage: false,
-  sidebarCollapsed: false,
-  mobileSidebarOpen: false,
-  assistantPhase: "idle",
-  typingText: "",
-  selectedPrompt: "",
-  replyQueue: [],
-  activeReply: null,
-  activeNavItem: "new",
-  openRecentMenuId: null,
-  isMobileLayout: false,
-};
-
-function chatbotReducer(state: ChatbotState, action: ChatbotAction): ChatbotState {
-  if (action.type === "resetConversation") {
-    return {
-      ...state,
-      messages: [],
-      draft: "",
-      hasSentFirstMessage: false,
-      assistantPhase: "idle",
-      typingText: "",
-      selectedPrompt: "",
-      replyQueue: [],
-      activeReply: null,
-      activeNavItem: action.activeNavItem,
-    };
-  }
-  const changes = action.type === "update" ? action.update(state) : action.changes;
-  return { ...state, ...changes };
-}
+const COMMAND_ICONS = [Target, Activity, Bot, Users, GitBranch, FileText];
 
 function BrandWordmark({ compact = false }: { compact?: boolean }) {
   return (
     <span className={`${styles.brandWordmark} ${compact ? styles.brandWordmarkCompact : ""}`} aria-label="DRIVXIS">
-      <span>DRI</span>
-      <span className={styles.brandWordmarkV}>V</span>
-      <span>XIS</span>
+      <span>DRI</span><span className={styles.brandWordmarkV}>V</span><span>XIS</span>
     </span>
   );
 }
 
-type ChatbotSidebarProps = {
-  state: ChatbotState;
-  className: string;
-  userName?: string | null;
-  userEmail?: string | null;
-  hasAvatar: boolean;
-  avatarVersion?: string | null;
-  dispatch: React.Dispatch<ChatbotAction>;
-  onNavAction: (itemId: NavItemId) => void;
-};
-
-function ChatbotSidebar({
-  state,
-  className,
-  userName,
-  userEmail,
-  hasAvatar,
-  avatarVersion,
-  dispatch,
-  onNavAction,
-}: ChatbotSidebarProps) {
-  const { locale } = useAppPreferences();
-  const english = locale === "en";
-  const navItems = navItemsByLocale[locale];
-  const recentItems = recentItemsByLocale[locale].map((label, index) => ({ id: `recent-${index + 1}`, label }));
-  const { sidebarCollapsed, activeNavItem, openRecentMenuId } = state;
-  return (
-    <aside className={className} aria-label={english ? "Chatbot navigation" : "Navegación del chatbot"}>
-      <div className={styles.sidebarInner}>
-        <div className={styles.mobileHeader}>
-          <BrandWordmark compact />
-          <button
-            type="button"
-            aria-label={english ? "Close panel" : "Cerrar panel"}
-            onClick={() => dispatch({ type: "patch", changes: { mobileSidebarOpen: false } })}
-          >
-            <X size={14} />
-          </button>
-        </div>
-
-        <div className={styles.desktopHeader}>
-          <div className={styles.brandRow}>
-            <Link href="/dashboard/chatbot" className={styles.brandLink} aria-label="Chatbot DRIVXIS">
-              <BrandWordmark />
-            </Link>
-            <button
-              type="button"
-              className={`${styles.collapseButton} ${styles.collapsedTooltipTrigger}`}
-              onClick={() =>
-                dispatch({
-                  type: "update",
-                  update: (current) => ({ sidebarCollapsed: !current.sidebarCollapsed }),
-                })
-              }
-              aria-label={sidebarCollapsed ? (english ? "Expand sidebar" : "Expandir barra lateral") : (english ? "Collapse sidebar" : "Colapsar barra lateral")}
-              data-tooltip={sidebarCollapsed ? (english ? "Open sidebar" : "Abrir barra lateral") : (english ? "Close sidebar" : "Cerrar barra lateral")}
-            >
-              {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
-            </button>
-          </div>
-
-          <Link href="/dashboard" className={`${styles.backLink} ${styles.collapsedTooltipTrigger}`} data-tooltip={english ? "Back to dashboard" : "Volver al panel"}>
-            <span className={styles.backLinkIcon} aria-hidden="true">
-              <ArrowLeft size={12} />
-            </span>
-            <span className={styles.backLinkLabel}>{english ? "Back to dashboard" : "Volver al panel"}</span>
-          </Link>
-        </div>
-
-        <div className={styles.navArea}>
-          <ul className={styles.navList}>
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeNavItem === item.id;
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    className={`${styles.navItem} ${styles.collapsedTooltipTrigger} ${isActive ? styles.navItemActive : ""}`}
-                    onClick={() => onNavAction(item.id)}
-                    data-tooltip={item.label}
-                  >
-                    <Icon size={14} />
-                    <span className={styles.navText}>{item.label}</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-
-          <div className={styles.recentSection}>
-            <p className={styles.recentTitle}>{english ? "Recent" : "Recientes"}</p>
-            <ul className={styles.recentList}>
-              {recentItems.map((item) => (
-                <li key={item.id} className={styles.recentItem} data-recent-menu-root="true">
-                  <button type="button" className={styles.recentRow}>
-                    <Clock3 size={10} />
-                    <span>{item.label}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.recentMenuButton}
-                    aria-label={`${english ? "Options for" : "Opciones para"} ${item.label}`}
-                    aria-haspopup="menu"
-                    aria-expanded={openRecentMenuId === item.id}
-                    onClick={() =>
-                      dispatch({
-                        type: "update",
-                        update: (current) => ({
-                          openRecentMenuId: current.openRecentMenuId === item.id ? null : item.id,
-                        }),
-                      })
-                    }
-                  >
-                    <Ellipsis size={12} />
-                  </button>
-                  {openRecentMenuId === item.id ? (
-                    <ul className={styles.recentMenu} role="menu" aria-label={`${english ? "Actions for" : "Acciones para"} ${item.label}`}>
-                      {(english ? ["Rename", "Delete", "Add to season"] : ["Editar nombre", "Eliminar", "Agregar a temporada"]).map((label) => (
-                        <li key={label}>
-                          <button
-                            type="button"
-                            role="menuitem"
-                            onClick={() => dispatch({ type: "patch", changes: { openRecentMenuId: null } })}
-                          >
-                            {label}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-
-        <div className={styles.userDock}>
-          <div className={styles.userExpanded}>
-            <UserProfileMenu
-              name={userName}
-              email={userEmail}
-              hasAvatar={hasAvatar}
-              avatarVersion={avatarVersion}
-              dropdownDirection="up"
-              triggerVariant="sidebar-card"
-              showSidebarSettingsIcon
-            />
-          </div>
-          <div className={styles.userCollapsed}>
-            <UserProfileMenu
-              name={userName}
-              email={userEmail}
-              hasAvatar={hasAvatar}
-              avatarVersion={avatarVersion}
-              dropdownDirection="up"
-            />
-          </div>
-        </div>
-      </div>
-    </aside>
-  );
+function formatRelativeDate(value: string, locale: "es" | "en") {
+  const date = new Date(value);
+  const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
+  if (days <= 0) return locale === "en" ? "Today" : "Hoy";
+  if (days === 1) return locale === "en" ? "Yesterday" : "Ayer";
+  if (days < 7) return locale === "en" ? `${days} days ago` : `Hace ${days} días`;
+  const [month, day] = date.toISOString().slice(5, 10).split("-");
+  return `${day}/${month}`;
 }
 
-type ChatbotWorkspaceProps = {
-  state: ChatbotState;
-  greetingName: string;
-  threadRef: React.RefObject<HTMLDivElement | null>;
-  inputRef: React.RefObject<HTMLTextAreaElement | null>;
-  dispatch: React.Dispatch<ChatbotAction>;
-  onScroll: () => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onInputKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
-  onApplyPrompt: (prompt: string) => void;
-};
-
-function ChatbotWorkspace({
-  state,
-  greetingName,
-  threadRef,
-  inputRef,
-  dispatch,
-  onScroll,
-  onSubmit,
-  onInputKeyDown,
-  onApplyPrompt,
-}: ChatbotWorkspaceProps) {
-  const { locale } = useAppPreferences();
-  const english = locale === "en";
-  const starterPrompts = starterPromptsByLocale[locale];
-  const {
-    messages,
-    draft,
-    hasSentFirstMessage,
-    assistantPhase,
-    typingText,
-    selectedPrompt,
-    replyQueue,
-    activeReply,
-    isMobileLayout,
-  } = state;
-  const trimmedDraft = draft.trim();
-  const isAssistantResponding = assistantPhase !== "idle" || activeReply !== null || replyQueue.length > 0;
-  const showEmptyIntro = !hasSentFirstMessage && (!isMobileLayout || trimmedDraft.length === 0);
-  const showStarterPrompts = !hasSentFirstMessage;
-  const isAssistantThinking = assistantPhase === "thinking";
-  const isAssistantTyping = assistantPhase === "typing";
-  const isConversationMode = hasSentFirstMessage || messages.length > 0 || assistantPhase !== "idle";
-  const landingClassName = [styles.landing, showEmptyIntro ? styles.landingIntro : styles.landingCompact].join(" ");
-
-  return (
-    <div className={styles.workspace}>
-      <header className={styles.mobileTopbar}>
-        <button
-          type="button"
-          aria-label={english ? "Open sidebar" : "Abrir barra lateral"}
-          onClick={() => dispatch({ type: "patch", changes: { mobileSidebarOpen: true } })}
-        >
-          <Menu size={15} />
-        </button>
-        <BrandWordmark compact />
-        <span className={styles.mobileTopbarPlaceholder} aria-hidden="true" />
-      </header>
-
-      {isConversationMode ? (
-        <div className={styles.conversation}>
-          <div className={styles.thread} ref={threadRef} onScroll={onScroll} aria-live="polite">
-            <div className={styles.threadMessages}>
-              {messages.map((message) => (
-                <article
-                  key={message.id}
-                  className={`${styles.message} ${message.role === "user" ? styles.messageUser : styles.messageAssistant}`}
-                >
-                  <p>{message.content}</p>
-                </article>
-              ))}
-
-              {isAssistantThinking ? (
-                <article className={`${styles.message} ${styles.messageAssistant} ${styles.messageThinking}`} aria-label={english ? "Assistant thinking" : "Asistente pensando"}>
-                  <span />
-                  <span />
-                  <span />
-                </article>
-              ) : null}
-
-              {isAssistantTyping ? (
-                <article className={`${styles.message} ${styles.messageAssistant}`}>
-                  <p>
-                    {typingText}
-                    <i className={styles.caret} aria-hidden="true" />
-                  </p>
-                </article>
-              ) : null}
-            </div>
-          </div>
-
-          <div className={styles.composerDock}>
-            <div className={styles.composerDockInner}>
-              <form className={`${styles.composer} ${styles.composerChat}`} onSubmit={onSubmit}>
-                <label className="visually-hidden" htmlFor="chatbot-composer-input-active">
-                  {english ? "Write your message" : "Escribe tu mensaje"}
-                </label>
-                <textarea
-                  id="chatbot-composer-input-active"
-                  ref={inputRef}
-                  rows={2}
-                  className={styles.composerTextarea}
-                  value={draft}
-                  disabled={isAssistantResponding}
-                  onChange={(event) => {
-                    dispatch({
-                      type: "patch",
-                      changes: { draft: event.target.value, selectedPrompt: "" },
-                    });
-                  }}
-                  onKeyDown={onInputKeyDown}
-                  placeholder={english ? "Write your question for the assistant..." : "Escribe tu consulta para el asistente..."}
-                />
-                <ComposerFooter
-                  canSend={trimmedDraft.length > 0 && !isAssistantResponding}
-                  submitAlways
-                />
-              </form>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className={landingClassName}>
-          <div className={styles.centerStack}>
-            {showEmptyIntro ? (
-              <div className={styles.hero}>
-                <h1 className={styles.heroTitle}>{english ? "Good evening" : "Buenas noches"}, {greetingName}</h1>
-                <p className={styles.heroSubtitle}>{english ? "Your tactical analysis and sports intelligence assistant" : "Tu asistente de análisis táctico e inteligencia deportiva"}</p>
-              </div>
-            ) : null}
-
-            <div className={styles.composerStack}>
-              <form className={`${styles.composer} ${styles.composerEmpty}`} onSubmit={onSubmit}>
-                <label className="visually-hidden" htmlFor="chatbot-composer-input">
-                  {english ? "Write your message" : "Escribe tu mensaje"}
-                </label>
-                <textarea
-                  id="chatbot-composer-input"
-                  ref={inputRef}
-                  rows={3}
-                  className={styles.composerTextarea}
-                  value={draft}
-                  disabled={isAssistantResponding}
-                  onChange={(event) => {
-                    dispatch({
-                      type: "patch",
-                      changes: { draft: event.target.value, selectedPrompt: "" },
-                    });
-                  }}
-                  onKeyDown={onInputKeyDown}
-                  placeholder={english ? "How can I help you today?" : "¿Cómo puedo ayudarte hoy?"}
-                />
-                <ComposerFooter canSend={trimmedDraft.length > 0 && !isAssistantResponding} />
-              </form>
-
-              {showStarterPrompts ? (
-                <div className={styles.suggestionGrid} aria-label={english ? "Starter suggestions" : "Sugerencias iniciales"}>
-                  {starterPrompts.map((prompt, index) => {
-                    const Icon = starterPromptIcons[index % starterPromptIcons.length];
-                    return (
-                      <button
-                        key={prompt}
-                        type="button"
-                        className={`${styles.suggestionChip} ${selectedPrompt === prompt ? styles.suggestionChipSelected : ""}`}
-                        onClick={() => onApplyPrompt(prompt)}
-                      >
-                        <Icon size={13} />
-                        <span>{prompt}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <p className={styles.privacyNote}>
-            <span>◌</span> {english ? "Your data is protected. DRIVXIS never shares your information." : "Tus datos están protegidos. DRIVXIS nunca comparte tu información."}
-          </p>
-        </div>
-      )}
-    </div>
-  );
+function getMentionQuery(value: string) {
+  const match = value.match(/(?:^|\s)@([^@\n]*)$/u);
+  return match ? match[1].trim() : null;
 }
 
-function ComposerFooter({ canSend, submitAlways = false }: { canSend: boolean; submitAlways?: boolean }) {
-  const { locale } = useAppPreferences();
-  const english = locale === "en";
-  return (
-    <div className={styles.composerFooter}>
-      <div className={styles.composerTools}>
-        <button type="button" className={styles.toolButton} aria-label={english ? "Add resource" : "Agregar recurso"}>
-          <Plus size={15} />
-        </button>
-        <button type="button" className={styles.toolButton} aria-label={english ? "Attach file" : "Adjuntar archivo"}>
-          <Paperclip size={14} />
-        </button>
-      </div>
-      {canSend || submitAlways ? (
-        <button className={styles.sendButton} type="submit" disabled={!canSend} aria-label={english ? "Send message" : "Enviar mensaje"}>
-          <ArrowUp size={14} />
-        </button>
-      ) : (
-        <div className={styles.assistantPicker} aria-label={english ? "Select assistant" : "Seleccionar asistente"}>
-          <strong>{english ? "Tactical assistant" : "Asistente táctico"}</strong>
-          <ChevronDown size={15} />
-          <AudioLines size={16} />
-        </div>
-      )}
-    </div>
-  );
+function replaceLastMention(value: string, label: string) {
+  return value.replace(/(?:^|\s)@([^@\n]*)$/u, (segment) => `${segment.startsWith(" ") ? " " : ""}@${label} `);
 }
 
-export function DashboardChatbotDemo({
+export function DashboardChatbot({
   userName,
   userEmail,
   hasAvatar = false,
   avatarVersion = null,
-}: DashboardChatbotDemoProps) {
+  initialThreadId = null,
+}: DashboardChatbotProps) {
+  const router = useRouter();
   const { locale } = useAppPreferences();
   const english = locale === "en";
-  const [chatbotState, dispatchChatbot] = useReducer(chatbotReducer, INITIAL_CHATBOT_STATE);
-  const {
-    messages,
-    draft,
-    hasSentFirstMessage,
-    sidebarCollapsed,
-    mobileSidebarOpen,
-    assistantPhase,
-    typingText,
-    selectedPrompt,
-    replyQueue,
-    activeReply,
-    activeNavItem,
-    openRecentMenuId,
-    isMobileLayout,
-  } = chatbotState;
+  const [threads, setThreads] = useState<ChatThread[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(initialThreadId);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [mode, setMode] = useState<ChatMode>("TACTICAL");
+  const [selectedCommand, setSelectedCommand] = useState<string | null>(null);
+  const [selectedVideos, setSelectedVideos] = useState<VideoReference[]>([]);
+  const [selectedAttachments, setSelectedAttachments] = useState<ChatAttachment[]>([]);
+  const [mentionResults, setMentionResults] = useState<VideoReference[]>([]);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [modeMenuOpen, setModeMenuOpen] = useState(false);
+  const [openRecentMenuId, setOpenRecentMenuId] = useState<string | null>(null);
+  const [loadingThread, setLoadingThread] = useState(Boolean(initialThreadId));
+  const [streaming, setStreaming] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [voiceState, setVoiceState] = useState<"idle" | "recording" | "transcribing">("idle");
+  const [composerError, setComposerError] = useState<string | null>(null);
 
-  const messageCounterRef = useRef(0);
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const autoScrollEnabledRef = useRef(true);
-  const previousAssistantPhaseRef = useRef<AssistantPhase>("idle");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStreamRef = useRef<MediaStream | null>(null);
+  const recordingChunksRef = useRef<Blob[]>([]);
+  const uploadRequestIdRef = useRef(0);
 
-  const trimmedDraft = draft.trim();
-  const isAssistantResponding = assistantPhase !== "idle" || activeReply !== null || replyQueue.length > 0;
-  const isAssistantTyping = assistantPhase === "typing";
-  const isDesktopSidebarCollapsed = sidebarCollapsed && !isMobileLayout;
+  const greetingName = useMemo(() => (userName || "Analista").trim().split(/\s+/)[0] || "Analista", [userName]);
+  const activeMode = MODE_OPTIONS.find((option) => option.id === mode) || MODE_OPTIONS[0];
+  const mentionQuery = getMentionQuery(draft);
+  const commandMatches = draft.startsWith("/")
+    ? CHAT_COMMANDS.filter((command) => `${command.slash} ${command.label}`.toLocaleLowerCase("es").includes(draft.toLocaleLowerCase("es").trim()))
+    : [];
+  const filteredThreads = threads.filter((thread) => thread.title.toLocaleLowerCase(locale).includes(searchQuery.toLocaleLowerCase(locale)));
+  const isConversationMode = Boolean(activeThreadId) || messages.length > 0 || streaming;
+  const canSend = draft.trim().length > 0 && !streaming;
 
-  const rootClassName = [styles.shell, isDesktopSidebarCollapsed ? styles.sidebarCollapsed : ""].filter(Boolean).join(" ");
-  const sidebarClassName = [styles.sidebar, mobileSidebarOpen ? styles.sidebarMobileOpen : ""].filter(Boolean).join(" ");
+  const loadThreads = useCallback(async () => {
+    const response = await fetch("/api/chat/threads", { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json() as { threads: ChatThread[] };
+    setThreads(data.threads);
+  }, []);
 
-  const greetingName = useMemo(() => {
-    const source = (userName || "Carlos").trim();
-    if (source.length === 0) return "Carlos";
-    return source.split(/\s+/)[0] || "Carlos";
-  }, [userName]);
+  const loadThread = useCallback(async (threadId: string) => {
+    setLoadingThread(true);
+    setComposerError(null);
+    try {
+      const response = await fetch(`/api/chat/threads/${threadId}`, { cache: "no-store" });
+      if (!response.ok) throw new Error(english ? "Chat not found." : "No se encontró el chat.");
+      const data = await response.json() as { thread: ChatThread; messages: ChatMessage[] };
+      setActiveThreadId(data.thread.id);
+      setMode(data.thread.mode);
+      setMessages(data.messages);
+      setSelectedVideos([]);
+      setSelectedAttachments([]);
+    } catch (error) {
+      setComposerError(error instanceof Error ? error.message : "No se pudo abrir el chat.");
+    } finally {
+      setLoadingThread(false);
+    }
+  }, [english]);
 
-  useEffect(() => {
-    if (activeReply || replyQueue.length === 0) return;
-    dispatchChatbot({
-      type: "update",
-      update: (current) => ({
-        activeReply: current.replyQueue[0] ?? null,
-        replyQueue: current.replyQueue.slice(1),
-      }),
-    });
-  }, [activeReply, replyQueue]);
-
-  useEffect(() => {
-    if (!activeReply) return;
-
-    let thinkingTimeout: ReturnType<typeof setTimeout> | null = null;
-    let typingFrame = 0;
-
-    dispatchChatbot({ type: "patch", changes: { assistantPhase: "thinking", typingText: "" } });
-
-    thinkingTimeout = setTimeout(() => {
-      dispatchChatbot({ type: "patch", changes: { assistantPhase: "typing" } });
-      const startedAt = performance.now();
-      const durationMs = Math.max(420, activeReply.content.length * 8);
-
-      const typeNextFrame = (now: number) => {
-        const cursor = Math.min(activeReply.content.length, Math.max(1, Math.floor(((now - startedAt) / durationMs) * activeReply.content.length)));
-        dispatchChatbot({ type: "patch", changes: { typingText: activeReply.content.slice(0, cursor) } });
-
-        if (cursor < activeReply.content.length) {
-          typingFrame = window.requestAnimationFrame(typeNextFrame);
-          return;
-        }
-
-        dispatchChatbot({
-          type: "update",
-          update: (current) => ({
-            messages: [
-              ...current.messages,
-              {
-                id: activeReply.id,
-                role: "assistant",
-                content: activeReply.content,
-              },
-            ],
-            typingText: "",
-            assistantPhase: "idle",
-            activeReply: null,
-          }),
-        });
-      };
-
-      typingFrame = window.requestAnimationFrame(typeNextFrame);
-    }, 320);
-
-    return () => {
-      if (thinkingTimeout) clearTimeout(thinkingTimeout);
-      if (typingFrame) window.cancelAnimationFrame(typingFrame);
-    };
-  }, [activeReply]);
+  useEffect(() => { void loadThreads(); }, [loadThreads]);
 
   useEffect(() => {
-    if (!autoScrollEnabledRef.current) return;
+    if (initialThreadId) void loadThread(initialThreadId);
+  }, [initialThreadId, loadThread]);
+
+  useEffect(() => {
+    if (mentionQuery === null) {
+      setMentionResults([]);
+      return;
+    }
+    const timer = window.setTimeout(async () => {
+      const response = await fetch(`/api/chat/videos?q=${encodeURIComponent(mentionQuery)}`, { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json() as { videos: VideoReference[] };
+      setMentionResults(data.videos.filter((video) => !selectedVideos.some((selected) => selected.id === video.id)));
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [mentionQuery, selectedVideos]);
+
+  useEffect(() => {
     const thread = threadRef.current;
     if (!thread) return;
-    thread.scrollTo({
-      top: thread.scrollHeight,
-      behavior: isAssistantTyping ? "auto" : "smooth",
-    });
-  }, [assistantPhase, isAssistantTyping, messages, typingText]);
-
-  useEffect(() => {
-    if (!selectedPrompt) return;
-    inputRef.current?.focus();
-  }, [selectedPrompt]);
+    thread.scrollTo({ top: thread.scrollHeight, behavior: streaming ? "auto" : "smooth" });
+  }, [messages, streaming]);
 
   useEffect(() => {
     if (!mobileSidebarOpen) return;
-    const previousOverflow = document.body.style.overflow;
+    const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
+    return () => { document.body.style.overflow = previous; };
   }, [mobileSidebarOpen]);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia("(max-width: 760px)");
-    const updateIsMobile = (event?: MediaQueryListEvent) => {
-      dispatchChatbot({ type: "patch", changes: { isMobileLayout: event ? event.matches : mediaQuery.matches } });
-    };
-    updateIsMobile();
-    mediaQuery.addEventListener("change", updateIsMobile);
-    return () => mediaQuery.removeEventListener("change", updateIsMobile);
-  }, []);
-
-  useEffect(() => {
-    if (!isMobileLayout && mobileSidebarOpen) {
-      dispatchChatbot({ type: "patch", changes: { mobileSidebarOpen: false } });
-    }
-  }, [isMobileLayout, mobileSidebarOpen]);
-
-  useEffect(() => {
-    const previousPhase = previousAssistantPhaseRef.current;
-    previousAssistantPhaseRef.current = assistantPhase;
-
-    const finishedTyping = previousPhase === "typing" && assistantPhase === "idle" && !isAssistantResponding;
-    if (!finishedTyping || isMobileLayout) return;
-    if (window.matchMedia("(pointer: coarse)").matches) return;
-
-    window.requestAnimationFrame(() => {
-      inputRef.current?.focus();
-    });
-  }, [assistantPhase, isAssistantResponding, isMobileLayout]);
-
-  useEffect(() => {
-    if (!openRecentMenuId) return;
-    function handlePointerDown(event: MouseEvent) {
+    if (!openRecentMenuId && !modeMenuOpen) return;
+    const close = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
-      if (target.closest("[data-recent-menu-root='true']")) return;
-      dispatchChatbot({ type: "patch", changes: { openRecentMenuId: null } });
-    }
-    function handleEscape(event: globalThis.KeyboardEvent) {
-      if (event.key === "Escape") dispatchChatbot({ type: "patch", changes: { openRecentMenuId: null } });
-    }
-    document.addEventListener("mousedown", handlePointerDown);
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
-      document.removeEventListener("keydown", handleEscape);
+      if (!target.closest("[data-chat-popover='true']")) {
+        setOpenRecentMenuId(null);
+        setModeMenuOpen(false);
+      }
     };
-  }, [openRecentMenuId]);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [modeMenuOpen, openRecentMenuId]);
 
-  function nextMessageId(role: ChatMessage["role"]) {
-    messageCounterRef.current += 1;
-    return `${role}-${Date.now()}-${messageCounterRef.current}`;
+  async function createThread() {
+    const response = await fetch("/api/chat/threads", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    });
+    if (!response.ok) throw new Error(english ? "Could not create chat." : "No se pudo crear el chat.");
+    const data = await response.json() as { thread: ChatThread };
+    setActiveThreadId(data.thread.id);
+    setThreads((current) => [data.thread, ...current.filter((thread) => thread.id !== data.thread.id)]);
+    router.replace(`/dashboard/chatbot/${data.thread.id}`);
+    return data.thread.id;
   }
 
-  function queueAssistantReply(message: string) {
-    const response = getDemoAssistantResponse(message, locale);
-    const reply = { id: nextMessageId("assistant"), content: response };
-    dispatchChatbot({
-      type: "update",
-      update: (current) => ({ replyQueue: [...current.replyQueue, reply] }),
+  function startNewChat() {
+    abortControllerRef.current?.abort();
+    setActiveThreadId(null);
+    setMessages([]);
+    setDraft("");
+    setSelectedVideos([]);
+    setSelectedAttachments([]);
+    setComposerError(null);
+    setMobileSidebarOpen(false);
+    router.push("/dashboard/chatbot");
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  async function openThread(threadId: string) {
+    if (streaming) return;
+    setMobileSidebarOpen(false);
+    router.push(`/dashboard/chatbot/${threadId}`);
+    await loadThread(threadId);
+  }
+
+  async function renameThread(thread: ChatThread) {
+    const title = window.prompt(english ? "Chat name" : "Nombre del chat", thread.title)?.trim();
+    if (!title || title === thread.title) return;
+    const response = await fetch(`/api/chat/threads/${thread.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title }),
+    });
+    if (response.ok) setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, title } : item));
+    setOpenRecentMenuId(null);
+  }
+
+  async function deleteThread(thread: ChatThread) {
+    if (!window.confirm(english ? `Delete “${thread.title}”?` : `¿Eliminar “${thread.title}”?`)) return;
+    const response = await fetch(`/api/chat/threads/${thread.id}`, { method: "DELETE" });
+    if (!response.ok) return;
+    setThreads((current) => current.filter((item) => item.id !== thread.id));
+    if (activeThreadId === thread.id) startNewChat();
+    setOpenRecentMenuId(null);
+  }
+
+  async function changeMode(nextMode: ChatMode) {
+    setMode(nextMode);
+    setModeMenuOpen(false);
+    if (!activeThreadId) return;
+    await fetch(`/api/chat/threads/${activeThreadId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: nextMode }),
     });
   }
 
-  function updateAutoScrollPreference() {
-    const thread = threadRef.current;
-    if (!thread) return;
-    const distanceToBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
-    autoScrollEnabledRef.current = distanceToBottom <= 120;
+  function applyCommand(command: (typeof CHAT_COMMANDS)[number]) {
+    setMode(command.mode as ChatMode);
+    setSelectedCommand(command.id);
+    setDraft(`${command.slash} `);
+    setComposerError(null);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
   }
 
-  function sendMessage() {
-    if (trimmedDraft.length === 0 || isAssistantResponding) return;
+  function selectVideo(video: VideoReference) {
+    setSelectedVideos((current) => [...current, video]);
+    setDraft((current) => replaceLastMention(current, video.label));
+    setMentionResults([]);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }
 
-    const outbound = trimmedDraft;
-    dispatchChatbot({
-      type: "update",
-      update: (current) => ({
-        messages: [
-          ...current.messages,
-          {
-            id: nextMessageId("user"),
-            role: "user",
-            content: outbound,
-          },
-        ],
-        hasSentFirstMessage: true,
-        draft: "",
-        selectedPrompt: "",
-        mobileSidebarOpen: false,
-      }),
-    });
-    queueAssistantReply(outbound);
-    autoScrollEnabledRef.current = true;
+  async function uploadAttachment(file: File) {
+    const requestId = ++uploadRequestIdRef.current;
+    setUploading(true);
+    setComposerError(null);
+    try {
+      const threadId = activeThreadId || await createThread();
+      const form = new FormData();
+      form.set("threadId", threadId);
+      form.set("file", file);
+      const response = await fetch("/api/chat/attachments", { method: "POST", body: form });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(errorData?.error || "No se pudo adjuntar el documento.");
+      }
+      const data = await response.json() as { attachment?: ChatAttachment };
+      if (!data.attachment) throw new Error("No se pudo adjuntar el documento.");
+      setSelectedAttachments((current) => [...current, data.attachment!]);
+    } catch (error) {
+      setComposerError(error instanceof Error ? error.message : "No se pudo adjuntar el documento.");
+    } finally {
+      if (uploadRequestIdRef.current === requestId) {
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    }
+  }
+
+  async function removeAttachment(attachment: ChatAttachment) {
+    setSelectedAttachments((current) => current.filter((item) => item.id !== attachment.id));
+    const response = await fetch(`/api/chat/attachments/${attachment.id}`, { method: "DELETE" });
+    if (!response.ok) setComposerError(english ? "Could not remove the document." : "No se pudo eliminar el documento.");
+  }
+
+  async function transcribeRecording(blob: Blob) {
+    setVoiceState("transcribing");
+    try {
+      const form = new FormData();
+      form.set("audio", new File([blob], "consulta.webm", { type: blob.type || "audio/webm" }));
+      const response = await fetch("/api/chat/transcriptions", { method: "POST", body: form });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(errorData?.error || "No se pudo reconocer la voz.");
+      }
+      const data = await response.json() as { text?: string };
+      if (!data.text) throw new Error("No se pudo reconocer la voz.");
+      setDraft((current) => `${current}${current.trim() ? " " : ""}${data.text}`);
+      window.requestAnimationFrame(() => inputRef.current?.focus());
+    } catch (error) {
+      setComposerError(error instanceof Error ? error.message : "No se pudo reconocer la voz.");
+    } finally {
+      setVoiceState("idle");
+    }
+  }
+
+  async function toggleVoice() {
+    if (voiceState === "recording") {
+      recorderRef.current?.stop();
+      return;
+    }
+    if (voiceState !== "idle") return;
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setComposerError(english ? "Voice recording is not supported in this browser." : "Este navegador no permite grabar voz.");
+      return;
+    }
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recordingStreamRef.current = mediaStream;
+      recordingChunksRef.current = [];
+      const recorder = new MediaRecorder(mediaStream);
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (event) => { if (event.data.size) recordingChunksRef.current.push(event.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(recordingChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        recordingStreamRef.current?.getTracks().forEach((track) => track.stop());
+        recordingStreamRef.current = null;
+        void transcribeRecording(blob);
+      };
+      recorder.start();
+      setVoiceState("recording");
+      setComposerError(null);
+    } catch {
+      setComposerError(english ? "Microphone permission was not granted." : "No se concedió permiso para usar el micrófono.");
+    }
+  }
+
+  async function sendMessage() {
+    const content = draft.trim();
+    if (!content || streaming) return;
+    setComposerError(null);
+    let threadId: string;
+    try {
+      threadId = activeThreadId || await createThread();
+    } catch (error) {
+      setComposerError(error instanceof Error ? error.message : "No se pudo crear el chat.");
+      return;
+    }
+
+    const tempUserId = `user-${crypto.randomUUID()}`;
+    const tempAssistantId = `assistant-${crypto.randomUUID()}`;
+    const sentVideos = [...selectedVideos];
+    const sentAttachments = [...selectedAttachments];
+    const sentCommand = selectedCommand;
+    const timestamp = new Date().toISOString();
+    setMessages((current) => [
+      ...current,
+      { id: tempUserId, role: "user", status: "COMPLETED", mode, content, command: sentCommand, createdAt: timestamp, videos: sentVideos, attachments: sentAttachments },
+      { id: tempAssistantId, role: "assistant", status: "STREAMING", mode, content: "", command: sentCommand, createdAt: timestamp, videos: [], attachments: [] },
+    ]);
+    setDraft("");
+    setSelectedVideos([]);
+    setSelectedAttachments([]);
+    setSelectedCommand(null);
+    setStreaming(true);
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const response = await fetch(`/api/chat/threads/${threadId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content,
+          mode,
+          command: sentCommand || undefined,
+          videoIds: sentVideos.map((video) => video.id),
+          attachmentIds: sentAttachments.map((attachment) => attachment.id),
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(data?.error || "No se pudo iniciar la respuesta.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line) as { type: string; text?: string; message?: string; messageId?: string; userMessageId?: string; title?: string; code?: string };
+          if (event.type === "delta" && event.text) {
+            setMessages((current) => current.map((message) => message.id === tempAssistantId ? { ...message, content: message.content + event.text } : message));
+          }
+          if (event.type === "error") {
+            setMessages((current) => current.map((message) => message.id === tempAssistantId ? { ...message, status: "FAILED", errorCode: event.code, content: message.content || event.message || "No se pudo responder." } : message));
+          }
+          if (event.type === "done") {
+            setMessages((current) => current.map((message) => {
+              if (message.id === tempUserId) return { ...message, id: event.userMessageId || message.id };
+              if (message.id === tempAssistantId) return { ...message, id: event.messageId || message.id, status: "COMPLETED" };
+              return message;
+            }));
+            if (event.title) setThreads((current) => current.map((thread) => thread.id === threadId ? { ...thread, title: event.title! } : thread));
+          }
+        }
+        if (done) break;
+      }
+      await loadThreads();
+    } catch (error) {
+      const aborted = error instanceof DOMException && error.name === "AbortError";
+      setMessages((current) => current.map((message) => message.id === tempAssistantId ? {
+        ...message,
+        status: "FAILED",
+        content: message.content || (aborted ? (english ? "Response stopped." : "Respuesta detenida.") : (error instanceof Error ? error.message : "No se pudo responder.")),
+      } : message));
+    } finally {
+      setStreaming(false);
+      abortControllerRef.current = null;
+    }
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    sendMessage();
+    void sendMessage();
   }
 
   function handleInputKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (isAssistantResponding) {
+    if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      return;
+      void sendMessage();
     }
-    if (event.key !== "Enter" || event.shiftKey) return;
-    event.preventDefault();
-    sendMessage();
   }
 
-  function applyStarterPrompt(prompt: string) {
-    dispatchChatbot({
-      type: "patch",
-      changes: { selectedPrompt: prompt, draft: prompt, mobileSidebarOpen: false },
-    });
+  function renderComposer(chat = false) {
+    return (
+      <div className={styles.composerWrapper}>
+        <form className={`${styles.composer} ${chat ? styles.composerChat : styles.composerEmpty}`} onSubmit={handleSubmit}>
+          <label className="visually-hidden" htmlFor={chat ? "chatbot-composer-active" : "chatbot-composer"}>
+            {english ? "Write your message" : "Escribe tu mensaje"}
+          </label>
+          <textarea
+            id={chat ? "chatbot-composer-active" : "chatbot-composer"}
+            ref={inputRef}
+            rows={chat ? 2 : 3}
+            className={styles.composerTextarea}
+            value={draft}
+            disabled={streaming}
+            onChange={(event) => {
+              const nextDraft = event.target.value;
+              setDraft(nextDraft);
+              const command = CHAT_COMMANDS.find((item) => nextDraft.startsWith(item.slash));
+              setSelectedCommand(command?.id || null);
+              if (command) setMode(command.mode as ChatMode);
+              setComposerError(null);
+            }}
+            onKeyDown={handleInputKeyDown}
+            placeholder={english ? "Ask about your matches, type / or reference @video…" : "Pregunta por tus partidos, escribe / o referencia @video…"}
+          />
+
+          {(selectedVideos.length > 0 || selectedAttachments.length > 0) ? (
+            <div className={styles.contextChips}>
+              {selectedVideos.map((video) => (
+                <button key={video.id} type="button" className={styles.contextChip} onClick={() => setSelectedVideos((current) => current.filter((item) => item.id !== video.id))}>
+                  <Database size={11} /><span>@{video.label}</span><X size={10} />
+                </button>
+              ))}
+              {selectedAttachments.map((attachment) => (
+                <button key={attachment.id} type="button" className={styles.contextChip} onClick={() => void removeAttachment(attachment)}>
+                  <FileText size={11} /><span>{attachment.name}</span><X size={10} />
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className={styles.composerFooter}>
+            <div className={styles.composerTools}>
+              <input
+                ref={fileInputRef}
+                className={styles.hiddenFileInput}
+                type="file"
+                aria-label={english ? "Select document" : "Seleccionar documento"}
+                accept=".pdf,.txt,.csv,.md,.json,image/png,image/jpeg,image/webp"
+                onChange={(event) => { const file = event.target.files?.[0]; if (file) void uploadAttachment(file); }}
+              />
+              <button type="button" className={styles.toolButton} disabled={uploading || streaming} aria-label={english ? "Add document" : "Agregar documento"} onClick={() => fileInputRef.current?.click()}>
+                {uploading ? <LoaderCircle size={15} className={styles.spin} /> : <Plus size={15} />}
+              </button>
+
+              <div className={styles.modePickerRoot} data-chat-popover="true">
+                <button type="button" className={styles.assistantPicker} aria-haspopup="menu" aria-expanded={modeMenuOpen} onClick={() => setModeMenuOpen((open) => !open)}>
+                  <strong>{english ? activeMode.shortLabel : activeMode.label}</strong><ChevronDown size={14} />
+                </button>
+                {modeMenuOpen ? (
+                  <div className={styles.modeMenu} role="menu">
+                    {MODE_OPTIONS.map((option) => (
+                      <button key={option.id} type="button" role="menuitemradio" aria-checked={mode === option.id} onClick={() => void changeMode(option.id)}>
+                        <span>{option.label}</span>{mode === option.id ? <Check size={12} /> : null}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <button
+                type="button"
+                className={`${styles.toolButton} ${voiceState === "recording" ? styles.recordingButton : ""}`}
+                disabled={voiceState === "transcribing" || streaming}
+                aria-label={voiceState === "recording" ? (english ? "Stop recording" : "Detener grabación") : (english ? "Dictate by voice" : "Dictar por voz")}
+                onClick={() => void toggleVoice()}
+              >
+                {voiceState === "transcribing" ? <LoaderCircle size={15} className={styles.spin} /> : voiceState === "recording" ? <Square size={12} /> : <AudioLines size={16} />}
+              </button>
+            </div>
+
+            {streaming ? (
+              <button className={styles.sendButton} type="button" aria-label={english ? "Stop response" : "Detener respuesta"} onClick={() => abortControllerRef.current?.abort()}><Square size={12} /></button>
+            ) : (
+              <button className={styles.sendButton} type="submit" disabled={!canSend} aria-label={english ? "Send message" : "Enviar mensaje"}><ArrowUp size={14} /></button>
+            )}
+          </div>
+        </form>
+
+        {commandMatches.length > 0 ? (
+          <div className={styles.composerPalette} role="listbox" aria-label={english ? "Analysis commands" : "Comandos de análisis"}>
+            {commandMatches.map((command, index) => {
+              const Icon = COMMAND_ICONS[index % COMMAND_ICONS.length];
+              return <button key={command.id} type="button" onClick={() => applyCommand(command)}><Icon size={13} /><span><strong>{command.slash}</strong>{command.label}</span></button>;
+            })}
+          </div>
+        ) : null}
+
+        {mentionQuery !== null && mentionResults.length > 0 ? (
+          <div className={styles.composerPalette} role="listbox" aria-label={english ? "Uploaded matches" : "Partidos subidos"}>
+            {mentionResults.map((video) => (
+              <button key={video.id} type="button" onClick={() => selectVideo(video)}>
+                <Database size={13} />
+                <span><strong>{video.label}</strong>{video.ownTeam && video.rivalTeam ? `${video.ownTeam} vs ${video.rivalTeam}` : (video.hasMetrics ? "Métricas disponibles" : "Análisis pendiente")}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {composerError ? <p className={styles.composerError}>{composerError}</p> : null}
+        {voiceState === "recording" ? <p className={styles.recordingStatus}><Mic size={11} /> Grabando… toca el botón para terminar</p> : null}
+      </div>
+    );
   }
 
-  function handleNavAction(itemId: NavItemId) {
-    if (itemId === "new") {
-      dispatchChatbot({ type: "resetConversation", activeNavItem: itemId });
-      autoScrollEnabledRef.current = true;
-      return;
-    }
-    dispatchChatbot({ type: "patch", changes: { activeNavItem: itemId } });
-  }
+  const rootClassName = `${styles.shell} ${sidebarCollapsed ? styles.sidebarCollapsed : ""}`;
+  const sidebarClassName = `${styles.sidebar} ${mobileSidebarOpen ? styles.sidebarMobileOpen : ""}`;
 
   return (
     <section className={rootClassName}>
       <div className={styles.layout}>
-        <ChatbotSidebar
-          state={chatbotState}
-          className={sidebarClassName}
-          userName={userName}
-          userEmail={userEmail}
-          hasAvatar={hasAvatar}
-          avatarVersion={avatarVersion}
-          dispatch={dispatchChatbot}
-          onNavAction={handleNavAction}
-        />
+        <aside className={sidebarClassName} aria-label={english ? "Chat history" : "Historial de chats"}>
+          <div className={styles.sidebarInner}>
+            <div className={styles.mobileHeader}>
+              <BrandWordmark compact />
+              <button type="button" aria-label={english ? "Close history" : "Cerrar historial"} onClick={() => setMobileSidebarOpen(false)}><X size={14} /></button>
+            </div>
+            <div className={styles.desktopHeader}>
+              <div className={styles.brandRow}>
+                <Link href="/dashboard/chatbot" className={styles.brandLink}><BrandWordmark /></Link>
+                <button type="button" className={`${styles.collapseButton} ${styles.collapsedTooltipTrigger}`} aria-label={sidebarCollapsed ? (english ? "Expand sidebar" : "Expandir barra") : (english ? "Collapse sidebar" : "Contraer barra")} data-tooltip={english ? "Collapse sidebar" : "Contraer barra"} onClick={() => setSidebarCollapsed((value) => !value)}>
+                  {sidebarCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
+                </button>
+              </div>
+              <Link href="/dashboard" className={`${styles.backLink} ${styles.collapsedTooltipTrigger}`} data-tooltip={english ? "Back to dashboard" : "Volver al panel"}>
+                <span className={styles.backLinkIcon}><ArrowLeft size={12} /></span><span className={styles.backLinkLabel}>{english ? "Back to dashboard" : "Volver al panel"}</span>
+              </Link>
+            </div>
 
-        <ChatbotWorkspace
-          state={chatbotState}
-          greetingName={greetingName}
-          threadRef={threadRef}
-          inputRef={inputRef}
-          dispatch={dispatchChatbot}
-          onScroll={updateAutoScrollPreference}
-          onSubmit={handleSubmit}
-          onInputKeyDown={handleInputKeyDown}
-          onApplyPrompt={applyStarterPrompt}
-        />
+            <div className={styles.navArea}>
+              <ul className={styles.navList}>
+                <li><button type="button" className={`${styles.navItem} ${styles.navItemActive}`} onClick={startNewChat}><Plus size={14} /><span className={styles.navText}>{english ? "New chat" : "Nuevo chat"}</span></button></li>
+                <li><button type="button" className={styles.navItem} onClick={() => setSearchOpen((open) => !open)}><Search size={14} /><span className={styles.navText}>{english ? "Search chats" : "Buscar chats"}</span></button></li>
+              </ul>
+              {searchOpen ? <input className={styles.chatSearchInput} value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={english ? "Search…" : "Buscar…"} autoFocus /> : null}
+
+              <div className={styles.recentSection}>
+                <p className={styles.recentTitle}>{english ? "Recent" : "Recientes"}</p>
+                <ul className={styles.recentList}>
+                  {filteredThreads.length === 0 ? <li className={styles.emptyRecent}>{english ? "No chats yet" : "Aún no hay chats"}</li> : null}
+                  {filteredThreads.map((thread) => (
+                    <li key={thread.id} className={`${styles.recentItem} ${activeThreadId === thread.id ? styles.recentItemActive : ""}`} data-chat-popover="true">
+                      <button type="button" className={styles.recentRow} disabled={streaming} onClick={() => void openThread(thread.id)}>
+                        <Clock3 size={10} /><span><strong>{thread.title}</strong><small>{formatRelativeDate(thread.lastMessageAt, locale)}</small></span>
+                      </button>
+                      <button type="button" className={styles.recentMenuButton} aria-label={english ? "Chat options" : "Opciones del chat"} onClick={() => setOpenRecentMenuId((id) => id === thread.id ? null : thread.id)}><Ellipsis size={12} /></button>
+                      {openRecentMenuId === thread.id ? (
+                        <div className={styles.recentMenu} role="menu">
+                          <button type="button" role="menuitem" onClick={() => void renameThread(thread)}>{english ? "Rename" : "Cambiar nombre"}</button>
+                          <button type="button" role="menuitem" onClick={() => void deleteThread(thread)}>{english ? "Delete" : "Eliminar"}</button>
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className={styles.userDock}>
+              <div className={styles.userExpanded}><UserProfileMenu name={userName} email={userEmail} hasAvatar={hasAvatar} avatarVersion={avatarVersion} dropdownDirection="up" triggerVariant="sidebar-card" showSidebarSettingsIcon /></div>
+              <div className={styles.userCollapsed}><UserProfileMenu name={userName} email={userEmail} hasAvatar={hasAvatar} avatarVersion={avatarVersion} dropdownDirection="up" /></div>
+            </div>
+          </div>
+        </aside>
+
+        <div className={styles.workspace}>
+          <header className={styles.mobileTopbar}>
+            <button type="button" aria-label={english ? "Open history" : "Abrir historial"} onClick={() => setMobileSidebarOpen(true)}><Menu size={15} /></button>
+            <BrandWordmark compact />
+            <div className={styles.mobileViewSwitch} role="group" aria-label={english ? "Chatbot view" : "Vista del chatbot"}>
+              <button type="button" className={`${styles.mobileViewButton} ${!mobileSidebarOpen ? styles.mobileViewButtonActive : ""}`} aria-pressed={!mobileSidebarOpen} onClick={() => setMobileSidebarOpen(false)}><PanelLeftOpen size={13} /><span>Panel</span></button>
+              <button type="button" className={`${styles.mobileViewButton} ${mobileSidebarOpen ? styles.mobileViewButtonActive : ""}`} aria-pressed={mobileSidebarOpen} onClick={() => setMobileSidebarOpen(true)}><Clock3 size={13} /><span>{english ? "History" : "Historial"}</span></button>
+            </div>
+          </header>
+
+          {isConversationMode ? (
+            <div className={styles.conversation}>
+              <div className={styles.thread} ref={threadRef} aria-live="polite">
+                <div className={styles.threadMessages}>
+                  {loadingThread ? <div className={styles.threadLoading}><LoaderCircle className={styles.spin} size={18} /> {english ? "Loading chat…" : "Cargando chat…"}</div> : null}
+                  {messages.map((message) => (
+                    <article key={message.id} className={`${styles.message} ${message.role === "user" ? styles.messageUser : styles.messageAssistant} ${message.status === "FAILED" ? styles.messageFailed : ""}`}>
+                      <div className={styles.messageText}>{message.content || (message.status === "STREAMING" ? <span className={styles.thinkingDots}><i /><i /><i /></span> : null)}</div>
+                      {(message.videos.length > 0 || message.attachments.length > 0) ? (
+                        <div className={styles.messageSources}>
+                          {message.videos.map((video) => <span key={video.id}><Database size={10} /> @{video.label}</span>)}
+                          {message.attachments.map((attachment) => <span key={attachment.id}><FileText size={10} /> {attachment.name}</span>)}
+                        </div>
+                      ) : null}
+                      {message.role === "assistant" && message.status === "COMPLETED" ? <small className={styles.aiSourceLabel}><Database size={10} /> IA real · contexto DRIVXIS</small> : null}
+                    </article>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.composerDock}><div className={styles.composerDockInner}>{renderComposer(true)}</div></div>
+            </div>
+          ) : (
+            <div className={`${styles.landing} ${styles.landingIntro}`}>
+              <div className={styles.centerStack}>
+                <div className={styles.hero}>
+                  <h1 className={styles.heroTitle}>{english ? "Hello" : "Hola"}, {greetingName}</h1>
+                  <p className={styles.heroSubtitle}>{english ? "Real analysis from your uploaded match data" : "Análisis real a partir de los datos de tus partidos"}</p>
+                </div>
+                <div className={styles.composerStack}>
+                  {renderComposer(false)}
+                  <div className={styles.suggestionGrid} aria-label={english ? "Analysis commands" : "Comandos de análisis"}>
+                    {CHAT_COMMANDS.map((command, index) => {
+                      const Icon = COMMAND_ICONS[index];
+                      return <button key={command.id} type="button" className={styles.suggestionChip} onClick={() => applyCommand(command)}><Icon size={13} /><span><strong>{command.slash}</strong>{command.label}</span></button>;
+                    })}
+                  </div>
+                </div>
+              </div>
+              <p className={styles.privacyNote}><span>◌</span> {english ? "Only your authorized match data is used." : "Solo se usan los datos de partidos autorizados para tu cuenta."}</p>
+            </div>
+          )}
+        </div>
       </div>
 
-      {mobileSidebarOpen ? (
-        <button
-          type="button"
-          className={styles.overlay}
-          aria-label={english ? "Close sidebar" : "Cerrar barra lateral"}
-          onClick={() => dispatchChatbot({ type: "patch", changes: { mobileSidebarOpen: false } })}
-        />
-      ) : null}
+      {mobileSidebarOpen ? <button type="button" className={styles.overlay} aria-label={english ? "Close history" : "Cerrar historial"} onClick={() => setMobileSidebarOpen(false)} /> : null}
     </section>
   );
 }
+
+export const DashboardChatbotDemo = DashboardChatbot;

@@ -26,6 +26,29 @@ enum AnalysisStatus {
   FAILED
 }
 
+enum ChatMode {
+  GENERAL
+  TACTICAL
+  PHYSICAL
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+}
+
+enum ChatMessageStatus {
+  PENDING
+  STREAMING
+  COMPLETED
+  FAILED
+}
+
+enum ChatAttachmentStatus {
+  READY
+  FAILED
+}
+
 model User {
   id                 String              @id @default(cuid())
   email              String              @unique
@@ -40,6 +63,8 @@ model User {
   storageLimitBytes  BigInt              @default(1073741824)
   storageUsedBytes   BigInt              @default(0)
   videos             Video[]
+  chatThreads        ChatThread[]
+  chatAttachments    ChatAttachment[]
   passwordResetCodes PasswordResetCode[]
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
@@ -60,20 +85,23 @@ model PasswordResetCode {
 }
 
 model Video {
-  id               String           @id @default(cuid())
+  id               String             @id @default(cuid())
   ownerId          String
-  owner            User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  objectKey        String           @unique
+  owner            User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  objectKey        String             @unique
   originalFilename String
   mimeType         String
   sizeBytes        BigInt
   durationSeconds  Int?
-  status           VideoStatus      @default(UPLOADED)
+  playedAt         DateTime?
+  competition      String?
+  status           VideoStatus        @default(UPLOADED)
   metadata         Json?
   analysisJobs     AnalysisJob[]
   metricSnapshots  MetricSnapshot[]
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  chatMessageLinks ChatMessageVideo[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   @@index([ownerId, createdAt])
   @@index([status])
@@ -104,6 +132,71 @@ model MetricSnapshot {
   createdAt DateTime @default(now())
 
   @@index([videoId, createdAt])
+}
+
+model ChatThread {
+  id            String           @id @default(cuid())
+  ownerId       String
+  owner         User             @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title         String           @default("Nuevo chat")
+  mode          ChatMode         @default(TACTICAL)
+  messages      ChatMessage[]
+  attachments   ChatAttachment[]
+  lastMessageAt DateTime         @default(now())
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([ownerId, lastMessageAt])
+}
+
+model ChatMessage {
+  id          String             @id @default(cuid())
+  threadId    String
+  thread      ChatThread         @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  role        ChatRole
+  status      ChatMessageStatus  @default(COMPLETED)
+  mode        ChatMode
+  content     String
+  command     String?
+  errorCode   String?
+  metadata    Json?
+  videoLinks  ChatMessageVideo[]
+  attachments ChatAttachment[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([threadId, createdAt])
+}
+
+model ChatMessageVideo {
+  messageId String
+  videoId   String
+  message   ChatMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  video     Video       @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, videoId])
+  @@index([videoId])
+}
+
+model ChatAttachment {
+  id               String               @id @default(cuid())
+  ownerId          String
+  owner            User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  threadId         String
+  thread           ChatThread           @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  messageId        String?
+  message          ChatMessage?         @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  objectKey        String               @unique
+  originalFilename String
+  mimeType         String
+  sizeBytes        BigInt
+  status           ChatAttachmentStatus @default(READY)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+
+  @@index([ownerId, createdAt])
+  @@index([threadId, createdAt])
+  @@index([messageId])
 }
 
 model TranslationCache {

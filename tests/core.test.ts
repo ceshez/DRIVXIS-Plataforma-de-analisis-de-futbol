@@ -10,6 +10,7 @@ import {
 import { parseAnalysisMetrics } from "@/lib/analysis-metrics";
 import { getAnalysisJobTarget, getAnalysisWorkerMode, shouldAutoStartAnalysisWorker } from "@/lib/analysis-worker";
 import { buildMatchReport, createMatchReportData, createMatchReportFilename } from "@/lib/match-report";
+import { createChatTitle, getRequestedRecentMatchCount } from "@/lib/chatbot";
 import { pickLocale } from "@/lib/i18n";
 import { normalizeLocale, normalizeTheme, translate } from "@/lib/preferences";
 import { getAnalysisOutputDirectory, getLocalObjectPath, isManagedAnalysisPath, isManagedLocalUploadPath } from "@/lib/local-storage";
@@ -24,6 +25,8 @@ import {
   resetPasswordSchema,
   updatePreferencesSchema,
   updateProfileSchema,
+  createChatMessageSchema,
+  createChatThreadSchema,
 } from "@/lib/validators";
 import { parseVideoListQuery } from "@/lib/video-list";
 import { serializeVideo } from "@/lib/video-serialization";
@@ -470,6 +473,33 @@ describe("match color editor", () => {
     const source = readFileSync(join(process.cwd(), "components", "match-color-editor.tsx"), "utf8");
     expect(source).not.toContain('type="color"');
     expect(source).toContain("ArrowLeftRight");
+  });
+});
+
+describe("chatbot production contracts", () => {
+  it("detects how many recent matches the user requested and clamps expensive ranges", () => {
+    expect(getRequestedRecentMatchCount("En los últimos tres partidos, ¿cuánta posesión tuvimos?")).toBe(3);
+    expect(getRequestedRecentMatchCount("Compara los últimos 7 partidos")).toBe(7);
+    expect(getRequestedRecentMatchCount("Analiza los últimos 99 partidos")).toBe(12);
+    expect(getRequestedRecentMatchCount("Resume nuestra tendencia")).toBe(3);
+  });
+
+  it("creates short chat titles without exposing slash command syntax", () => {
+    expect(createChatTitle("/analisis-tactico Cómo defendimos contra Saprissa")).toBe("Cómo defendimos contra Saprissa");
+    expect(createChatTitle("   ")).toBe("Nuevo análisis");
+  });
+
+  it("validates persisted chat modes, commands and message size", () => {
+    expect(createChatThreadSchema.safeParse({ mode: "TACTICAL" }).success).toBe(true);
+    expect(createChatThreadSchema.safeParse({ mode: "SCOUT" }).success).toBe(false);
+    expect(createChatMessageSchema.safeParse({
+      content: "Compara los últimos tres partidos",
+      mode: "TACTICAL",
+      command: "COMPARE_TEAMS",
+      videoIds: [],
+      attachmentIds: [],
+    }).success).toBe(true);
+    expect(createChatMessageSchema.safeParse({ content: "", mode: "TACTICAL" }).success).toBe(false);
   });
 });
 

@@ -372,3 +372,42 @@ Cuando cree o modifique endpoints:
 - No cambiar contratos existentes sin necesidad.
 - No tocar Prisma schema salvo que sea parte explicita de la tarea.
 - Documentar cambios si cambia el contrato de API.
+
+## Chatbot con IA
+
+Todos los endpoints requieren sesión y limitan resultados al usuario actual.
+
+```txt
+GET  /api/chat/threads
+POST /api/chat/threads
+GET  /api/chat/threads/:threadId
+PATCH /api/chat/threads/:threadId
+DELETE /api/chat/threads/:threadId
+```
+
+Gestionan conversaciones recientes, título y modo (`GENERAL`, `TACTICAL`, `PHYSICAL`).
+
+```txt
+POST /api/chat/threads/:threadId/messages
+```
+
+Acepta `content`, `mode`, `command`, `videoIds` y `attachmentIds`. Devuelve eventos NDJSON `delta`, `done` o `error`. El servidor persiste ambos mensajes y construye el contexto desde `MetricSnapshot`; no acepta métricas enviadas por el cliente.
+
+```txt
+GET /api/chat/videos?q=
+```
+
+Busca videos propios para el autocompletado `@` e indica si tienen métricas.
+
+```txt
+POST   /api/chat/attachments
+DELETE /api/chat/attachments/:attachmentId
+```
+
+La carga es `multipart/form-data` con `threadId` y `file`. Acepta PDF, texto, CSV, Markdown, JSON e imágenes compatibles, hasta 4 MB. Usa el storage remoto y contabiliza la cuota del usuario.
+
+```txt
+POST /api/chat/transcriptions
+```
+
+Recibe `multipart/form-data` con `audio` (máximo 4 MB) y transcribe mediante el modelo real configurado en AI Gateway.

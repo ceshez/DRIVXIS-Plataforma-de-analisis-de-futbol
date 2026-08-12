@@ -71,3 +71,33 @@ export const updateVideoMatchSchema = z.object({
     rivalTeamColor: z.string().trim().regex(/^#[0-9a-fA-F]{6}$/),
   }),
 });
+
+export const chatModeSchema = z.enum(["GENERAL", "TACTICAL", "PHYSICAL"]);
+
+export const createChatThreadSchema = z.object({
+  mode: chatModeSchema.optional(),
+  title: z.string().trim().min(1).max(100).optional(),
+});
+
+export const updateChatThreadSchema = z
+  .object({
+    mode: chatModeSchema.optional(),
+    title: z.string().trim().min(1).max(100).optional(),
+  })
+  .refine((value) => value.mode !== undefined || value.title !== undefined, {
+    message: "Indica el nombre o modo que deseas cambiar.",
+  });
+
+export const createChatMessageSchema = z.object({
+  content: z.string().trim().min(1, "Escribe una consulta.").max(12_000),
+  mode: chatModeSchema,
+  command: z
+    .enum(["TACTICAL_ANALYSIS", "PHYSICAL_PERFORMANCE", "PRESSURE_POSSESSION", "COMPARE_TEAMS", "GAME_PLAN", "MATCH_SUMMARY"])
+    .optional(),
+  videoIds: z.array(z.cuid()).max(12).default([]),
+  attachmentIds: z.array(z.cuid()).max(5).default([]),
+});
+
+export const chatAttachmentSchema = z.object({
+  threadId: z.cuid(),
+});
