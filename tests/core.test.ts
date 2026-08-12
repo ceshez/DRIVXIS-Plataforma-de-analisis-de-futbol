@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getDetectedColorPair, isAllowedDetectedColorSwap } from "@/lib/detected-color-pair";
 import { ANALYSIS_CANCELLED_BY_USER, isAnalysisCancelled } from "@/lib/analysis-cancellation";
+import {
+  createAnalysisSandboxCallbackToken,
+  verifyAnalysisSandboxCallbackToken,
+} from "@/lib/analysis-sandbox-callback";
 import { parseAnalysisMetrics } from "@/lib/analysis-metrics";
 import { getAnalysisJobTarget, getAnalysisWorkerMode, shouldAutoStartAnalysisWorker } from "@/lib/analysis-worker";
 import { buildMatchReport, createMatchReportData, createMatchReportFilename } from "@/lib/match-report";
@@ -47,6 +51,38 @@ describe("analysis worker placement", () => {
   it("targets the exact queued job that requested a Sandbox", () => {
     expect(getAnalysisJobTarget("  job-123  ")).toEqual({ jobId: "job-123", where: { id: "job-123" } });
     expect(getAnalysisJobTarget()).toEqual({ jobId: null, where: {} });
+  });
+});
+
+describe("analysis Sandbox shutdown callback", () => {
+  const secret = "test-secret-that-is-at-least-32-characters-long";
+  const claims = { jobId: "job-123", sandboxName: "sandbox-123" };
+
+  it("accepts only the signed job and Sandbox before expiration", () => {
+    const token = createAnalysisSandboxCallbackToken(claims, {
+      secret,
+      nowMs: 1_000,
+      ttlMs: 60_000,
+    });
+
+    expect(
+      verifyAnalysisSandboxCallbackToken(token, claims, { secret, nowMs: 30_000 }),
+    ).toBe(true);
+    expect(
+      verifyAnalysisSandboxCallbackToken(token, { ...claims, jobId: "job-456" }, { secret, nowMs: 30_000 }),
+    ).toBe(false);
+    expect(
+      verifyAnalysisSandboxCallbackToken(token, claims, { secret, nowMs: 61_001 }),
+    ).toBe(false);
+  });
+
+  it("rejects tampered callback tokens", () => {
+    const token = createAnalysisSandboxCallbackToken(claims, { secret, nowMs: 1_000 });
+    const tampered = `${token.slice(0, -1)}${token.endsWith("a") ? "b" : "a"}`;
+
+    expect(
+      verifyAnalysisSandboxCallbackToken(tampered, claims, { secret, nowMs: 2_000 }),
+    ).toBe(false);
   });
 });
 

@@ -2,6 +2,7 @@ import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { spawn } from "node:child_process";
 import type { StdioOptions } from "node:child_process";
 import path from "node:path";
+import { createAnalysisSandboxCallbackToken } from "@/lib/analysis-sandbox-callback";
 import { prisma } from "@/lib/prisma";
 
 type AnalysisWorkerMode = "disabled" | "local" | "vercel-sandbox";
@@ -171,6 +172,11 @@ async function kickVercelSandboxWorker(jobId: string) {
   });
 
   try {
+    const callbackUrl = getSandboxCallbackUrl();
+    const callbackToken = createAnalysisSandboxCallbackToken(
+      { jobId, sandboxName: sandbox.name },
+      { ttlMs: timeout + 5 * 60 * 1000 },
+    );
     await sandbox.runCommand({
       cmd: "bash",
       args: [
@@ -178,6 +184,12 @@ async function kickVercelSandboxWorker(jobId: string) {
         'git fetch --depth 1 origin "$ANALYSIS_SANDBOX_GIT_BRANCH" && git reset --hard FETCH_HEAD && bash scripts/run-analysis-sandbox-worker.sh',
       ],
       cwd: repositoryDirectory,
+      env: {
+        ANALYSIS_SANDBOX_CALLBACK_TOKEN: callbackToken,
+        ANALYSIS_SANDBOX_CALLBACK_URL: callbackUrl,
+        ANALYSIS_SANDBOX_JOB_ID: jobId,
+        ANALYSIS_SANDBOX_NAME: sandbox.name,
+      },
       detached: true,
       timeoutMs: Math.max(30_000, timeout - 15_000),
     });
@@ -186,6 +198,20 @@ async function kickVercelSandboxWorker(jobId: string) {
     await sandbox.stop().catch(() => undefined);
     throw error;
   }
+}
+
+function getSandboxCallbackUrl() {
+  const explicitUrl = process.env.ANALYSIS_SANDBOX_CALLBACK_URL?.trim();
+  if (explicitUrl) return explicitUrl;
+
+  const deploymentHost =
+    process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim();
+  if (!deploymentHost) {
+    throw new Error(
+      "ANALYSIS_SANDBOX_CALLBACK_URL or a Vercel deployment URL is required for automatic Sandbox shutdown.",
+    );
+  }
+  return `https://${deploymentHost}/api/analysis/sandbox/stop`;
 }
 
 function getSandboxWorkerEnvironment(jobId: string) {

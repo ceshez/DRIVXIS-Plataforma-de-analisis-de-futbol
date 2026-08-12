@@ -155,9 +155,12 @@ ANALYSIS_WORKER_MODE="vercel-sandbox"
 ANALYSIS_SANDBOX_SNAPSHOT_ID="snap_..."
 ANALYSIS_SANDBOX_TIMEOUT_MS="2700000"
 ANALYSIS_SANDBOX_VCPUS="4"
+ANALYSIS_SANDBOX_CALLBACK_SECRET="secreto-aleatorio-de-32-o-mas-caracteres"
 ```
 
-La sesion individual tiene el limite del plan Hobby (45 minutos). Si un video no termina dentro de ese tiempo, el pipeline debe dividirse en segmentos antes de considerarlo apto para esta modalidad.
+Cada video nuevo crea un Sandbox bajo demanda. Al terminar el worker, tanto con un job `COMPLETED` como `FAILED`, el script envia un callback firmado y Vercel detiene inmediatamente esa sesion. El secreto de firma permanece en la aplicacion web; el Sandbox recibe un token temporal limitado a su propio nombre y job.
+
+La sesion individual tiene el limite del plan Hobby (45 minutos), pero ese timeout queda solo como red de seguridad si el callback no puede ejecutarse. Si un video no termina dentro de ese tiempo, el pipeline debe dividirse en segmentos antes de considerarlo apto para esta modalidad.
 
 ## Reglas para Codex
 
