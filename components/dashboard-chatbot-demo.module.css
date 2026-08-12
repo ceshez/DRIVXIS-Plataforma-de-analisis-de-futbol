@@ -23,9 +23,9 @@
   color: var(--text);
 }
 
-:global(html[data-theme="light"]) :is(.backLink, .mobileHeader button, .recentMenu, .composer, .suggestionChip, .toolButton) {
+:global(html[data-theme="light"]) :is(.backLink, .mobileHeader button, .recentMenu, .composer, .toolButton, .voiceButton, .recentRenameInput, .recentRenameSave) {
   border-color: var(--line-strong);
-  background: #fff;
+  background: #fffdfb;
   color: var(--text);
 }
 
@@ -42,8 +42,9 @@
   .recentMenuButton,
   .mobileHeader button,
   .mobileTopbar button,
-  .suggestionChip,
   .toolButton,
+  .voiceButton,
+  .recentRenameSave,
   .assistantPicker
 ) svg {
   color: #241b17;
@@ -73,7 +74,51 @@
   color: var(--muted);
 }
 
-:global(html[data-theme="light"]) :is(.heroTitle, .composerTextarea, .assistantPicker strong, .messageAssistant p) {
+:global(html[data-theme="light"]) :is(.heroTitle, .composerTextarea, .assistantPicker strong, .messageAssistant p, .messageAssistant .messageText) {
+  color: var(--text);
+}
+
+:global(html[data-theme="light"]) :is(.modeMenu, .composerPalette, .deleteDialog) {
+  border-color: rgba(217, 79, 22, 0.3);
+  background: #fffdfb;
+  color: var(--text);
+  box-shadow: 0 18px 38px rgba(77, 42, 25, 0.16);
+}
+
+:global(html[data-theme="light"]) :is(.modeMenu button, .composerPalette button) {
+  border-color: rgba(217, 79, 22, 0.1);
+  color: #3a2b24;
+}
+
+:global(html[data-theme="light"]) .composerPalette button strong {
+  color: #211814;
+}
+
+:global(html[data-theme="light"]) :is(.modeMenu button, .composerPalette button):hover,
+:global(html[data-theme="light"]) :is(.modeMenu button, .composerPalette button):focus-visible {
+  background: rgba(255, 107, 43, 0.11);
+  color: #211814;
+}
+
+:global(html[data-theme="light"]) :is(.modeMenu button svg, .composerPalette button > svg) {
+  color: #d94f16;
+}
+
+:global(html[data-theme="light"]) :is(.messageSources span, .recordingStatus, .threadLoading) {
+  color: var(--muted);
+}
+
+:global(html[data-theme="light"]) .deleteDialog::backdrop {
+  background: rgba(36, 27, 23, 0.38);
+}
+
+:global(html[data-theme="light"]) .deleteDialog > p:not(.dialogEyebrow) {
+  color: #6e5d54;
+}
+
+:global(html[data-theme="light"]) .dialogCancel {
+  border-color: rgba(36, 27, 23, 0.2);
+  background: transparent;
   color: var(--text);
 }
 
@@ -401,6 +446,60 @@
 .recentRow small {
   color: rgba(242, 240, 238, 0.3);
   font-size: 0.56rem;
+}
+
+.recentRenameForm {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  align-items: center;
+  gap: 0.28rem;
+  min-height: 32px;
+  padding: 0.16rem 0.2rem;
+}
+
+.recentRenameInput {
+  width: 100%;
+  min-width: 0;
+  height: 27px;
+  border: 1px solid rgba(255, 107, 43, 0.44);
+  border-radius: 2px;
+  background: rgba(8, 8, 8, 0.92);
+  padding: 0 0.42rem;
+  color: rgba(242, 240, 238, 0.94);
+  font: inherit;
+  font-size: 0.69rem;
+  outline: none;
+}
+
+.recentRenameInput:focus-visible {
+  border-color: rgba(255, 107, 43, 0.76);
+  box-shadow: 0 0 0 2px rgba(255, 107, 43, 0.14);
+}
+
+.recentRenameSave {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgba(255, 107, 43, 0.4);
+  border-radius: 2px;
+  background: rgba(255, 107, 43, 0.12);
+  color: #ff8c4a;
+  cursor: pointer;
+}
+
+.recentRenameSave:hover,
+.recentRenameSave:focus-visible {
+  border-color: rgba(255, 107, 43, 0.7);
+  background: rgba(255, 107, 43, 0.2);
+  outline: none;
+}
+
+.recentRenameSave:disabled {
+  cursor: default;
+  opacity: 0.48;
 }
 
 .recentItemActive {
@@ -731,61 +830,6 @@
   width: 100%;
 }
 
-.suggestionGrid {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.5rem;
-}
-
-.suggestionChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.36rem;
-  min-height: 31px;
-  border: 1px solid rgba(255, 107, 43, 0.26);
-  background: rgba(13, 13, 13, 0.92);
-  padding: 0 0.74rem;
-  color: rgba(242, 240, 238, 0.63);
-  font-size: 0.82rem;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  transition: border-color 150ms ease, color 150ms ease, background-color 150ms ease;
-}
-
-.suggestionChip span {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.38rem;
-}
-
-.suggestionChip strong {
-  color: #ff8c4a;
-  font-family: var(--font-display);
-  font-size: 0.68rem;
-  letter-spacing: 0.02em;
-}
-
-.suggestionChip svg {
-  width: 13px;
-  height: 13px;
-  color: rgba(255, 107, 43, 0.92);
-}
-
-.suggestionChip:hover,
-.suggestionChip:focus-visible,
-.suggestionChipSelected {
-  border-color: rgba(255, 107, 43, 0.52);
-  background: rgba(23, 16, 13, 0.92);
-  color: rgba(242, 240, 238, 0.96);
-}
-
-.suggestionChip:focus-visible {
-  outline: 2px solid rgba(255, 107, 43, 0.36);
-  outline-offset: 2px;
-}
-
 .composer {
   width: 100%;
   border: 1px solid rgba(255, 107, 43, 0.24);
@@ -884,6 +928,12 @@
   gap: 0.4rem;
 }
 
+.composerActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
 .toolButton {
   display: inline-flex;
   align-items: center;
@@ -922,6 +972,43 @@
 .toolButton:focus-visible {
   outline: 2px solid rgba(255, 107, 43, 0.38);
   outline-offset: 2px;
+}
+
+.voiceButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255, 107, 43, 0.24);
+  border-radius: 4px;
+  background: rgba(255, 107, 43, 0.06);
+  color: rgba(242, 240, 238, 0.72);
+  cursor: pointer;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.voiceButton:hover,
+.voiceButton:focus-visible {
+  border-color: rgba(255, 107, 43, 0.5);
+  background: rgba(255, 107, 43, 0.12);
+  color: rgba(242, 240, 238, 0.96);
+  outline: none;
+}
+
+.voiceButton:focus-visible {
+  box-shadow: 0 0 0 2px rgba(255, 107, 43, 0.18);
+}
+
+.voiceButton:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.voiceButton.recordingButton {
+  border-color: rgba(255, 107, 87, 0.58);
+  background: rgba(255, 74, 54, 0.17);
+  color: #ff6b57;
 }
 
 .assistantPicker {
@@ -999,11 +1086,17 @@
   display: grid;
   max-height: 270px;
   overflow-y: auto;
+  scrollbar-width: none;
   border: 1px solid rgba(255, 107, 43, 0.3);
   border-radius: 2px;
   background: rgba(8, 8, 8, 0.99);
   padding: 0.28rem;
   box-shadow: 0 22px 45px rgba(0, 0, 0, 0.52);
+}
+
+.composerPalette::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .composerPalette button {
@@ -1214,7 +1307,7 @@
   height: 0.38rem;
   border-radius: 50%;
   background: rgba(255, 107, 43, 0.75);
-  animation: pulse 1s ease-in-out infinite;
+  animation: thinkingBounce 900ms cubic-bezier(0.45, 0, 0.55, 1) infinite;
 }
 
 .thinkingDots i:nth-child(2) { animation-delay: 120ms; }
@@ -1229,6 +1322,10 @@
 }
 
 :global(html[data-theme="light"]) .messageAssistant p {
+  color: var(--text);
+}
+
+:global(html[data-theme="light"]) .messageAssistant .messageText {
   color: var(--text);
 }
 
@@ -1285,6 +1382,100 @@
 .composerDockInner {
   width: min(100%, 960px);
   margin: 0 auto;
+}
+
+.deleteDialog {
+  position: fixed;
+  inset: 0;
+  width: min(100%, 420px);
+  max-height: calc(100dvh - 2rem);
+  margin: auto;
+  border: 1px solid rgba(255, 107, 43, 0.34);
+  border-radius: 2px;
+  background: #0b0b0b;
+  padding: 1.2rem;
+  color: rgba(242, 240, 238, 0.94);
+  box-shadow: 0 26px 64px rgba(0, 0, 0, 0.58);
+  overflow: auto;
+}
+
+.deleteDialog::backdrop {
+  background: rgba(0, 0, 0, 0.68);
+}
+
+.dialogEyebrow {
+  margin: 0 0 0.52rem;
+  color: #ff8c4a;
+  font-family: var(--font-display);
+  font-size: 0.58rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.deleteDialog h2 {
+  margin: 0;
+  color: inherit;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 620;
+  letter-spacing: 0.01em;
+}
+
+.deleteDialog > p:not(.dialogEyebrow) {
+  max-width: 48ch;
+  margin: 0.7rem 0 0;
+  color: rgba(242, 240, 238, 0.58);
+  font-size: 0.76rem;
+  line-height: 1.58;
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.48rem;
+  margin-top: 1.2rem;
+}
+
+.dialogCancel,
+.dialogDanger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.34rem;
+  min-height: 34px;
+  border-radius: 2px;
+  padding: 0 0.76rem;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 620;
+  cursor: pointer;
+}
+
+.dialogCancel {
+  border: 1px solid rgba(242, 240, 238, 0.18);
+  background: transparent;
+  color: rgba(242, 240, 238, 0.76);
+}
+
+.dialogDanger {
+  border: 1px solid rgba(255, 107, 43, 0.72);
+  background: #ff6b2b;
+  color: #2b1006;
+}
+
+.dialogCancel:hover,
+.dialogCancel:focus-visible,
+.dialogDanger:hover,
+.dialogDanger:focus-visible {
+  outline: 2px solid rgba(255, 107, 43, 0.32);
+  outline-offset: 2px;
+}
+
+.dialogCancel:disabled,
+.dialogDanger:disabled {
+  cursor: default;
+  opacity: 0.54;
 }
 
 .overlay {
@@ -1577,37 +1768,6 @@
     margin-top: auto;
   }
 
-  .suggestionGrid {
-    width: 100%;
-    min-width: 0;
-    justify-content: flex-start;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    scrollbar-width: none;
-    padding-bottom: 0.06rem;
-  }
-
-  .suggestionGrid::-webkit-scrollbar {
-    width: 0;
-    height: 0;
-  }
-
-  .suggestionChip {
-    flex: 0 0 auto;
-    gap: 0.3rem;
-    min-height: 29px;
-    border-radius: 999px;
-    padding: 0 0.58rem;
-    font-size: 0.65rem;
-    letter-spacing: 0.02em;
-    white-space: nowrap;
-  }
-
-  .suggestionChip svg {
-    width: 11px;
-    height: 11px;
-  }
-
   .composerEmpty {
     min-height: 106px;
     border-radius: 8px;
@@ -1750,4 +1910,15 @@
 
 @keyframes rotate {
   to { transform: rotate(360deg); }
+}
+
+@keyframes thinkingBounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-5px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thinkingDots i {
+    animation: none;
+  }
 }

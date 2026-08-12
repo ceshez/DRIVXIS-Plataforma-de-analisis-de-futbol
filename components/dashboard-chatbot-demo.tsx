@@ -6,7 +6,6 @@ import {
   Activity,
   ArrowLeft,
   ArrowUp,
-  AudioLines,
   Bot,
   Check,
   ChevronDown,
@@ -149,6 +148,12 @@ export function DashboardChatbot({
   const [searchQuery, setSearchQuery] = useState("");
   const [modeMenuOpen, setModeMenuOpen] = useState(false);
   const [openRecentMenuId, setOpenRecentMenuId] = useState<string | null>(null);
+  const [paletteDismissed, setPaletteDismissed] = useState(false);
+  const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renamingSaving, setRenamingSaving] = useState(false);
+  const [threadPendingDelete, setThreadPendingDelete] = useState<ChatThread | null>(null);
+  const [deletingThread, setDeletingThread] = useState(false);
   const [loadingThread, setLoadingThread] = useState(Boolean(initialThreadId));
   const [streaming, setStreaming] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -158,11 +163,16 @@ export function DashboardChatbot({
   const threadRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const deleteDialogRef = useRef<HTMLDialogElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const recordingStreamRef = useRef<MediaStream | null>(null);
   const recordingChunksRef = useRef<Blob[]>([]);
   const uploadRequestIdRef = useRef(0);
+  const typewriterQueueRef = useRef("");
+  const typewriterMessageIdRef = useRef<string | null>(null);
+  const typewriterTimerRef = useRef<number | null>(null);
+  const typewriterWaitersRef = useRef<Array<() => void>>([]);
 
   const greetingName = useMemo(() => (userName || "Analista").trim().split(/\s+/)[0] || "Analista", [userName]);
   const activeMode = MODE_OPTIONS.find((option) => option.id === mode) || MODE_OPTIONS[0];
@@ -173,6 +183,8 @@ export function DashboardChatbot({
   const filteredThreads = threads.filter((thread) => thread.title.toLocaleLowerCase(locale).includes(searchQuery.toLocaleLowerCase(locale)));
   const isConversationMode = Boolean(activeThreadId) || messages.length > 0 || streaming;
   const canSend = draft.trim().length > 0 && !streaming;
+  const commandPaletteOpen = !paletteDismissed && commandMatches.length > 0;
+  const mentionPaletteOpen = !paletteDismissed && mentionQuery !== null && mentionResults.length > 0;
 
   const loadThreads = useCallback(async () => {
     const response = await fetch("/api/chat/threads", { cache: "no-store" });
@@ -234,17 +246,34 @@ export function DashboardChatbot({
   }, [mobileSidebarOpen]);
 
   useEffect(() => {
-    if (!openRecentMenuId && !modeMenuOpen) return;
+    const dialog = deleteDialogRef.current;
+    if (!threadPendingDelete || !dialog) return;
+    if (!dialog.open) dialog.showModal();
+    return () => {
+      if (dialog.open) dialog.close();
+    };
+  }, [threadPendingDelete]);
+
+  useEffect(() => {
+    if (!openRecentMenuId && !modeMenuOpen && !commandPaletteOpen && !mentionPaletteOpen) return;
     const close = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
       if (!target.closest("[data-chat-popover='true']")) {
         setOpenRecentMenuId(null);
         setModeMenuOpen(false);
       }
+      if (!target.closest("[data-chat-composer='true']")) {
+        setPaletteDismissed(true);
+      }
     };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
-  }, [modeMenuOpen, openRecentMenuId]);
+  }, [commandPaletteOpen, mentionPaletteOpen, modeMenuOpen, openRecentMenuId]);
+
+  useEffect(() => () => {
+    if (typewriterTimerRef.current !== null) window.clearInterval(typewriterTimerRef.current);
+    typewriterWaitersRef.current.splice(0).forEach((resolve) => resolve());
+  }, []);
 
   async function createThread() {
     const response = await fetch("/api/chat/threads", {
@@ -260,13 +289,71 @@ export function DashboardChatbot({
     return data.thread.id;
   }
 
+  function resolveTypewriterWaiters() {
+    typewriterWaitersRef.current.splice(0).forEach((resolve) => resolve());
+  }
+
+  function stopTypewriter() {
+    if (typewriterTimerRef.current !== null) {
+      window.clearInterval(typewriterTimerRef.current);
+      typewriterTimerRef.current = null;
+    }
+    typewriterQueueRef.current = "";
+    typewriterMessageIdRef.current = null;
+    resolveTypewriterWaiters();
+  }
+
+  function enqueueAssistantText(messageId: string, text: string) {
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setMessages((current) => current.map((message) => (
+        message.id === messageId ? { ...message, content: message.content + text } : message
+      )));
+      return;
+    }
+
+    if (typewriterMessageIdRef.current && typewriterMessageIdRef.current !== messageId) {
+      stopTypewriter();
+    }
+    typewriterMessageIdRef.current = messageId;
+    typewriterQueueRef.current += text;
+    if (typewriterTimerRef.current !== null) return;
+
+    typewriterTimerRef.current = window.setInterval(() => {
+      const pending = typewriterQueueRef.current;
+      const activeMessageId = typewriterMessageIdRef.current;
+      if (!pending || !activeMessageId) {
+        if (typewriterTimerRef.current !== null) window.clearInterval(typewriterTimerRef.current);
+        typewriterTimerRef.current = null;
+        typewriterMessageIdRef.current = null;
+        resolveTypewriterWaiters();
+        return;
+      }
+
+      const chunkSize = pending.length > 600 ? 12 : pending.length > 240 ? 6 : pending.length > 80 ? 3 : 1;
+      const nextChunk = pending.slice(0, chunkSize);
+      typewriterQueueRef.current = pending.slice(chunkSize);
+      setMessages((current) => current.map((message) => (
+        message.id === activeMessageId ? { ...message, content: message.content + nextChunk } : message
+      )));
+    }, 16);
+  }
+
+  function waitForTypewriter() {
+    if (!typewriterQueueRef.current && typewriterTimerRef.current === null) return Promise.resolve();
+    return new Promise<void>((resolve) => typewriterWaitersRef.current.push(resolve));
+  }
+
   function startNewChat() {
     abortControllerRef.current?.abort();
+    stopTypewriter();
     setActiveThreadId(null);
     setMessages([]);
     setDraft("");
     setSelectedVideos([]);
     setSelectedAttachments([]);
+    setPaletteDismissed(false);
+    setRenamingThreadId(null);
+    setThreadPendingDelete(null);
     setComposerError(null);
     setMobileSidebarOpen(false);
     router.push("/dashboard/chatbot");
@@ -280,25 +367,63 @@ export function DashboardChatbot({
     await loadThread(threadId);
   }
 
-  async function renameThread(thread: ChatThread) {
-    const title = window.prompt(english ? "Chat name" : "Nombre del chat", thread.title)?.trim();
-    if (!title || title === thread.title) return;
-    const response = await fetch(`/api/chat/threads/${thread.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title }),
-    });
-    if (response.ok) setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, title } : item));
+  function beginRenameThread(thread: ChatThread) {
     setOpenRecentMenuId(null);
+    setRenameDraft(thread.title);
+    setRenamingThreadId(thread.id);
+    setComposerError(null);
   }
 
-  async function deleteThread(thread: ChatThread) {
-    if (!window.confirm(english ? `Delete “${thread.title}”?` : `¿Eliminar “${thread.title}”?`)) return;
-    const response = await fetch(`/api/chat/threads/${thread.id}`, { method: "DELETE" });
-    if (!response.ok) return;
-    setThreads((current) => current.filter((item) => item.id !== thread.id));
-    if (activeThreadId === thread.id) startNewChat();
+  async function renameThread(thread: ChatThread) {
+    const title = renameDraft.trim();
+    if (!title) {
+      setRenameDraft(thread.title);
+      return;
+    }
+    if (title === thread.title) {
+      setRenamingThreadId(null);
+      return;
+    }
+
+    setRenamingSaving(true);
+    try {
+      const response = await fetch(`/api/chat/threads/${thread.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!response.ok) throw new Error(english ? "Could not rename the chat." : "No se pudo cambiar el nombre del chat.");
+      setThreads((current) => current.map((item) => item.id === thread.id ? { ...item, title } : item));
+      setRenamingThreadId(null);
+    } catch (error) {
+      setComposerError(error instanceof Error ? error.message : "No se pudo cambiar el nombre del chat.");
+    } finally {
+      setRenamingSaving(false);
+    }
+  }
+
+  function requestDeleteThread(thread: ChatThread) {
     setOpenRecentMenuId(null);
+    setMobileSidebarOpen(false);
+    setThreadPendingDelete(thread);
+    setComposerError(null);
+  }
+
+  async function deleteThread() {
+    const thread = threadPendingDelete;
+    if (!thread || deletingThread) return;
+    setDeletingThread(true);
+    try {
+      const response = await fetch(`/api/chat/threads/${thread.id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error(english ? "Could not delete the chat." : "No se pudo eliminar el chat.");
+      setThreads((current) => current.filter((item) => item.id !== thread.id));
+      setThreadPendingDelete(null);
+      if (activeThreadId === thread.id) startNewChat();
+    } catch (error) {
+      setComposerError(error instanceof Error ? error.message : "No se pudo eliminar el chat.");
+    } finally {
+      setDeletingThread(false);
+    }
   }
 
   async function changeMode(nextMode: ChatMode) {
@@ -316,6 +441,7 @@ export function DashboardChatbot({
     setMode(command.mode as ChatMode);
     setSelectedCommand(command.id);
     setDraft(`${command.slash} `);
+    setPaletteDismissed(true);
     setComposerError(null);
     window.requestAnimationFrame(() => inputRef.current?.focus());
   }
@@ -324,6 +450,7 @@ export function DashboardChatbot({
     setSelectedVideos((current) => [...current, video]);
     setDraft((current) => replaceLastMention(current, video.label));
     setMentionResults([]);
+    setPaletteDismissed(true);
     window.requestAnimationFrame(() => inputRef.current?.focus());
   }
 
@@ -464,34 +591,52 @@ export function DashboardChatbot({
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      const streamState: {
+        completionEvent: { messageId?: string; userMessageId?: string; title?: string } | null;
+        errorEvent: { message?: string; code?: string } | null;
+      } = { completionEvent: null, errorEvent: null };
+
+      const processStreamLine = (line: string) => {
+        if (!line.trim()) return;
+        const event = JSON.parse(line) as { type: string; text?: string; message?: string; messageId?: string; userMessageId?: string; title?: string; code?: string };
+        if (event.type === "delta" && event.text) enqueueAssistantText(tempAssistantId, event.text);
+        if (event.type === "error") streamState.errorEvent = { message: event.message, code: event.code };
+        if (event.type === "done") streamState.completionEvent = event;
+      };
+
       while (true) {
         const { value, done } = await reader.read();
         buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const event = JSON.parse(line) as { type: string; text?: string; message?: string; messageId?: string; userMessageId?: string; title?: string; code?: string };
-          if (event.type === "delta" && event.text) {
-            setMessages((current) => current.map((message) => message.id === tempAssistantId ? { ...message, content: message.content + event.text } : message));
-          }
-          if (event.type === "error") {
-            setMessages((current) => current.map((message) => message.id === tempAssistantId ? { ...message, status: "FAILED", errorCode: event.code, content: message.content || event.message || "No se pudo responder." } : message));
-          }
-          if (event.type === "done") {
-            setMessages((current) => current.map((message) => {
-              if (message.id === tempUserId) return { ...message, id: event.userMessageId || message.id };
-              if (message.id === tempAssistantId) return { ...message, id: event.messageId || message.id, status: "COMPLETED" };
-              return message;
-            }));
-            if (event.title) setThreads((current) => current.map((thread) => thread.id === threadId ? { ...thread, title: event.title! } : thread));
-          }
-        }
+        lines.forEach(processStreamLine);
         if (done) break;
+      }
+      processStreamLine(buffer);
+      await waitForTypewriter();
+
+      if (streamState.errorEvent) {
+        setMessages((current) => current.map((message) => message.id === tempAssistantId ? {
+          ...message,
+          status: "FAILED",
+          errorCode: streamState.errorEvent?.code,
+          content: message.content || streamState.errorEvent?.message || "No se pudo responder.",
+        } : message));
+      } else {
+        setMessages((current) => current.map((message) => {
+          if (message.id === tempUserId) return { ...message, id: streamState.completionEvent?.userMessageId || message.id };
+          if (message.id === tempAssistantId) return { ...message, id: streamState.completionEvent?.messageId || message.id, status: "COMPLETED" };
+          return message;
+        }));
+        if (streamState.completionEvent?.title) {
+          const nextTitle = streamState.completionEvent.title;
+          setThreads((current) => current.map((thread) => thread.id === threadId ? { ...thread, title: nextTitle } : thread));
+        }
       }
       await loadThreads();
     } catch (error) {
       const aborted = error instanceof DOMException && error.name === "AbortError";
+      await waitForTypewriter();
       setMessages((current) => current.map((message) => message.id === tempAssistantId ? {
         ...message,
         status: "FAILED",
@@ -509,6 +654,11 @@ export function DashboardChatbot({
   }
 
   function handleInputKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Escape" && (commandPaletteOpen || mentionPaletteOpen)) {
+      event.preventDefault();
+      setPaletteDismissed(true);
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void sendMessage();
@@ -517,7 +667,7 @@ export function DashboardChatbot({
 
   function renderComposer(chat = false) {
     return (
-      <div className={styles.composerWrapper}>
+      <div className={styles.composerWrapper} data-chat-composer="true">
         <form className={`${styles.composer} ${chat ? styles.composerChat : styles.composerEmpty}`} onSubmit={handleSubmit}>
           <label className="visually-hidden" htmlFor={chat ? "chatbot-composer-active" : "chatbot-composer"}>
             {english ? "Write your message" : "Escribe tu mensaje"}
@@ -532,11 +682,13 @@ export function DashboardChatbot({
             onChange={(event) => {
               const nextDraft = event.target.value;
               setDraft(nextDraft);
+              setPaletteDismissed(false);
               const command = CHAT_COMMANDS.find((item) => nextDraft.startsWith(item.slash));
               setSelectedCommand(command?.id || null);
               if (command) setMode(command.mode as ChatMode);
               setComposerError(null);
             }}
+            onFocus={() => setPaletteDismissed(false)}
             onKeyDown={handleInputKeyDown}
             placeholder={english ? "Ask about your matches, type / or reference @video…" : "Pregunta por tus partidos, escribe / o referencia @video…"}
           />
@@ -571,7 +723,7 @@ export function DashboardChatbot({
               </button>
 
               <div className={styles.modePickerRoot} data-chat-popover="true">
-                <button type="button" className={styles.assistantPicker} aria-haspopup="menu" aria-expanded={modeMenuOpen} onClick={() => setModeMenuOpen((open) => !open)}>
+                <button type="button" className={styles.assistantPicker} aria-haspopup="menu" aria-expanded={modeMenuOpen} onClick={() => { setPaletteDismissed(true); setModeMenuOpen((open) => !open); }}>
                   <strong>{english ? activeMode.shortLabel : activeMode.label}</strong><ChevronDown size={14} />
                 </button>
                 {modeMenuOpen ? (
@@ -585,26 +737,28 @@ export function DashboardChatbot({
                 ) : null}
               </div>
 
+            </div>
+
+            <div className={styles.composerActions}>
               <button
                 type="button"
-                className={`${styles.toolButton} ${voiceState === "recording" ? styles.recordingButton : ""}`}
+                className={`${styles.voiceButton} ${voiceState === "recording" ? styles.recordingButton : ""}`}
                 disabled={voiceState === "transcribing" || streaming}
                 aria-label={voiceState === "recording" ? (english ? "Stop recording" : "Detener grabación") : (english ? "Dictate by voice" : "Dictar por voz")}
                 onClick={() => void toggleVoice()}
               >
-                {voiceState === "transcribing" ? <LoaderCircle size={15} className={styles.spin} /> : voiceState === "recording" ? <Square size={12} /> : <AudioLines size={16} />}
+                {voiceState === "transcribing" ? <LoaderCircle size={15} className={styles.spin} /> : voiceState === "recording" ? <Square size={12} /> : <Mic size={16} />}
               </button>
+              {streaming ? (
+                <button className={styles.sendButton} type="button" aria-label={english ? "Stop response" : "Detener respuesta"} onClick={() => abortControllerRef.current?.abort()}><Square size={12} /></button>
+              ) : (
+                <button className={styles.sendButton} type="submit" disabled={!canSend} aria-label={english ? "Send message" : "Enviar mensaje"}><ArrowUp size={14} /></button>
+              )}
             </div>
-
-            {streaming ? (
-              <button className={styles.sendButton} type="button" aria-label={english ? "Stop response" : "Detener respuesta"} onClick={() => abortControllerRef.current?.abort()}><Square size={12} /></button>
-            ) : (
-              <button className={styles.sendButton} type="submit" disabled={!canSend} aria-label={english ? "Send message" : "Enviar mensaje"}><ArrowUp size={14} /></button>
-            )}
           </div>
         </form>
 
-        {commandMatches.length > 0 ? (
+        {commandPaletteOpen ? (
           <div className={styles.composerPalette} role="listbox" aria-label={english ? "Analysis commands" : "Comandos de análisis"}>
             {commandMatches.map((command, index) => {
               const Icon = COMMAND_ICONS[index % COMMAND_ICONS.length];
@@ -613,7 +767,7 @@ export function DashboardChatbot({
           </div>
         ) : null}
 
-        {mentionQuery !== null && mentionResults.length > 0 ? (
+        {mentionPaletteOpen ? (
           <div className={styles.composerPalette} role="listbox" aria-label={english ? "Uploaded matches" : "Partidos subidos"}>
             {mentionResults.map((video) => (
               <button key={video.id} type="button" onClick={() => selectVideo(video)}>
@@ -667,14 +821,46 @@ export function DashboardChatbot({
                   {filteredThreads.length === 0 ? <li className={styles.emptyRecent}>{english ? "No chats yet" : "Aún no hay chats"}</li> : null}
                   {filteredThreads.map((thread) => (
                     <li key={thread.id} className={`${styles.recentItem} ${activeThreadId === thread.id ? styles.recentItemActive : ""}`} data-chat-popover="true">
-                      <button type="button" className={styles.recentRow} disabled={streaming} onClick={() => void openThread(thread.id)}>
-                        <Clock3 size={10} /><span><strong>{thread.title}</strong><small>{formatRelativeDate(thread.lastMessageAt, locale)}</small></span>
-                      </button>
-                      <button type="button" className={styles.recentMenuButton} aria-label={english ? "Chat options" : "Opciones del chat"} onClick={() => setOpenRecentMenuId((id) => id === thread.id ? null : thread.id)}><Ellipsis size={12} /></button>
+                      {renamingThreadId === thread.id ? (
+                        <form
+                          className={styles.recentRenameForm}
+                          onSubmit={(event) => { event.preventDefault(); void renameThread(thread); }}
+                          onBlur={(event) => {
+                            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) void renameThread(thread);
+                          }}
+                        >
+                          <input
+                            className={styles.recentRenameInput}
+                            value={renameDraft}
+                            maxLength={80}
+                            disabled={renamingSaving}
+                            aria-label={english ? "Chat name" : "Nombre del chat"}
+                            onChange={(event) => setRenameDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                setRenamingThreadId(null);
+                                setRenameDraft("");
+                              }
+                            }}
+                            autoFocus
+                          />
+                          <button className={styles.recentRenameSave} type="submit" disabled={!renameDraft.trim() || renamingSaving} aria-label={english ? "Save name" : "Guardar nombre"}>
+                            {renamingSaving ? <LoaderCircle size={12} className={styles.spin} /> : <Check size={12} />}
+                          </button>
+                        </form>
+                      ) : (
+                        <button type="button" className={styles.recentRow} disabled={streaming} onClick={() => void openThread(thread.id)}>
+                          <Clock3 size={10} /><span><strong>{thread.title}</strong><small>{formatRelativeDate(thread.lastMessageAt, locale)}</small></span>
+                        </button>
+                      )}
+                      {renamingThreadId !== thread.id ? (
+                        <button type="button" className={styles.recentMenuButton} aria-label={english ? "Chat options" : "Opciones del chat"} aria-expanded={openRecentMenuId === thread.id} onClick={() => setOpenRecentMenuId((id) => id === thread.id ? null : thread.id)}><Ellipsis size={12} /></button>
+                      ) : null}
                       {openRecentMenuId === thread.id ? (
                         <div className={styles.recentMenu} role="menu">
-                          <button type="button" role="menuitem" onClick={() => void renameThread(thread)}>{english ? "Rename" : "Cambiar nombre"}</button>
-                          <button type="button" role="menuitem" onClick={() => void deleteThread(thread)}>{english ? "Delete" : "Eliminar"}</button>
+                          <button type="button" role="menuitem" onClick={() => beginRenameThread(thread)}>{english ? "Rename" : "Cambiar nombre"}</button>
+                          <button type="button" role="menuitem" onClick={() => requestDeleteThread(thread)}>{english ? "Delete" : "Eliminar"}</button>
                         </div>
                       ) : null}
                     </li>
@@ -730,12 +916,6 @@ export function DashboardChatbot({
                 </div>
                 <div className={styles.composerStack}>
                   {renderComposer(false)}
-                  <div className={styles.suggestionGrid} aria-label={english ? "Analysis commands" : "Comandos de análisis"}>
-                    {CHAT_COMMANDS.map((command, index) => {
-                      const Icon = COMMAND_ICONS[index];
-                      return <button key={command.id} type="button" className={styles.suggestionChip} onClick={() => applyCommand(command)}><Icon size={13} /><span><strong>{command.slash}</strong>{command.label}</span></button>;
-                    })}
-                  </div>
                 </div>
               </div>
               <p className={styles.privacyNote}><span>◌</span> {english ? "Only your authorized match data is used." : "Solo se usan los datos de partidos autorizados para tu cuenta."}</p>
@@ -745,6 +925,36 @@ export function DashboardChatbot({
       </div>
 
       {mobileSidebarOpen ? <button type="button" className={styles.overlay} aria-label={english ? "Close history" : "Cerrar historial"} onClick={() => setMobileSidebarOpen(false)} /> : null}
+      {threadPendingDelete ? (
+        <dialog
+          ref={deleteDialogRef}
+          className={styles.deleteDialog}
+          aria-modal="true"
+          aria-labelledby="delete-chat-title"
+          aria-describedby="delete-chat-description"
+          onCancel={(event) => {
+            event.preventDefault();
+            if (!deletingThread) setThreadPendingDelete(null);
+          }}
+        >
+          <p className={styles.dialogEyebrow}>{english ? "Chat history" : "Historial de chats"}</p>
+          <h2 id="delete-chat-title">{english ? "Delete this chat?" : "¿Eliminar este chat?"}</h2>
+          <p id="delete-chat-description">
+            {english
+              ? `“${threadPendingDelete.title}” and its messages will be permanently deleted.`
+              : `“${threadPendingDelete.title}” y sus mensajes se eliminarán permanentemente.`}
+          </p>
+          <div className={styles.dialogActions}>
+            <button type="button" className={styles.dialogCancel} disabled={deletingThread} onClick={() => setThreadPendingDelete(null)} autoFocus>
+              {english ? "Cancel" : "Cancelar"}
+            </button>
+            <button type="button" className={styles.dialogDanger} disabled={deletingThread} onClick={() => void deleteThread()}>
+              {deletingThread ? <LoaderCircle size={13} className={styles.spin} /> : null}
+              {english ? "Delete chat" : "Eliminar chat"}
+            </button>
+          </div>
+        </dialog>
+      ) : null}
     </section>
   );
 }

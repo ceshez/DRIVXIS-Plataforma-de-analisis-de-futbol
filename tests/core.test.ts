@@ -503,6 +503,36 @@ describe("chatbot production contracts", () => {
   });
 });
 
+describe("chatbot interaction polish", () => {
+  const component = readFileSync(
+    join(process.cwd(), "components", "dashboard-chatbot-demo.tsx"),
+    "utf8",
+  );
+  const styles = readFileSync(
+    join(process.cwd(), "components", "dashboard-chatbot-demo.module.css"),
+    "utf8",
+  );
+
+  it("uses in-product rename and delete controls instead of browser dialogs", () => {
+    expect(component).not.toContain("window.prompt");
+    expect(component).not.toContain("window.confirm");
+    expect(component).toContain('aria-modal="true"');
+    expect(component).toContain("recentRenameInput");
+  });
+
+  it("keeps commands discoverable through slash without showing starter chips", () => {
+    expect(component).not.toContain("styles.suggestionGrid");
+    expect(component).toContain("commandMatches.length > 0");
+  });
+
+  it("supports themed palettes, readable assistant text and progressive response motion", () => {
+    expect(styles).toContain(':global(html[data-theme="light"]) .messageAssistant .messageText');
+    expect(styles).toContain("scrollbar-width: none");
+    expect(styles).toContain("@keyframes thinkingBounce");
+    expect(component).toContain("enqueueAssistantText");
+  });
+});
+
 describe("profile password settings", () => {
   it("keeps the form reference across the async password confirmation", () => {
     const source = readFileSync(join(process.cwd(), "components", "profile-settings.tsx"), "utf8");
