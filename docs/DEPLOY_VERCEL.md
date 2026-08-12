@@ -107,6 +107,7 @@ Usa `deploy/vercel.env.example` como lista. En **Production** configura como min
 ```txt
 DATABASE_URL
 NEXTAUTH_SECRET
+SESSION_COOKIE=drivxis_session
 STORAGE_ENDPOINT
 STORAGE_REGION
 STORAGE_BUCKET
