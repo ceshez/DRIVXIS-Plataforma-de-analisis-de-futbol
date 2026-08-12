@@ -32,7 +32,7 @@ export async function POST(_request: Request, context: RouteContext) {
 
   if (activeJob) {
     if (activeJob.status === "QUEUED") {
-      after(() => kickAnalysisWorker());
+      after(() => kickAnalysisWorker(activeJob.id));
     }
 
     return NextResponse.json(
@@ -92,6 +92,6 @@ export async function POST(_request: Request, context: RouteContext) {
     },
   });
 
-  after(() => kickAnalysisWorker());
+  after(() => kickAnalysisWorker(updated.analysisJobs[0]?.id));
   return NextResponse.json({ video: serializeVideo(updated) });
 }

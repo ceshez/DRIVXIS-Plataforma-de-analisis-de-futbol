@@ -30,6 +30,7 @@ const prisma = new PrismaClient(adapterOptions);
 
 const args = new Set(process.argv.slice(2));
 const once = args.has("--once");
+const targetJobId = process.env.ANALYSIS_JOB_ID?.trim() || null;
 const intervalMs = Number(process.env.ANALYSIS_WORKER_INTERVAL_MS || 5000);
 const pythonBin = process.env.PYTHON_BIN || "python";
 const detector = normalizeDetector(process.env.ANALYSIS_DETECTOR || "yolo");
@@ -89,6 +90,7 @@ try {
 
 async function runWorker() {
   log(`DRIVXIS analysis worker online. once=${once}`);
+  log(`targetJob=${targetJobId || "oldest-queued"}`);
   log(`pythonBin=${pythonBin}`);
   log(`detector=${detector}`);
   log(`model=${detector === "yolo" ? modelPath : `${modelId}@${modelRevision}`}`);
@@ -116,7 +118,10 @@ async function runWorker() {
 
 async function claimNextJob() {
   const job = await prisma.analysisJob.findFirst({
-    where: { status: "QUEUED" },
+    where: {
+      status: "QUEUED",
+      ...(targetJobId ? { id: targetJobId } : {}),
+    },
     orderBy: { createdAt: "asc" },
     include: { video: true },
   });

@@ -24,8 +24,9 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const result = await getVideoListPage(user.id, parseVideoListQuery(searchParams));
 
-  if (result.videos.some((video) => video.latestJob?.status === "QUEUED")) {
-    after(() => kickAnalysisWorker());
+  const queuedJob = result.videos.find((video) => video.latestJob?.status === "QUEUED")?.latestJob;
+  if (queuedJob) {
+    after(() => kickAnalysisWorker(queuedJob.id));
   }
 
   return NextResponse.json({
@@ -171,6 +172,6 @@ export async function POST(request: Request) {
     throw error;
   }
 
-  after(() => kickAnalysisWorker());
+  after(() => kickAnalysisWorker(video.analysisJobs[0]?.id));
   return NextResponse.json({ video: serializeVideo(video) }, { status: 201 });
 }

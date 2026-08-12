@@ -52,7 +52,7 @@ const SANDBOX_REQUIRED_ENV_KEYS = [
 const SANDBOX_LAUNCH_LEASE_MS = 5 * 60 * 1000;
 
 const globalForAnalysisWorker = globalThis as typeof globalThis & {
-  drivxisAnalysisKickAt?: number;
+  drivxisAnalysisKickAt?: Record<string, number>;
 };
 
 export function shouldAutoStartAnalysisWorker(
@@ -73,21 +73,33 @@ export function getAnalysisWorkerMode(options: AnalysisWorkerModeOptions = {}): 
   return mode === "local" ? "local" : "disabled";
 }
 
-export async function kickAnalysisWorker() {
+export function getAnalysisJobTarget(jobId?: string) {
+  const normalizedJobId = jobId?.trim() || null;
+  return {
+    jobId: normalizedJobId,
+    where: normalizedJobId ? { id: normalizedJobId } : {},
+  };
+}
+
+export async function kickAnalysisWorker(jobId?: string) {
   const mode = getAnalysisWorkerMode();
   if (mode === "disabled") return;
 
+  const target = getAnalysisJobTarget(jobId);
+  const throttleKey = target.jobId || "queue";
   const now = Date.now();
-  const lastKick = globalForAnalysisWorker.drivxisAnalysisKickAt ?? 0;
+  const kickTimes = globalForAnalysisWorker.drivxisAnalysisKickAt ?? {};
+  const lastKick = kickTimes[throttleKey] ?? 0;
   if (now - lastKick < 2500) return;
-  globalForAnalysisWorker.drivxisAnalysisKickAt = now;
+  kickTimes[throttleKey] = now;
+  globalForAnalysisWorker.drivxisAnalysisKickAt = kickTimes;
 
   if (mode === "vercel-sandbox") {
-    const reservation = await reserveQueuedSandboxJob();
+    const reservation = await reserveQueuedSandboxJob(target.jobId);
     if (!reservation) return;
 
     try {
-      await kickVercelSandboxWorker();
+      await kickVercelSandboxWorker(reservation.jobId);
     } catch (error) {
       await releaseQueuedSandboxJob(reservation.jobId, reservation.startedAt);
       throw error;
@@ -95,10 +107,11 @@ export async function kickAnalysisWorker() {
     return;
   }
 
-  kickLocalAnalysisWorker();
+  kickLocalAnalysisWorker(target.jobId);
 }
 
-async function reserveQueuedSandboxJob() {
+async function reserveQueuedSandboxJob(jobId: string | null) {
+  const target = getAnalysisJobTarget(jobId ?? undefined);
   const staleBefore = new Date(Date.now() - SANDBOX_LAUNCH_LEASE_MS);
   const availableLease = {
     OR: [{ startedAt: null }, { startedAt: { lt: staleBefore } }],
@@ -106,6 +119,7 @@ async function reserveQueuedSandboxJob() {
   const job = await prisma.analysisJob.findFirst({
     where: {
       status: "QUEUED",
+      ...target.where,
       ...availableLease,
     },
     orderBy: { createdAt: "asc" },
@@ -132,13 +146,13 @@ async function releaseQueuedSandboxJob(jobId: string, startedAt: Date) {
   });
 }
 
-async function kickVercelSandboxWorker() {
+async function kickVercelSandboxWorker(jobId: string) {
   const snapshotId = process.env.ANALYSIS_SANDBOX_SNAPSHOT_ID?.trim();
   if (!snapshotId) {
     throw new Error("ANALYSIS_SANDBOX_SNAPSHOT_ID is required for the Vercel Sandbox worker.");
   }
 
-  const environment = getSandboxWorkerEnvironment();
+  const environment = getSandboxWorkerEnvironment(jobId);
   const timeout = clampInteger(process.env.ANALYSIS_SANDBOX_TIMEOUT_MS, 2_700_000, 60_000, 2_700_000);
   const vcpus = clampInteger(process.env.ANALYSIS_SANDBOX_VCPUS, 4, 1, 4);
   const repositoryDirectory =
@@ -174,7 +188,7 @@ async function kickVercelSandboxWorker() {
   }
 }
 
-function getSandboxWorkerEnvironment() {
+function getSandboxWorkerEnvironment(jobId: string) {
   const missing = SANDBOX_REQUIRED_ENV_KEYS.filter((key) => !process.env[key]?.trim());
   if (missing.length > 0) {
     throw new Error(`Missing Vercel Sandbox worker variables: ${missing.join(", ")}`);
@@ -188,6 +202,7 @@ function getSandboxWorkerEnvironment() {
 
   environment.NODE_ENV = "production";
   environment.ANALYSIS_AUTO_START = "false";
+  environment.ANALYSIS_JOB_ID = jobId;
   environment.ANALYSIS_MODEL_PATH =
     process.env.ANALYSIS_SANDBOX_MODEL_PATH?.trim() || "/home/ubuntu/models/best.onnx";
   environment.PYTHON_BIN =
@@ -199,7 +214,7 @@ function getSandboxWorkerEnvironment() {
   return environment;
 }
 
-function kickLocalAnalysisWorker() {
+function kickLocalAnalysisWorker(jobId: string | null) {
   const root = process.cwd();
   const nodeExecutable = process.execPath;
   const workerPath = path.join(root, "scripts", "analysis-worker.mjs");
@@ -212,7 +227,10 @@ function kickLocalAnalysisWorker() {
       detached: true,
       stdio: workerLog.stdio,
       windowsHide: true,
-      env: process.env,
+      env: {
+        ...process.env,
+        ...(jobId ? { ANALYSIS_JOB_ID: jobId } : {}),
+      },
     });
     child.unref();
   } finally {

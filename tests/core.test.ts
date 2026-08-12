@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { getDetectedColorPair, isAllowedDetectedColorSwap } from "@/lib/detected-color-pair";
 import { ANALYSIS_CANCELLED_BY_USER, isAnalysisCancelled } from "@/lib/analysis-cancellation";
 import { parseAnalysisMetrics } from "@/lib/analysis-metrics";
-import { getAnalysisWorkerMode, shouldAutoStartAnalysisWorker } from "@/lib/analysis-worker";
+import { getAnalysisJobTarget, getAnalysisWorkerMode, shouldAutoStartAnalysisWorker } from "@/lib/analysis-worker";
 import { buildMatchReport, createMatchReportData, createMatchReportFilename } from "@/lib/match-report";
 import { pickLocale } from "@/lib/i18n";
 import { normalizeLocale, normalizeTheme, translate } from "@/lib/preferences";
@@ -42,6 +42,11 @@ describe("analysis worker placement", () => {
       "disabled",
     );
     expect(getAnalysisWorkerMode({ autoStart: "true", mode: "unknown", detector: "yolo" })).toBe("disabled");
+  });
+
+  it("targets the exact queued job that requested a Sandbox", () => {
+    expect(getAnalysisJobTarget("  job-123  ")).toEqual({ jobId: "job-123", where: { id: "job-123" } });
+    expect(getAnalysisJobTarget()).toEqual({ jobId: null, where: {} });
   });
 });
 
