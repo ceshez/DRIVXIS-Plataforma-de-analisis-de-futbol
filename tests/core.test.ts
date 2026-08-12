@@ -86,6 +86,17 @@ describe("analysis Sandbox shutdown callback", () => {
   });
 });
 
+describe("Vercel analysis route packaging", () => {
+  it("ignores only the root Python analysis directory", () => {
+    const vercelIgnore = readFileSync(join(process.cwd(), ".vercelignore"), "utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim());
+
+    expect(vercelIgnore).toContain("/analysis/");
+    expect(vercelIgnore).not.toContain("analysis/");
+  });
+});
+
 describe("analysis output upload retry", () => {
   it("retries recoverable TLS record failures from an R2 streaming PUT", () => {
     expect(

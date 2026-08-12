@@ -3,7 +3,7 @@
 .venv-analysis/
 **/__pycache__/
 **/*.pyc
-analysis/
+/analysis/
 deploy/*.env
 Dockerfile.analysis-*
 compose.analysis-*.yml
