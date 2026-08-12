@@ -3,6 +3,51 @@ import { spawn } from "node:child_process";
 import type { StdioOptions } from "node:child_process";
 import path from "node:path";
 
+type AnalysisWorkerMode = "disabled" | "local" | "vercel-sandbox";
+
+type AnalysisWorkerModeOptions = {
+  autoStart?: string;
+  mode?: string;
+  platform?: NodeJS.Platform;
+  detector?: string;
+};
+
+const SANDBOX_ENV_KEYS = [
+  "DATABASE_URL",
+  "STORAGE_ENDPOINT",
+  "STORAGE_REGION",
+  "STORAGE_BUCKET",
+  "STORAGE_ACCESS_KEY_ID",
+  "STORAGE_SECRET_ACCESS_KEY",
+  "ANALYSIS_DETECTOR",
+  "ANALYSIS_MODEL_OBJECT_KEY",
+  "ANALYSIS_MODEL_URL",
+  "ANALYSIS_DETECTION_FPS",
+  "ANALYSIS_BATCH_SIZE",
+  "ANALYSIS_MAX_WIDTH",
+  "ANALYSIS_HEARTBEAT_INTERVAL_MS",
+  "ANALYSIS_CANCEL_POLL_MS",
+  "ANALYSIS_STALE_JOB_MINUTES",
+  "ANALYSIS_UPLOAD_MAX_ATTEMPTS",
+  "ANALYSIS_UPLOAD_BASE_DELAY_MS",
+  "ANALYSIS_UPLOAD_MAX_DELAY_MS",
+  "YOLO_DEVICE",
+  "YOLO_IMAGE_SIZE",
+  "YOLO_PROCESS_EVERY_FRAME",
+  "YOLO_FALLBACK_IMAGE_SIZE",
+  "YOLO_SPARSE_PLAYER_THRESHOLD",
+  "YOLO_SPARSE_PLAYER_MAX_HEIGHT_RATIO",
+  "YOLO_CONFIDENCE",
+] as const;
+
+const SANDBOX_REQUIRED_ENV_KEYS = [
+  "DATABASE_URL",
+  "STORAGE_ENDPOINT",
+  "STORAGE_BUCKET",
+  "STORAGE_ACCESS_KEY_ID",
+  "STORAGE_SECRET_ACCESS_KEY",
+] as const;
+
 const globalForAnalysisWorker = globalThis as typeof globalThis & {
   drivxisAnalysisKickAt?: number;
 };
@@ -17,14 +62,99 @@ export function shouldAutoStartAnalysisWorker(
   return detector === "locateanything" ? platform === "linux" : detector === "yolo";
 }
 
-export function kickAnalysisWorker() {
-  if (!shouldAutoStartAnalysisWorker()) return;
+export function getAnalysisWorkerMode(options: AnalysisWorkerModeOptions = {}): AnalysisWorkerMode {
+  if (!shouldAutoStartAnalysisWorker(options)) return "disabled";
+
+  const mode = (options.mode ?? process.env.ANALYSIS_WORKER_MODE ?? "local").trim().toLowerCase();
+  if (mode === "vercel-sandbox") return "vercel-sandbox";
+  return mode === "local" ? "local" : "disabled";
+}
+
+export async function kickAnalysisWorker() {
+  const mode = getAnalysisWorkerMode();
+  if (mode === "disabled") return;
 
   const now = Date.now();
   const lastKick = globalForAnalysisWorker.drivxisAnalysisKickAt ?? 0;
   if (now - lastKick < 2500) return;
   globalForAnalysisWorker.drivxisAnalysisKickAt = now;
 
+  if (mode === "vercel-sandbox") {
+    await kickVercelSandboxWorker();
+    return;
+  }
+
+  kickLocalAnalysisWorker();
+}
+
+async function kickVercelSandboxWorker() {
+  const snapshotId = process.env.ANALYSIS_SANDBOX_SNAPSHOT_ID?.trim();
+  if (!snapshotId) {
+    throw new Error("ANALYSIS_SANDBOX_SNAPSHOT_ID is required for the Vercel Sandbox worker.");
+  }
+
+  const environment = getSandboxWorkerEnvironment();
+  const timeout = clampInteger(process.env.ANALYSIS_SANDBOX_TIMEOUT_MS, 2_700_000, 60_000, 2_700_000);
+  const vcpus = clampInteger(process.env.ANALYSIS_SANDBOX_VCPUS, 4, 1, 4);
+  const repositoryDirectory =
+    process.env.ANALYSIS_SANDBOX_REPOSITORY_DIR?.trim() || "DRIVXIS-Plataforma-de-analisis-de-futbol";
+  const { Sandbox } = await import("@vercel/sandbox");
+  const sandbox = await Sandbox.create({
+    source: { type: "snapshot", snapshotId },
+    timeout,
+    resources: { vcpus },
+    persistent: false,
+    env: environment,
+    tags: {
+      application: "drivxis",
+      purpose: "analysis-worker",
+    },
+  });
+
+  try {
+    await sandbox.runCommand({
+      cmd: "bash",
+      args: [
+        "-lc",
+        'git fetch --depth 1 origin "$ANALYSIS_SANDBOX_GIT_BRANCH" && git reset --hard FETCH_HEAD && bash scripts/run-analysis-sandbox-worker.sh',
+      ],
+      cwd: repositoryDirectory,
+      detached: true,
+      timeoutMs: Math.max(30_000, timeout - 15_000),
+    });
+    console.info(`DRIVXIS analysis Sandbox started: ${sandbox.name}`);
+  } catch (error) {
+    await sandbox.stop().catch(() => undefined);
+    throw error;
+  }
+}
+
+function getSandboxWorkerEnvironment() {
+  const missing = SANDBOX_REQUIRED_ENV_KEYS.filter((key) => !process.env[key]?.trim());
+  if (missing.length > 0) {
+    throw new Error(`Missing Vercel Sandbox worker variables: ${missing.join(", ")}`);
+  }
+
+  const environment: Record<string, string> = {};
+  for (const key of SANDBOX_ENV_KEYS) {
+    const value = process.env[key];
+    if (value !== undefined) environment[key] = value;
+  }
+
+  environment.NODE_ENV = "production";
+  environment.ANALYSIS_AUTO_START = "false";
+  environment.ANALYSIS_MODEL_PATH =
+    process.env.ANALYSIS_SANDBOX_MODEL_PATH?.trim() || "/home/ubuntu/models/best.onnx";
+  environment.PYTHON_BIN =
+    process.env.ANALYSIS_SANDBOX_PYTHON_BIN?.trim() || ".venv-analysis/bin/python";
+  environment.LOCAL_STORAGE_ROOT = "/tmp/drivxis/uploads";
+  environment.ANALYSIS_STORAGE_ROOT = "/tmp/drivxis/analysis";
+  environment.ANALYSIS_SANDBOX_GIT_BRANCH =
+    process.env.ANALYSIS_SANDBOX_GIT_BRANCH?.trim() || "main";
+  return environment;
+}
+
+function kickLocalAnalysisWorker() {
   const root = process.cwd();
   const nodeExecutable = process.execPath;
   const workerPath = path.join(root, "scripts", "analysis-worker.mjs");
@@ -66,4 +196,10 @@ function createWorkerLogStdio(root: string) {
       close() {},
     };
   }
+}
+
+function clampInteger(value: string | undefined, fallback: number, minimum: number, maximum: number) {
+  const parsed = Number.parseInt(value || "", 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(maximum, Math.max(minimum, parsed));
 }

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { kickAnalysisWorker } from "@/lib/analysis-worker";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -31,6 +31,10 @@ export async function POST(_request: Request, context: RouteContext) {
   });
 
   if (activeJob) {
+    if (activeJob.status === "QUEUED") {
+      after(() => kickAnalysisWorker());
+    }
+
     return NextResponse.json(
       {
         error: "El video ya tiene un análisis activo.",
@@ -88,6 +92,6 @@ export async function POST(_request: Request, context: RouteContext) {
     },
   });
 
-  kickAnalysisWorker();
+  after(() => kickAnalysisWorker());
   return NextResponse.json({ video: serializeVideo(updated) });
 }

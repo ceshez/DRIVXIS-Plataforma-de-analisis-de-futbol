@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { getDetectedColorPair, isAllowedDetectedColorSwap } from "@/lib/detected-color-pair";
 import { ANALYSIS_CANCELLED_BY_USER, isAnalysisCancelled } from "@/lib/analysis-cancellation";
 import { parseAnalysisMetrics } from "@/lib/analysis-metrics";
-import { shouldAutoStartAnalysisWorker } from "@/lib/analysis-worker";
+import { getAnalysisWorkerMode, shouldAutoStartAnalysisWorker } from "@/lib/analysis-worker";
 import { buildMatchReport, createMatchReportData, createMatchReportFilename } from "@/lib/match-report";
 import { pickLocale } from "@/lib/i18n";
 import { normalizeLocale, normalizeTheme, translate } from "@/lib/preferences";
@@ -32,6 +32,16 @@ describe("analysis worker placement", () => {
     expect(shouldAutoStartAnalysisWorker({ autoStart: "", platform: "linux", detector: "yolo" })).toBe(false);
     expect(shouldAutoStartAnalysisWorker({ autoStart: "true", platform: "win32", detector: "locateanything" })).toBe(false);
     expect(shouldAutoStartAnalysisWorker({ autoStart: "true", platform: "linux", detector: "locateanything" })).toBe(true);
+  });
+
+  it("selects Vercel Sandbox only when analysis auto-start is enabled", () => {
+    expect(getAnalysisWorkerMode({ autoStart: "true", mode: "vercel-sandbox", detector: "yolo" })).toBe(
+      "vercel-sandbox",
+    );
+    expect(getAnalysisWorkerMode({ autoStart: "false", mode: "vercel-sandbox", detector: "yolo" })).toBe(
+      "disabled",
+    );
+    expect(getAnalysisWorkerMode({ autoStart: "true", mode: "unknown", detector: "yolo" })).toBe("disabled");
   });
 });
 

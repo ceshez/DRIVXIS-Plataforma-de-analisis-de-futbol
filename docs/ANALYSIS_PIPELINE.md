@@ -139,6 +139,26 @@ ANALYSIS_MAX_WIDTH="1920"
 
 Produccion usa `Dockerfile.analysis-worker`/`compose.analysis-worker.yml` para YOLO CPU y `Dockerfile.analysis-gpu`/`compose.analysis-gpu.yml` para LocateAnything. Ningun contenedor expone puertos; ambos consumen PostgreSQL y R2 mediante conexiones salientes. La aplicacion web debe mantener `ANALYSIS_AUTO_START=false`.
 
+Para proyectos personales desplegados en Vercel Hobby, YOLO tambien puede ejecutarse bajo demanda con Vercel Sandbox. El navegador mantiene la carga directa a R2; la API crea el job y arranca un Sandbox desacoplado que reclama un unico trabajo con `--once`. El snapshot contiene Python, FFmpeg, las dependencias y `best.onnx`, por lo que el modelo no se publica en GitHub. Antes de cada ejecucion, el Sandbox actualiza el codigo desde `main`.
+
+```bash
+vercel link --yes --project drivxis
+vercel env pull .env.local --yes
+npm run analysis:sandbox:snapshot
+```
+
+El ID impreso por el ultimo comando se configura en Vercel junto con:
+
+```env
+ANALYSIS_AUTO_START="true"
+ANALYSIS_WORKER_MODE="vercel-sandbox"
+ANALYSIS_SANDBOX_SNAPSHOT_ID="snap_..."
+ANALYSIS_SANDBOX_TIMEOUT_MS="2700000"
+ANALYSIS_SANDBOX_VCPUS="4"
+```
+
+La sesion individual tiene el limite del plan Hobby (45 minutos). Si un video no termina dentro de ese tiempo, el pipeline debe dividirse en segmentos antes de considerarlo apto para esta modalidad.
+
 ## Reglas para Codex
 
 Cuando modifique el pipeline:

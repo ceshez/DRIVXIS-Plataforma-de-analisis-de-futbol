@@ -19,3 +19,4 @@ analysis/models/*.engine
 .claude
 .unlighthouse
 .kiro
+.vercel/

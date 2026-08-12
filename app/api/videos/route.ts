@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { kickAnalysisWorker } from "@/lib/analysis-worker";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -23,6 +23,11 @@ export async function GET(request: Request) {
   const user = await requireUser();
   const { searchParams } = new URL(request.url);
   const result = await getVideoListPage(user.id, parseVideoListQuery(searchParams));
+
+  if (result.videos.some((video) => video.latestJob?.status === "QUEUED")) {
+    after(() => kickAnalysisWorker());
+  }
+
   return NextResponse.json({
     videos: result.videos,
     pagination: result.pagination,
@@ -166,6 +171,6 @@ export async function POST(request: Request) {
     throw error;
   }
 
-  kickAnalysisWorker();
+  after(() => kickAnalysisWorker());
   return NextResponse.json({ video: serializeVideo(video) }, { status: 201 });
 }
