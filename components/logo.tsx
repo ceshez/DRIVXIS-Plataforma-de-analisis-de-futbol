@@ -18,7 +18,7 @@ export function Logo({ href = "/" }: LogoProps) {
         alt="DRIVXIS"
         width={90}
         height={22}
-        style={{ height: "auto" }}
+        style={{ width: "clamp(66px, 7vw, 90px)", height: "auto" }}
       />
       <Image
         className="brand-logo brand-logo--for-light"
@@ -26,7 +26,7 @@ export function Logo({ href = "/" }: LogoProps) {
         alt="DRIVXIS"
         width={90}
         height={22}
-        style={{ height: "auto" }}
+        style={{ width: "clamp(66px, 7vw, 90px)", height: "auto" }}
       />
     </Link>
   );

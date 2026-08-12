@@ -68,6 +68,7 @@ Documentos clave:
 - [`docs/DATABASE.md`](./docs/DATABASE.md) - base de datos.
 - [`docs/API.md`](./docs/API.md) - endpoints y contratos.
 - [`docs/ANALYSIS_PIPELINE.md`](./docs/ANALYSIS_PIPELINE.md) - worker y analisis de video.
+- [`docs/DEPLOY_VERCEL.md`](./docs/DEPLOY_VERCEL.md) - produccion en Vercel, PostgreSQL, R2 y worker.
 - [`docs/UI_GUIDE.md`](./docs/UI_GUIDE.md) - reglas visuales.
 - [`docs/ROADMAP.md`](./docs/ROADMAP.md) - mejoras futuras.
 

@@ -58,15 +58,13 @@ def draw_player_marker(cv2: Any, canvas: Any, bbox: list[float], color: tuple[in
 
 
 def draw_player_metrics(cv2: Any, canvas: Any, bbox: list[float], player: dict[str, Any]) -> None:
-    if not player.get("display_speed_sample") or "speed" not in player or "distance" not in player:
+    if not has_player_metrics(player):
         return
     rect = metric_overlay_rect(cv2, canvas, bbox, player)
     if rect is None:
         return
     x1, y1, x2, y2 = rect
-    speed = float(player.get("speed") or 0.0)
-    distance = float(player.get("distance") or 0.0)
-    lines = [f"{speed:.1f} km/h", f"{format_overlay_distance(distance)}"]
+    lines = player_metric_lines(player)
     font = cv2.FONT_HERSHEY_SIMPLEX
     scale = 0.36
     thickness = 1
@@ -83,9 +81,7 @@ def draw_player_metrics(cv2: Any, canvas: Any, bbox: list[float], player: dict[s
 def metric_overlay_rect(cv2: Any, canvas: Any, bbox: list[float], player: dict[str, Any]) -> tuple[int, int, int, int] | None:
     x1, _y1, x2, y2 = [int(value) for value in bbox]
     x_center = int((x1 + x2) / 2)
-    speed = float(player.get("speed") or 0.0)
-    distance = float(player.get("distance") or 0.0)
-    lines = [f"{speed:.1f} km/h", f"{format_overlay_distance(distance)}"]
+    lines = player_metric_lines(player)
     font = cv2.FONT_HERSHEY_SIMPLEX
     scale = 0.36
     thickness = 1
@@ -111,41 +107,26 @@ def metric_rect_overlaps(rect: tuple[int, int, int, int], others: list[tuple[int
 
 
 def select_metric_overlay_ids(cv2: Any, canvas: Any, players: dict[int, dict[str, Any]]) -> set[int]:
-    eligible: list[tuple[int, dict[str, Any], tuple[int, int, int, int]]] = []
+    eligible: set[int] = set()
     for player_id, player in players.items():
-        if not player.get("display_speed_sample") or "speed" not in player or "distance" not in player:
+        if not has_player_metrics(player):
             continue
         rect = metric_overlay_rect(cv2, canvas, player["bbox"], player)
         if rect is not None:
-            eligible.append((player_id, player, rect))
+            eligible.add(player_id)
+    return eligible
 
-    if len(players) >= 12:
-        max_overlays = 4
-    elif len(players) >= 8:
-        max_overlays = 5
-    else:
-        max_overlays = 6
 
-    eligible.sort(
-        key=lambda item: (
-            float(item[1].get("speed_display_confidence", 0.0)),
-            int(item[1].get("speed_sample_streak", 0)),
-            int(item[1].get("speed_sample_count", 0)),
-            float(item[1].get("distance", 0.0)),
-        ),
-        reverse=True,
+def has_player_metrics(player: dict[str, Any]) -> bool:
+    return bool(player.get("valid_speed_sample") or player.get("display_speed_sample")) and all(
+        key in player for key in ("speed", "distance")
     )
 
-    selected: set[int] = set()
-    claimed_rects: list[tuple[int, int, int, int]] = []
-    for player_id, _player, rect in eligible:
-        if len(selected) >= max_overlays:
-            break
-        if metric_rect_overlaps(rect, claimed_rects):
-            continue
-        selected.add(player_id)
-        claimed_rects.append(rect)
-    return selected
+
+def player_metric_lines(player: dict[str, Any]) -> list[str]:
+    speed = float(player.get("speed") or 0.0)
+    distance = float(player.get("distance") or 0.0)
+    return [f"~{speed:.1f} km/h", f"~{format_overlay_distance(distance)}"]
 
 
 def format_overlay_distance(distance_meters: float) -> str:

@@ -15,6 +15,7 @@ Usa este indice para saber que documento leer antes de pedirle una tarea a Codex
 - `docs/API.md` - endpoints, contratos y flujo de subida/analisis.
 - `docs/ANALYSIS_PIPELINE.md` - worker YOLO/LocateAnything, jobs y metricas.
 - `docs/CLOUDFLARE_R2.md` - configuracion de Cloudflare R2 para videos.
+- `docs/DEPLOY_VERCEL.md` - despliegue web, base de datos, R2 y worker de analisis.
 - `docs/RUNNING.md` - como ejecutar el proyecto localmente.
 
 ## Producto y roadmap

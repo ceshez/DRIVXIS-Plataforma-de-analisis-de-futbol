@@ -20,6 +20,9 @@ export async function POST(request: Request) {
     }
 
     const result = await requestPasswordChange(user.id);
+    if (result.deliveryFailed) {
+      return NextResponse.json({ error: "No pudimos enviar el código de confirmación. Revisa la configuración del correo e inténtalo de nuevo." }, { status: 503 });
+    }
     return NextResponse.json({ ok: true, ...result });
   }
 

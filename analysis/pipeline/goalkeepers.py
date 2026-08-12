@@ -1,16 +1,89 @@
 ﻿from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 from .common import DEFAULT_TEAM_COLORS_BGR, median
 
 
+GOALKEEPER_KIT_TO_FIELD_KIT = {
+    "black": "white",
+    "orange": "green",
+}
+FIELD_KIT_REFERENCE_BGR = {
+    "white": (235.0, 235.0, 235.0),
+    "green": (130.0, 220.0, 145.0),
+}
+DEFAULT_GOALKEEPER_TEAMS = {
+    "black": 2,
+    "orange": 1,
+}
+
+
+def detect_hardcoded_goalkeeper_kit(frame: Any, bbox: list[float], np: Any) -> str | None:
+    """Match this video's black and orange goalkeeper shirts from torso pixels."""
+    if frame is None or not hasattr(frame, "shape") or len(bbox) < 4:
+        return None
+
+    frame_height, frame_width = frame.shape[:2]
+    x1, y1, x2, y2 = (float(value) for value in bbox[:4])
+    box_width = max(1.0, x2 - x1)
+    box_height = max(1.0, y2 - y1)
+    crop_x1 = max(0, min(frame_width, int(round(x1 + box_width * 0.18))))
+    crop_x2 = max(0, min(frame_width, int(round(x1 + box_width * 0.82))))
+    crop_y1 = max(0, min(frame_height, int(round(y1 + box_height * 0.12))))
+    crop_y2 = max(0, min(frame_height, int(round(y1 + box_height * 0.58))))
+    if crop_x2 <= crop_x1 or crop_y2 <= crop_y1:
+        return None
+
+    crop = frame[crop_y1:crop_y2, crop_x1:crop_x2]
+    if getattr(crop, "size", 0) == 0:
+        return None
+    pixels = crop.astype(float)
+    blue = pixels[:, :, 0]
+    green = pixels[:, :, 1]
+    red = pixels[:, :, 2]
+    brightest = np.maximum.reduce([blue, green, red])
+
+    dark_pixels = (brightest <= 105.0) & (green <= np.maximum(red, blue) * 1.35 + 12.0)
+    orange_pixels = (
+        (red >= 125.0)
+        & (red >= green * 1.22 + 15.0)
+        & (red >= blue * 1.35 + 20.0)
+    )
+    dark_ratio = float(np.mean(dark_pixels))
+    orange_ratio = float(np.mean(orange_pixels))
+    if orange_ratio >= 0.28:
+        return "orange"
+    if dark_ratio >= 0.34:
+        return "black"
+    return None
+
+
+def classify_hardcoded_goalkeeper_color(color: Any) -> str | None:
+    """Fallback for tests and non-video callers that already provide a BGR color."""
+    if not isinstance(color, (list, tuple)) or len(color) < 3:
+        return None
+    try:
+        blue, green, red = (float(channel) for channel in color[:3])
+    except (TypeError, ValueError):
+        return None
+    if red >= 150.0 and red >= green * 1.22 + 15.0 and red >= blue * 1.35 + 20.0:
+        return "orange"
+    if max(blue, green, red) <= 105.0 and green <= max(red, blue) * 1.35 + 12.0:
+        return "black"
+    return None
+
+
 def assign_goalkeeper_teams(tracks: dict[str, list[dict[int, dict[str, Any]]]]) -> dict[str, Any]:
     observations = collect_player_observations(tracks)
     goalkeeper_candidates = score_goalkeeper_candidates(observations)
+    goalkeeper_candidates = retain_persistent_goalkeeper_candidates(
+        goalkeeper_candidates,
+        len(tracks["players"]),
+    )
     team_positions: dict[int, list[float]] = {1: [], 2: []}
-    team_colors: dict[int, tuple[int, int, int]] = {}
-    goalkeeper_current_team: dict[int, int] = {}
+    team_colors = representative_team_colors(tracks, goalkeeper_candidates)
 
     for frame_players in tracks["players"]:
         for player_id, player in frame_players.items():
@@ -21,39 +94,45 @@ def assign_goalkeeper_teams(tracks: dict[str, list[dict[int, dict[str, Any]]]]) 
             if x_position is None:
                 continue
             if player_id in goalkeeper_candidates:
-                if team in (1, 2):
-                    goalkeeper_current_team[player_id] = int(team)
                 continue
             if team in (1, 2):
                 team_positions[int(team)].append(float(x_position))
-                if int(team) not in team_colors and player.get("team_color"):
-                    team_colors[int(team)] = tuple(int(channel) for channel in player["team_color"][:3])
 
     if not goalkeeper_candidates:
         clear_goalkeeper_flags(tracks, set())
         return {"detected": 0, "assigned": 0, "items": []}
 
     side_mapping = infer_side_mapping(team_positions)
-    selected_goalkeepers = select_goalkeepers(goalkeeper_candidates, side_mapping, goalkeeper_current_team)
-    clear_goalkeeper_flags(tracks, set(selected_goalkeepers))
+    selected_goalkeepers = select_goalkeepers_by_hardcoded_team(goalkeeper_candidates, team_colors)
 
     items = []
     assigned = 0
-    for goalkeeper_id, candidate in selected_goalkeepers.items():
+    assigned_goalkeeper_ids: set[int] = set()
+    ordered_goalkeepers = sorted(
+        selected_goalkeepers.items(),
+        key=lambda item: (
+            int(item[1].get("frames", 0)),
+            float(item[1].get("score", 0.0)),
+        ),
+        reverse=True,
+    )
+    for goalkeeper_id, candidate in ordered_goalkeepers:
         observation = observations.get(goalkeeper_id, {})
         x_median = float(candidate["medianX"])
-        inferred_team = infer_goalkeeper_team(x_median, side_mapping, goalkeeper_current_team.get(goalkeeper_id))
-        confidence = goalkeeper_confidence(x_median, side_mapping, inferred_team)
-        candidate_reason = str(candidate.get("reason") or "model_goalkeeper")
-        reason = "goal_side_context" if inferred_team in (1, 2) and side_mapping else "fallback_previous_team"
-        if inferred_team not in (1, 2):
-            inferred_team = goalkeeper_current_team.get(goalkeeper_id, 1)
-            confidence = 0.25
-            reason = "fallback_default"
-        if candidate_reason != "model_goalkeeper":
-            reason = f"{reason}+{candidate_reason}"
+        inferred_team = int(candidate["targetTeam"])
+        kit = str(candidate["goalkeeperKit"])
+        confidence = max(0.75, min(0.98, 0.72 + float(candidate.get("kitMatchRatio", 0.0)) * 0.24))
+        reason = f"hardcoded_goalkeeper_color:{kit}"
 
-        apply_goalkeeper_team(tracks, goalkeeper_id, inferred_team, team_colors.get(inferred_team, DEFAULT_TEAM_COLORS_BGR[inferred_team]), confidence, reason)
+        apply_goalkeeper_team(
+            tracks,
+            goalkeeper_id,
+            inferred_team,
+            team_colors.get(inferred_team, DEFAULT_TEAM_COLORS_BGR[inferred_team]),
+            confidence,
+            reason,
+        )
+        assigned_goalkeeper_ids.add(goalkeeper_id)
         assigned += 1
         items.append(
             {
@@ -64,9 +143,13 @@ def assign_goalkeeper_teams(tracks: dict[str, list[dict[int, dict[str, Any]]]]) 
                 "medianX": round(x_median, 3),
                 "frames": int(candidate.get("frames", 0)),
                 "edgeRatio": round(float(observation.get("edgeRatio", 0.0)), 3),
-                "colorOutlierRatio": round(float(observation.get("colorOutlierRatio", 0.0)), 3),
+                "goalkeeperKit": kit,
+                "kitMatchFrames": int(candidate.get("kitMatchFrames", 0)),
+                "kitMatchRatio": round(float(candidate.get("kitMatchRatio", 0.0)), 3),
             }
         )
+
+    clear_goalkeeper_flags(tracks, assigned_goalkeeper_ids)
 
     return {
         "detected": len(goalkeeper_candidates),
@@ -74,6 +157,49 @@ def assign_goalkeeper_teams(tracks: dict[str, list[dict[int, dict[str, Any]]]]) 
         "sideMapping": side_mapping,
         "items": items,
     }
+
+
+def representative_team_colors(
+    tracks: dict[str, list[dict[int, dict[str, Any]]]],
+    excluded_players: dict[int, dict[str, Any]] | None = None,
+) -> dict[int, tuple[int, int, int]]:
+    """Choose stable marker colors instead of trusting the first track in a team."""
+    excluded_ids = set(excluded_players or {})
+    candidates: dict[int, dict[tuple[int, int, int], list[float]]] = defaultdict(lambda: defaultdict(list))
+
+    for frame_players in tracks["players"]:
+        for player_id, player in frame_players.items():
+            if player_id in excluded_ids:
+                continue
+            team = player.get("team")
+            raw_color = player.get("team_color")
+            if team not in (1, 2) or raw_color is None:
+                continue
+            try:
+                color = tuple(int(channel) for channel in raw_color[:3])
+            except (TypeError, ValueError, IndexError):
+                continue
+
+            confidence = player.get("team_confidence")
+            try:
+                confidence_score = max(0.0, min(1.0, float(confidence)))
+            except (TypeError, ValueError):
+                confidence_score = 0.0
+            distance = player.get("team_color_distance")
+            try:
+                distance_score = max(0.0, 1.0 - min(1.0, float(distance) / 130.0)) * 0.35
+            except (TypeError, ValueError):
+                distance_score = 0.0
+            candidates[int(team)][color].append(confidence_score + distance_score)
+
+    result: dict[int, tuple[int, int, int]] = {}
+    for team, colors in candidates.items():
+        color, _scores = max(
+            colors.items(),
+            key=lambda item: (len(item[1]), max(item[1]), sum(item[1])),
+        )
+        result[team] = color
+    return result
 
 
 def collect_player_observations(tracks: dict[str, list[dict[int, dict[str, Any]]]]) -> dict[int, dict[str, Any]]:
@@ -94,8 +220,9 @@ def collect_player_observations(tracks: dict[str, list[dict[int, dict[str, Any]]
                 {
                     "positions": [],
                     "teams": {},
-                    "colorDistances": [],
+                    "goalkeeperKits": defaultdict(int),
                     "explicitGoalkeeper": False,
+                    "explicitGoalkeeperFrames": 0,
                 },
             )
             item["positions"].append(x_value)
@@ -104,8 +231,12 @@ def collect_player_observations(tracks: dict[str, list[dict[int, dict[str, Any]]
                 item["teams"][int(team)] = item["teams"].get(int(team), 0) + 1
             if player.get("isGoalkeeper") or player.get("role") == "goalkeeper":
                 item["explicitGoalkeeper"] = True
-            if isinstance(player.get("team_color_distance"), (int, float)):
-                item["colorDistances"].append(float(player["team_color_distance"]))
+                item["explicitGoalkeeperFrames"] += 1
+                goalkeeper_kit = player.get("goalkeeperKit") or classify_hardcoded_goalkeeper_color(
+                    player.get("jersey_color")
+                )
+                if goalkeeper_kit in GOALKEEPER_KIT_TO_FIELD_KIT:
+                    item["goalkeeperKits"][str(goalkeeper_kit)] += 1
 
     if not all_x_positions:
         return observations
@@ -123,12 +254,6 @@ def collect_player_observations(tracks: dict[str, list[dict[int, dict[str, Any]]
         item["edgeRatio"] = edge_frames / max(1, len(positions))
         item["edgeDepthRatio"] = 1.0 - min(1.0, median(edge_depths) / 0.32)
         item["xSpanRatio"] = (max(positions) - min(positions)) / observed_span if len(positions) > 1 else 0.0
-        color_distances = item["colorDistances"]
-        item["colorOutlierRatio"] = (
-            sum(1 for value in color_distances if value >= 58.0) / max(1, len(color_distances))
-            if color_distances
-            else 0.0
-        )
 
     return observations
 
@@ -139,74 +264,98 @@ def score_goalkeeper_candidates(observations: dict[int, dict[str, Any]]) -> dict
         frames = len(item.get("positions", []))
         edge_ratio = float(item.get("edgeRatio", 0.0))
         edge_depth = float(item.get("edgeDepthRatio", 0.0))
-        color_outlier_ratio = float(item.get("colorOutlierRatio", 0.0))
         x_span_ratio = float(item.get("xSpanRatio", 1.0))
         stillness = max(0.0, 1.0 - min(1.0, x_span_ratio / 0.42))
         positions = item.get("positions", [])
-        if not positions:
+        goalkeeper_kits = item.get("goalkeeperKits", {})
+        if not positions or not item.get("explicitGoalkeeper") or not goalkeeper_kits:
             continue
 
-        reason = ""
-        if item.get("explicitGoalkeeper"):
-            if edge_ratio < 0.28 and color_outlier_ratio < 0.25 and x_span_ratio > 0.46:
-                continue
-            reason = "model_goalkeeper"
-            score = 0.48 + edge_ratio * 0.22 + edge_depth * 0.14 + min(1.0, color_outlier_ratio) * 0.08 + stillness * 0.08
-        elif frames >= 4 and edge_ratio >= 0.72 and color_outlier_ratio >= 0.50 and x_span_ratio <= 0.30:
-            reason = "goal_zone_color_outlier"
-            score = 0.32 + edge_ratio * 0.28 + edge_depth * 0.18 + min(1.0, color_outlier_ratio) * 0.14 + stillness * 0.08
-        elif frames >= 8 and edge_ratio >= 0.78 and edge_depth >= 0.48 and x_span_ratio <= 0.22:
-            reason = "goal_zone_persistence"
-            score = 0.28 + edge_ratio * 0.30 + edge_depth * 0.26 + stillness * 0.12
-        else:
+        goalkeeper_kit, kit_match_frames = max(
+            goalkeeper_kits.items(),
+            key=lambda item: int(item[1]),
+        )
+        explicit_frames = max(1, int(item.get("explicitGoalkeeperFrames", 0)))
+        kit_match_ratio = int(kit_match_frames) / explicit_frames
+        if kit_match_ratio < 0.35:
             continue
+        score = 0.52 + min(1.0, kit_match_ratio) * 0.28 + edge_ratio * 0.10 + edge_depth * 0.05 + stillness * 0.05
 
         candidates[player_id] = {
             "id": player_id,
-            "reason": reason,
+            "reason": "hardcoded_goalkeeper_color",
             "score": round(min(1.0, score), 4),
             "medianX": median([float(value) for value in positions]),
             "frames": frames,
             "edgeRatio": edge_ratio,
             "edgeDepthRatio": edge_depth,
-            "colorOutlierRatio": color_outlier_ratio,
             "xSpanRatio": x_span_ratio,
+            "explicitGoalkeeperFrames": explicit_frames,
+            "goalkeeperKit": str(goalkeeper_kit),
+            "kitMatchFrames": int(kit_match_frames),
+            "kitMatchRatio": kit_match_ratio,
         }
     return candidates
 
 
-def select_goalkeepers(
+def retain_persistent_goalkeeper_candidates(
     candidates: dict[int, dict[str, Any]],
-    side_mapping: dict[str, Any],
-    previous_teams: dict[int, int],
+    total_frames: int,
 ) -> dict[int, dict[str, Any]]:
-    if not candidates:
-        return {}
+    minimum_frames = max(2, min(12, (max(1, total_frames) + 49) // 50))
+    return {
+        player_id: candidate
+        for player_id, candidate in candidates.items()
+        if int(candidate.get("frames", 0)) >= minimum_frames
+        and int(candidate.get("explicitGoalkeeperFrames", 0)) >= 1
+        and int(candidate.get("kitMatchFrames", 0)) >= 1
+    }
+
+
+def select_goalkeepers_by_hardcoded_team(
+    candidates: dict[int, dict[str, Any]],
+    team_colors: dict[int, tuple[int, int, int]],
+) -> dict[int, dict[str, Any]]:
+    by_team: dict[int, list[dict[str, Any]]] = {1: [], 2: []}
+    for candidate in candidates.values():
+        goalkeeper_kit = str(candidate.get("goalkeeperKit") or "")
+        target_team = resolve_hardcoded_goalkeeper_team(goalkeeper_kit, team_colors)
+        if target_team not in (1, 2):
+            continue
+        resolved = {**candidate, "targetTeam": target_team}
+        by_team[target_team].append(resolved)
 
     selected: dict[int, dict[str, Any]] = {}
-    if side_mapping:
-        split_x = float(side_mapping["splitX"])
-        left = [candidate for candidate in candidates.values() if float(candidate["medianX"]) <= split_x]
-        right = [candidate for candidate in candidates.values() if float(candidate["medianX"]) > split_x]
-        for side_candidates in (left, right):
-            best = best_goalkeeper_candidate(side_candidates)
-            if best:
-                selected[int(best["id"])] = best
-    else:
-        by_team: dict[int, list[dict[str, Any]]] = {1: [], 2: []}
-        for player_id, candidate in candidates.items():
-            team = previous_teams.get(player_id)
-            if team in (1, 2):
-                by_team[team].append(candidate)
-        for team in (1, 2):
-            best = best_goalkeeper_candidate(by_team[team])
-            if best:
-                selected[int(best["id"])] = best
-
-    if len(selected) > 2:
-        ordered = sorted(selected.values(), key=lambda candidate: float(candidate["score"]), reverse=True)[:2]
-        selected = {int(candidate["id"]): candidate for candidate in ordered}
+    for team in (1, 2):
+        best = best_goalkeeper_candidate(by_team[team])
+        if best:
+            selected[int(best["id"])] = best
     return selected
+
+
+def resolve_hardcoded_goalkeeper_team(
+    goalkeeper_kit: str,
+    team_colors: dict[int, tuple[int, int, int]],
+) -> int | None:
+    field_kit = GOALKEEPER_KIT_TO_FIELD_KIT.get(goalkeeper_kit)
+    if field_kit is None:
+        return None
+    reference = FIELD_KIT_REFERENCE_BGR[field_kit]
+    available = {
+        team: color
+        for team, color in team_colors.items()
+        if team in (1, 2) and isinstance(color, (list, tuple)) and len(color) >= 3
+    }
+    if len(available) < 2:
+        return DEFAULT_GOALKEEPER_TEAMS[goalkeeper_kit]
+    return min(
+        available,
+        key=lambda team: squared_color_distance(available[team], reference),
+    )
+
+
+def squared_color_distance(left: Any, right: Any) -> float:
+    return sum((float(left[index]) - float(right[index])) ** 2 for index in range(3))
 
 
 def best_goalkeeper_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -215,8 +364,8 @@ def best_goalkeeper_candidate(candidates: list[dict[str, Any]]) -> dict[str, Any
     return max(
         candidates,
         key=lambda candidate: (
-            float(candidate.get("score", 0.0)),
             int(candidate.get("frames", 0)),
+            float(candidate.get("score", 0.0)),
             float(candidate.get("edgeDepthRatio", 0.0)),
             float(candidate.get("edgeRatio", 0.0)),
         ),

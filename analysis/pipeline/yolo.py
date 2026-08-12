@@ -48,8 +48,18 @@ class YoloDetector:
         self.model_path = Path(model_path)
         self.confidence = float(confidence if confidence is not None else os.getenv("YOLO_CONFIDENCE", "0.1"))
         self.image_size = int(image_size if image_size is not None else os.getenv("YOLO_IMAGE_SIZE", "640"))
+        self.fallback_image_size = int(os.getenv("YOLO_FALLBACK_IMAGE_SIZE", "1280"))
+        self.sparse_player_threshold = max(1, int(os.getenv("YOLO_SPARSE_PLAYER_THRESHOLD", "8")))
+        self.sparse_player_max_height_ratio = float(os.getenv("YOLO_SPARSE_PLAYER_MAX_HEIGHT_RATIO", "0.22"))
+        self.process_every_frame = os.getenv("YOLO_PROCESS_EVERY_FRAME", "true").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
         self.device = device or os.getenv("YOLO_DEVICE") or self._default_device()
         self.frames_processed = 0
+        self.fallback_frames = 0
 
         if model is None:
             if not self.model_path.exists():
@@ -86,13 +96,54 @@ class YoloDetector:
         return mapped
 
     def detect_batch(self, frames: Sequence[Any]) -> list[list[dict[str, Any]]]:
+        return self.detect_batch_with_fallback(frames)
+
+    def detect_batch_with_fallback(
+        self,
+        frames: Sequence[Any],
+        fallback_frames: Sequence[Any] | None = None,
+    ) -> list[list[dict[str, Any]]]:
         if not frames:
             return []
+        parsed_results = self._parse_results(self._predict(frames, self.image_size), len(frames))
+
+        if self.fallback_image_size > self.image_size:
+            sparse_indices = [
+                index
+                for index, detections in enumerate(parsed_results)
+                if self._needs_fallback(detections, frames[index])
+            ]
+            if sparse_indices:
+                candidate_frames = fallback_frames if fallback_frames is not None else frames
+                sparse_frames = [candidate_frames[index] for index in sparse_indices]
+                fallback_results = self._parse_results(
+                    self._predict(sparse_frames, self.fallback_image_size),
+                    len(sparse_frames),
+                )
+                for sparse_position, (index, fallback_detections) in enumerate(
+                    zip(sparse_indices, fallback_results)
+                ):
+                    if fallback_frames is not None:
+                        fallback_detections = self._scale_detections_to_frame(
+                            fallback_detections,
+                            source_shape=sparse_frames[sparse_position].shape,
+                            target_shape=frames[index].shape,
+                        )
+                    if self._player_detection_count(fallback_detections) > self._player_detection_count(
+                        parsed_results[index]
+                    ):
+                        parsed_results[index] = fallback_detections
+                        self.fallback_frames += 1
+
+        self.frames_processed += len(frames)
+        return parsed_results
+
+    def _predict(self, frames: Sequence[Any], image_size: int) -> list[Any]:
         results = list(
             self.model.predict(
                 source=list(frames),
                 conf=self.confidence,
-                imgsz=self.image_size,
+                imgsz=image_size,
                 device=self.device,
                 verbose=False,
             )
@@ -100,6 +151,13 @@ class YoloDetector:
         if len(results) != len(frames):
             raise RuntimeError(
                 f"YOLO returned {len(results)} results for a batch of {len(frames)} frames."
+            )
+        return results
+
+    def _parse_results(self, results: Sequence[Any], expected_count: int) -> list[list[dict[str, Any]]]:
+        if len(results) != expected_count:
+            raise RuntimeError(
+                f"YOLO returned {len(results)} parsed results for a batch of {expected_count} frames."
             )
 
         parsed_results: list[list[dict[str, Any]]] = []
@@ -124,8 +182,50 @@ class YoloDetector:
                     }
                 )
             parsed_results.append(detections)
-        self.frames_processed += len(frames)
         return parsed_results
+
+    @staticmethod
+    def _player_detection_count(detections: Sequence[dict[str, Any]]) -> int:
+        return sum(1 for item in detections if item.get("class_name") in {"player", "goalkeeper"})
+
+    def _needs_fallback(self, detections: Sequence[dict[str, Any]], frame: Any) -> bool:
+        player_detections = [
+            item for item in detections if item.get("class_name") in {"player", "goalkeeper"}
+        ]
+        if len(player_detections) >= self.sparse_player_threshold:
+            return False
+        if not player_detections:
+            return True
+        frame_height = max(1, int(frame.shape[0]))
+        largest_height = max(
+            max(0.0, float(item["bbox"][3]) - float(item["bbox"][1]))
+            for item in player_detections
+        )
+        return largest_height / frame_height <= self.sparse_player_max_height_ratio
+
+    @staticmethod
+    def _scale_detections_to_frame(
+        detections: list[dict[str, Any]],
+        *,
+        source_shape: tuple[int, ...],
+        target_shape: tuple[int, ...],
+    ) -> list[dict[str, Any]]:
+        source_height, source_width = source_shape[:2]
+        target_height, target_width = target_shape[:2]
+        if source_width == target_width and source_height == target_height:
+            return detections
+        scale_x = target_width / max(1, source_width)
+        scale_y = target_height / max(1, source_height)
+        scaled: list[dict[str, Any]] = []
+        for detection in detections:
+            x1, y1, x2, y2 = detection["bbox"]
+            scaled.append(
+                {
+                    **detection,
+                    "bbox": [x1 * scale_x, y1 * scale_y, x2 * scale_x, y2 * scale_y],
+                }
+            )
+        return scaled
 
     def ensure_acceptable_failure_rate(self) -> None:
         return None
@@ -149,6 +249,8 @@ class YoloDetector:
             "batchSize": int(batch_size),
             "analysisSize": {"width": int(frame_size[0]), "height": int(frame_size[1])},
             "framesProcessed": self.frames_processed,
+            "fallbackImageSize": self.fallback_image_size,
+            "fallbackFrames": self.fallback_frames,
             "slowRetries": 0,
             "parseFailures": 0,
         }

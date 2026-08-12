@@ -9,14 +9,23 @@ type PasswordResetEmail = {
   idempotencyKey: string;
 };
 
+export type EmailDeliveryResult = {
+  configured: boolean;
+  sent: boolean;
+  status?: number;
+};
+
 const DRIVXIS_EMAIL_LOGO_BASE64 = "PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+PHN2ZyB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiB2aWV3Qm94PSIwIDAgMTAwMCAxMDAwIiB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgeG1sOnNwYWNlPSJwcmVzZXJ2ZSIgc3R5bGU9ImZpbGwtcnVsZTpldmVub2RkO2NsaXAtcnVsZTpldmVub2RkO3N0cm9rZS1saW5lam9pbjpyb3VuZDtzdHJva2UtbWl0ZXJsaW1pdDoyOyI+PHJlY3QgeD0iLTIyLjc0IiB5PSItMTEuNzM3IiB3aWR0aD0iMTA0NS40NzkiIGhlaWdodD0iMTAzOS40MTUiIHN0eWxlPSJmaWxsOm5vbmU7Ii8+PGc+PHBhdGggZD0iTTM4NS43MzMsNzUzLjg0N2MwLDAgLTEuOTM0LDY2LjExMSAtMzkuODQ2LDgwLjIzOWMwLDAgLTExLjgwMSwzLjgyMiAtMjUuNjg4LC04Ljk5N2MwLDAgLTE2LjI1NiwtMjUuMjc1IDMzLjE1LC01NC42NTFsMzQ0LjA2NSwtMTc2LjI3bC0xMy4wNCwtMjAuMTE5YzAsMCAtMjkyLjI3NywxMzguNDc2IC0zNTUuMzAzLDE4NC4zMDJjLTI0Ljg3NiwxOC4wODcgLTU0LjQxMyw0My45OTkgLTI0LjIzNSw4OC4zMDNjMCwwIDQ2LjI4OSwzOS41OSA4NS40NTQsLTE4LjY5NGMwLDAgMTcuNzk2LC0zOC41OSAxOC44MzUsLTg2LjA5NiIgc3R5bGU9ImZpbGw6I2ZmZjsiLz48cGF0aCBkPSJNNjM0LjY3NCw0ODAuMjgxYy0zLjEyNCw4LjY4MyAxMi4zLDE4LjA3NiAxOC4wOTMsMTQuNTU0YzAuNjU3LDAuNjEzIDE5LjA2MiwtOC44MjEgMjIuNzQ3LC0xMC40OTljOS4zMjQsLTQuMjQ1IC0xOS4yNDEsLTE2LjkzNSAtMTkuODI0LC0xNS4zYy00LjI5NywtMC42MzQgLTIwLjMxNCw5LjI5MiAtMjEuMDE2LDExLjI0NVoiIHN0eWxlPSJmaWxsOiNmZmY7Ii8+PHBhdGggZD0iTTQwNS4xNjIsMjY0LjEyMWwtMzIuNTksLTM0LjI2MmMwLDAgLTIzLjQ0LC0zNC45NDUgNC44ODMsLTQ1LjgxOWMyOC4zMjMsLTEwLjg3NCAyOC44MTIsNTAuOTUxIDI4LjgxMiw1MC45NTFsLTE4LjUxNCw0ODguMjYzbDI0LjA4MywtMTIuODg3bDE4LjYyNCwtNDc4LjAxOGMwLDAgLTIuMzc0LC03Ny44ODcgLTQ4LjE1NSwtNzYuMTY4Yy00NS43ODEsMS43MTggLTQ4LjE3Myw0Mi44NyAtMzkuODA4LDY1LjMxNmM4LjM0OSwyMi40MDQgNy45ODcsMzIuMjY5IDYxLjM4MSw3Ni41MTgiIHN0eWxlPSJmaWxsOiNmZmY7Ii8+PHBhdGggZD0iTTY3Ny4zNTIsNDgyLjc4NmMwLDAgMjQuOTEzLDExLjAzOCA0Ni44MzcsMTEuMDM4YzIxLjkyNSwwIDMwLjY2OCwtMTEuNDA0IDMwLjY2OCwtMTEuNDA0YzAsMCA4LjY0OSwtMTguNCAtMTcuNDEyLC0yMi40NjRjMCwwIC0xMi4yMDksLTAuOTM4IC0yMi44NTMsNC4yOTlsLTIxNS4wNTQsMTA3LjAxM2wtMTAuMTM2LC0xNS44MDFsMjE4LjU4MSwtMTEzLjMwM2MwLDAgNDIuNDk0LC0xOC40NyA2NC4wNDcsMTUuNTdjMjEuNTUzLDM0LjA0MSAtMTkuODcxLDU0Ljk1MyAtMjYuNTk3LDU2LjYzMmMwLDAgLTQxLjEyNywxNS4yNCAtOTIuMjUzLC0xOS41NTFsLTIyNy4xNDYsLTE3Ni4wNjdsMS42MTcsLTMyLjgzNGwyMjguNTY4LDE4My4wODNsMjEuMTMzLDEzLjc5WiIgc3R5bGU9ImZpbGw6I2ZmZjsiLz48L2c+PC9zdmc+Cg==";
 
 export function isEmailDeliveryConfigured() {
-  return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+  return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.EMAIL_FROM?.trim());
 }
 
-export async function sendPasswordResetEmail(message: PasswordResetEmail) {
+export async function sendPasswordResetEmail(message: PasswordResetEmail): Promise<EmailDeliveryResult> {
   if (!isEmailDeliveryConfigured()) return { configured: false, sent: false };
+
+  const apiKey = process.env.RESEND_API_KEY!.trim();
+  const emailFrom = process.env.EMAIL_FROM!.trim();
 
   const spanish = message.locale !== "en";
   const authenticatedChange = message.purpose === "authenticated-change";
@@ -38,13 +47,13 @@ export async function sendPasswordResetEmail(message: PasswordResetEmail) {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         "Idempotency-Key": message.idempotencyKey,
         "User-Agent": "DRIVXIS/1.0",
       },
       body: JSON.stringify({
-        from: process.env.EMAIL_FROM,
+        from: emailFrom,
         to: [message.to],
         subject,
         text: `${greeting}\n\n${instruction}\n\n${message.code}\n\n${expiration}\n${ignore}`,
@@ -59,8 +68,12 @@ export async function sendPasswordResetEmail(message: PasswordResetEmail) {
     });
 
     if (!response.ok) {
-      console.error("Password reset email delivery failed.", { status: response.status });
-      return { configured: true, sent: false };
+      const providerError = await response.text().catch(() => "");
+      console.error("Password reset email delivery failed.", {
+        status: response.status,
+        providerError: providerError.slice(0, 500),
+      });
+      return { configured: true, sent: false, status: response.status };
     }
     return { configured: true, sent: true };
   } catch (error) {

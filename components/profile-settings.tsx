@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Languages, Loader2, LockKeyhole, Moon, Sun, UserRound, XCircle } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff, Languages, Loader2, LockKeyhole, Moon, Sun, UserRound, XCircle } from "lucide-react";
 import { useAppPreferences } from "@/components/app-preferences-provider";
 import { ProfileAvatarUploader } from "@/components/profile-avatar-uploader";
 import { type AppLocale, type AppTheme } from "@/lib/preferences";
@@ -22,6 +22,7 @@ export function ProfileSettings(props: ProfileSettingsProps) {
   const [profileBusy, setProfileBusy] = useState(false);
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [passwordStep, setPasswordStep] = useState<"password" | "code">("password");
+  const [showPassword, setShowPassword] = useState(false);
   const pendingPassword = useRef("");
   const [profileFeedback, setProfileFeedback] = useState<Feedback>(null);
   const [passwordFeedback, setPasswordFeedback] = useState<Feedback>(null);
@@ -53,6 +54,7 @@ export function ProfileSettings(props: ProfileSettingsProps) {
   async function changePassword(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPasswordFeedback(null);
+    const formElement = event.currentTarget;
     const form = new FormData(event.currentTarget);
     const english = locale === "en";
     const newPassword = passwordStep === "password" ? String(form.get("newPassword") || "") : pendingPassword.current;
@@ -89,8 +91,9 @@ export function ProfileSettings(props: ProfileSettingsProps) {
       return;
     }
 
-    event.currentTarget.reset();
+    formElement.reset();
     pendingPassword.current = "";
+    setShowPassword(false);
     setPasswordStep("password");
     setPasswordFeedback({ tone: "success", message: english ? "Password updated and previous sessions invalidated." : "Contraseña actualizada y sesiones anteriores invalidadas." });
   }
@@ -130,8 +133,24 @@ export function ProfileSettings(props: ProfileSettingsProps) {
           <form className="settings-form" onSubmit={changePassword} aria-busy={passwordBusy}>
             {passwordStep === "password" ? (
               <>
-                <label><span>{t("newPassword")}</span><input name="newPassword" type="password" autoComplete="new-password" minLength={8} required /></label>
-                <label><span>{t("confirmPassword")}</span><input name="confirmPassword" type="password" autoComplete="new-password" minLength={8} required /></label>
+                <div className="settings-password-field">
+                  <label htmlFor="newPassword"><span>{t("newPassword")}</span></label>
+                  <div className="password-field">
+                    <input id="newPassword" name="newPassword" type={showPassword ? "text" : "password"} autoComplete="new-password" minLength={8} required />
+                    <button type="button" disabled={passwordBusy} aria-label={showPassword ? (locale === "en" ? "Hide password" : "Ocultar contraseña") : (locale === "en" ? "Show password" : "Mostrar contraseña")} onClick={() => setShowPassword((value) => !value)}>
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <div className="settings-password-field">
+                  <label htmlFor="confirmPassword"><span>{t("confirmPassword")}</span></label>
+                  <div className="password-field">
+                    <input id="confirmPassword" name="confirmPassword" type={showPassword ? "text" : "password"} autoComplete="new-password" minLength={8} required />
+                    <button type="button" disabled={passwordBusy} aria-label={showPassword ? (locale === "en" ? "Hide password" : "Ocultar contraseña") : (locale === "en" ? "Show password" : "Mostrar contraseña")} onClick={() => setShowPassword((value) => !value)}>
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
               </>
             ) : (
               <>

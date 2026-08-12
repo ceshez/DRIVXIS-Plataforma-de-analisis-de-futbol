@@ -76,8 +76,16 @@ async function issuePasswordResetCode(
     idempotencyKey: `password-reset/${resetCode.id}`,
   });
 
-  if (process.env.NODE_ENV !== "production" && !delivery.sent) {
-    return { developmentCode: code };
+  if (!delivery.sent) {
+    if (process.env.NODE_ENV !== "production" && !delivery.configured) {
+      return { developmentCode: code };
+    }
+
+    await prisma.passwordResetCode.updateMany({
+      where: { id: resetCode.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    return { deliveryFailed: true };
   }
   return {};
 }

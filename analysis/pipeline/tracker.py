@@ -18,6 +18,7 @@ from .common import (
     foot_position,
 )
 from .locate_anything import CLASS_IDS, CLASS_NAMES
+from .goalkeepers import detect_hardcoded_goalkeeper_kit
 from .team_assigner import TeamAssigner
 
 
@@ -71,6 +72,21 @@ class CameraMovementEstimator:
         return [camera_x, camera_y] if max_distance > 5 else [0.0, 0.0]
 
 
+def scale_bbox_between_frames(
+    bbox: list[float],
+    source_shape: tuple[int, ...],
+    target_shape: tuple[int, ...],
+) -> list[float]:
+    source_height, source_width = source_shape[:2]
+    target_height, target_width = target_shape[:2]
+    if source_width == target_width and source_height == target_height:
+        return list(bbox)
+    scale_x = target_width / max(1, source_width)
+    scale_y = target_height / max(1, source_height)
+    x1, y1, x2, y2 = bbox[:4]
+    return [x1 * scale_x, y1 * scale_y, x2 * scale_x, y2 * scale_y]
+
+
 def process_video_pass(
     input_path: Path,
     model_id: str,
@@ -89,16 +105,20 @@ def process_video_pass(
     frame_count_hint = int(video_info["frameCount"])
     frame_size = video_info["frameSize"]
     source_fps = max(0.1, float(video_info["fps"] or 24))
-    effective_detection_fps = max(0.1, min(float(detection_fps), source_fps))
     batch_size = max(1, int(batch_size))
 
     if detector is None:
         from .locate_anything import LocateAnythingDetector
 
         detector = LocateAnythingDetector(model_id=model_id, revision=model_revision)
+    requested_detection_fps = max(0.1, min(float(detection_fps), source_fps))
+    effective_detection_fps = (
+        source_fps if bool(getattr(detector, "process_every_frame", False)) else requested_detection_fps
+    )
     detector_name = getattr(detector, "model_path", None) or f"{model_id}@{model_revision}"
     log(f"Loading detector: {detector_name}")
-    log(f"Detection profile: fps={effective_detection_fps:.3f} batchSize={batch_size}")
+    cadence = "every frame" if effective_detection_fps >= source_fps else "sampled"
+    log(f"Detection profile: fps={effective_detection_fps:.3f} batchSize={batch_size} cadence={cadence}")
 
     tracker = sv.ByteTrack(
         track_activation_threshold=0.18,
@@ -119,7 +139,7 @@ def process_video_pass(
     camera_movements: list[list[float]] = []
     total_counts: dict[str, int] = {}
     batch_counts: dict[str, int] = {}
-    pending_samples: list[tuple[int, Any]] = []
+    pending_samples: list[tuple[int, Any, Any]] = []
     last_sample_slot = -1
     sampled_frames = 0
     frame_num = 0
@@ -137,9 +157,13 @@ def process_video_pass(
         nonlocal pending_samples, sampled_frames, batch_counts
         if not pending_samples:
             return
-        batch_frames = [frame for _frame_index, frame in pending_samples]
-        batch_results = detector.detect_batch(batch_frames)
-        for (frame_index, frame), raw_items in zip(pending_samples, batch_results):
+        batch_frames = [frame for _frame_index, frame, _source_frame in pending_samples]
+        batch_source_frames = [source_frame for _frame_index, _frame, source_frame in pending_samples]
+        if hasattr(detector, "detect_batch_with_fallback"):
+            batch_results = detector.detect_batch_with_fallback(batch_frames, batch_source_frames)
+        else:
+            batch_results = detector.detect_batch(batch_frames)
+        for (frame_index, frame, source_frame), raw_items in zip(pending_samples, batch_results):
             sampled_frames += 1
             for item in raw_items:
                 add_detection_count(batch_counts, item["class_name"])
@@ -192,10 +216,26 @@ def process_video_pass(
                     break
 
             assigner.mark_contaminated_tracks(frame_players)
+            color_frame_players = {
+                player_id: {
+                    **player,
+                    "bbox": scale_bbox_between_frames(
+                        player["bbox"],
+                        frame.shape,
+                        source_frame.shape,
+                    ),
+                }
+                for player_id, player in frame_players.items()
+            }
             if sampled_frames <= 120 or assigner.kmeans is None:
-                assigner.collect_samples(frame, frame_players)
+                assigner.collect_samples(source_frame, color_frame_players)
             for player_id, player in frame_players.items():
-                team_info = assigner.get_player_team_info(frame, player["bbox"], player_id)
+                color_bbox = color_frame_players[player_id]["bbox"]
+                if player.get("isGoalkeeper"):
+                    goalkeeper_kit = detect_hardcoded_goalkeeper_kit(source_frame, color_bbox, np)
+                    if goalkeeper_kit:
+                        player["goalkeeperKit"] = goalkeeper_kit
+                team_info = assigner.get_player_team_info(source_frame, color_bbox, player_id)
                 team = int(team_info["team"])
                 player["team"] = team
                 player["team_color"] = assigner.get_draw_color(team)
@@ -249,7 +289,7 @@ def process_video_pass(
         )
         if should_sample:
             last_sample_slot = sample_slot
-            pending_samples.append((frame_num, frame.copy()))
+            pending_samples.append((frame_num, frame.copy(), source_frame.copy()))
             if len(pending_samples) >= batch_size:
                 flush_detection_batch()
         frame_num += 1

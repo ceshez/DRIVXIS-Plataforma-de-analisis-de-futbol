@@ -3,17 +3,87 @@ from __future__ import annotations
 import unittest
 
 import numpy as np
+from sklearn.cluster import KMeans
 
 from analysis.pipeline.ball import assign_ball_control, interpolate_ball_positions
-from analysis.pipeline.annotator import draw_player_marker
-from analysis.pipeline.goalkeepers import assign_goalkeeper_teams
+from analysis.pipeline.annotator import draw_player_marker, draw_player_metrics
+from analysis.pipeline.goalkeepers import assign_goalkeeper_teams, detect_hardcoded_goalkeeper_kit
 from analysis.pipeline.metrics import build_metrics
 from analysis.pipeline.reid import assign_stable_player_ids
 from analysis.pipeline.speed_distance import add_speed_and_distance
 from analysis.pipeline.team_assigner import TeamAssigner
+from analysis.pipeline.tracker import scale_bbox_between_frames
 
 
 class AnalysisPipelineTests(unittest.TestCase):
+    def test_color_sampling_bbox_is_scaled_to_native_frame(self) -> None:
+        scaled = scale_bbox_between_frames([64, 32, 128, 160], (720, 1280), (1080, 1920))
+
+        self.assertEqual(scaled, [96.0, 48.0, 192.0, 240.0])
+
+    def test_white_kit_is_not_classified_as_green_when_torso_is_small(self) -> None:
+        frame = np.full((80, 80, 3), (70, 145, 70), dtype=np.uint8)
+        bbox = [30, 20, 38, 44]
+        frame[24:28, 32:36] = (35, 35, 35)
+        frame[28:34, 33:36] = (210, 210, 210)
+
+        assigner = TeamAssigner(KMeans)
+        assigner.team_colors[1] = np.array([210, 210, 210], dtype=float)
+        assigner.team_colors[2] = np.array([70, 145, 70], dtype=float)
+
+        info = assigner.get_player_team_info(frame, bbox, player_id=26)
+
+        self.assertEqual(info["team"], 1)
+        self.assertLess(np.linalg.norm(np.asarray(info["jersey_color"]) - np.array([210, 210, 210])), 45)
+
+    def test_green_kit_still_uses_torso_color_instead_of_dark_head(self) -> None:
+        frame = np.full((80, 80, 3), (70, 145, 70), dtype=np.uint8)
+        bbox = [30, 20, 38, 44]
+        frame[24:28, 32:36] = (35, 35, 35)
+        frame[28:34, 33:36] = (55, 210, 80)
+
+        color = TeamAssigner(KMeans).get_player_color(frame, bbox)
+
+        self.assertLess(np.linalg.norm(np.asarray(color) - np.array([55, 210, 80])), 55)
+
+    def test_goalkeeper_inherits_representative_color_of_hardcoded_team(self) -> None:
+        tracks = {
+            "players": [
+                {
+                    1: {**player([10, 0, 20, 30], [10, 20], 1), "team_color": (80, 240, 100), "team_confidence": 0.2},
+                    2: {**player([22, 0, 32, 30], [22, 20], 1), "team_color": (245, 245, 245), "team_confidence": 0.92},
+                    3: {**player([80, 0, 90, 30], [80, 20], 2), "team_color": (80, 240, 100), "team_confidence": 0.9},
+                    99: {**player([2, 0, 12, 30], [4, 20], 2), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (30, 30, 30)},
+                },
+                {
+                    1: {**player([11, 0, 21, 30], [11, 20], 1), "team_color": (80, 240, 100), "team_confidence": 0.2},
+                    2: {**player([23, 0, 33, 30], [23, 20], 1), "team_color": (245, 245, 245), "team_confidence": 0.92},
+                    3: {**player([81, 0, 91, 30], [81, 20], 2), "team_color": (80, 240, 100), "team_confidence": 0.9},
+                    99: {**player([3, 0, 13, 30], [5, 20], 2), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (30, 30, 30)},
+                },
+            ],
+            "referees": [{}, {}],
+            "ball": [{}, {}],
+        }
+
+        assign_goalkeeper_teams(tracks)
+
+        self.assertEqual(tracks["players"][0][99]["team"], 1)
+        self.assertEqual(tracks["players"][0][99]["team_color"], (245, 245, 245))
+
+    def test_goalkeeper_pixel_colors_are_hardcoded_to_black_and_orange(self) -> None:
+        black_frame = np.full((100, 60, 3), (80, 145, 80), dtype=np.uint8)
+        black_frame[20:56, 17:43] = (25, 25, 25)
+        orange_frame = np.full((100, 60, 3), (80, 145, 80), dtype=np.uint8)
+        orange_frame[20:56, 17:43] = (40, 100, 225)
+        white_frame = np.full((100, 60, 3), (80, 145, 80), dtype=np.uint8)
+        white_frame[20:56, 17:43] = (235, 235, 235)
+        bbox = [10, 10, 50, 90]
+
+        self.assertEqual(detect_hardcoded_goalkeeper_kit(black_frame, bbox, np), "black")
+        self.assertEqual(detect_hardcoded_goalkeeper_kit(orange_frame, bbox, np), "orange")
+        self.assertIsNone(detect_hardcoded_goalkeeper_kit(white_frame, bbox, np))
+
     def test_detected_colors_handles_numpy_arrays_without_truth_value_error(self) -> None:
         assigner = TeamAssigner(DummyKMeans)
         assigner.team_colors[1] = np.array([20, 40, 200], dtype=float)
@@ -173,6 +243,20 @@ class AnalysisPipelineTests(unittest.TestCase):
         self.assertEqual(cv2.ellipses[0][6], (0, 0, 0))
         self.assertEqual(cv2.ellipses[-1][6], (80, 240, 100))
 
+    def test_accepted_speed_and_distance_are_drawn_as_approximate_values(self) -> None:
+        cv2 = RecordingCv2()
+        canvas = np.zeros((160, 220, 3), dtype=np.uint8)
+        player_info = {
+            "speed": 18.46,
+            "distance": 73.8,
+            "valid_speed_sample": True,
+        }
+
+        draw_player_metrics(cv2, canvas, [70, 20, 100, 80], player_info)
+
+        self.assertIn("~18.5 km/h", cv2.texts)
+        self.assertIn("~74 m", cv2.texts)
+
     def test_draw_color_keeps_detected_hue_but_increases_marker_contrast(self) -> None:
         assigner = TeamAssigner(DummyKMeans)
         detected_green = np.array([148, 242, 178], dtype=float)
@@ -299,18 +383,18 @@ class AnalysisPipelineTests(unittest.TestCase):
         self.assertTrue(tracks["players"][0][1]["has_ball"])
         self.assertGreaterEqual(quality["maxPlayerBallDistance"], 70)
 
-    def test_goalkeeper_with_different_shirt_uses_field_context(self) -> None:
+    def test_black_goalkeeper_is_hardcoded_to_white_team(self) -> None:
         tracks = {
             "players": [
                 {
-                    1: player([10, 0, 20, 30], [18, 20], 1),
-                    2: player([60, 0, 70, 30], [78, 20], 2),
-                    99: {**player([2, 0, 12, 30], [5, 20], 2), "role": "goalkeeper", "isGoalkeeper": True},
+                    1: {**player([10, 0, 20, 30], [18, 20], 1), "team_color": (80, 240, 100)},
+                    2: {**player([60, 0, 70, 30], [78, 20], 2), "team_color": (245, 245, 245)},
+                    99: {**player([2, 0, 12, 30], [5, 20], 1), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (30, 30, 30)},
                 },
                 {
-                    1: player([12, 0, 22, 30], [20, 22], 1),
-                    2: player([62, 0, 72, 30], [80, 22], 2),
-                    99: {**player([3, 0, 13, 30], [6, 22], 2), "role": "goalkeeper", "isGoalkeeper": True},
+                    1: {**player([12, 0, 22, 30], [20, 22], 1), "team_color": (80, 240, 100)},
+                    2: {**player([62, 0, 72, 30], [80, 22], 2), "team_color": (245, 245, 245)},
+                    99: {**player([3, 0, 13, 30], [6, 22], 1), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (30, 30, 30)},
                 },
             ],
             "referees": [{}, {}],
@@ -319,12 +403,153 @@ class AnalysisPipelineTests(unittest.TestCase):
 
         quality = assign_goalkeeper_teams(tracks)
 
-        self.assertEqual(tracks["players"][0][99]["team"], 1)
-        self.assertEqual(tracks["players"][1][99]["team"], 1)
+        self.assertEqual(tracks["players"][0][99]["team"], 2)
+        self.assertEqual(tracks["players"][1][99]["team"], 2)
         self.assertEqual(quality["assigned"], 1)
-        self.assertEqual(quality["items"][0]["reason"], "goal_side_context")
+        self.assertEqual(quality["items"][0]["reason"], "hardcoded_goalkeeper_color:black")
 
-    def test_goalkeeper_can_be_inferred_from_goal_zone_and_color_outlier(self) -> None:
+    def test_persistent_black_goalkeeper_is_assigned_to_white_team(self) -> None:
+        frames = []
+        for frame_index in range(20):
+            frame_players = {
+                1: {**player([18, 0, 28, 30], [20, 30], 1), "team_color": (80, 240, 100)},
+                2: {**player([28, 0, 38, 30], [30, 35], 1), "team_color": (80, 240, 100)},
+                8: {**player([10, 0, 20, 30], [12, 28], 2), "team_color": (245, 245, 245)},
+                9: {**player([76, 0, 86, 30], [80, 38], 2), "team_color": (245, 245, 245)},
+                25: {
+                    **player([2, 0, 10, 30], [5, 30], 1),
+                    "role": "goalkeeper",
+                    "isGoalkeeper": True,
+                    "jersey_color": (30, 30, 30),
+                    "team_color_distance": 90.0,
+                },
+            }
+            if frame_index < 2:
+                frame_players[34] = {
+                    **player([0, 0, 6, 28], [0, 30], 1),
+                    "role": "goalkeeper",
+                    "isGoalkeeper": True,
+                    "jersey_color": (30, 30, 30),
+                    "team_color_distance": 95.0,
+                }
+            frames.append(frame_players)
+        tracks = {
+            "players": frames,
+            "referees": [{} for _ in frames],
+            "ball": [{} for _ in frames],
+        }
+
+        quality = assign_goalkeeper_teams(tracks)
+
+        self.assertEqual({item["id"] for item in quality["items"]}, {25})
+        self.assertEqual(quality["items"][0]["team"], 2)
+        self.assertEqual(quality["items"][0]["reason"], "hardcoded_goalkeeper_color:black")
+        self.assertEqual(tracks["players"][0][25]["team_color"], (245, 245, 245))
+        self.assertNotIn("isGoalkeeper", tracks["players"][0][34])
+
+    def test_stationary_edge_players_are_not_promoted_without_goalkeeper_evidence(self) -> None:
+        frames = []
+        for _frame_index in range(10):
+            frames.append(
+                {
+                    1: player([2, 0, 12, 30], [5, 30], 1),
+                    2: player([78, 0, 88, 30], [82, 30], 2),
+                }
+            )
+        tracks = {
+            "players": frames,
+            "referees": [{} for _ in frames],
+            "ball": [{} for _ in frames],
+        }
+
+        quality = assign_goalkeeper_teams(tracks)
+
+        self.assertEqual(quality["detected"], 0)
+        self.assertEqual(quality["assigned"], 0)
+        self.assertFalse(any(player_info.get("isGoalkeeper") for frame in frames for player_info in frame.values()))
+
+    def test_white_player_matching_either_team_kit_is_not_a_goalkeeper_color_outlier(self) -> None:
+        frames = []
+        for _frame_index in range(10):
+            frames.append(
+                {
+                    1: player([18, 0, 28, 30], [22, 30], 1),
+                    8: {
+                        **player([2, 0, 12, 30], [5, 30], 1),
+                        "jersey_color": (235.0, 235.0, 235.0),
+                        "team_color_distance": 92.0,
+                        "nearest_color_distance": 8.0,
+                        "other_color_distance": 92.0,
+                    },
+                    9: player([78, 0, 88, 30], [82, 30], 2),
+                }
+            )
+        tracks = {
+            "players": frames,
+            "referees": [{} for _ in frames],
+            "ball": [{} for _ in frames],
+        }
+
+        quality = assign_goalkeeper_teams(tracks)
+
+        self.assertEqual(quality["detected"], 0)
+        self.assertEqual(quality["assigned"], 0)
+        self.assertNotIn("isGoalkeeper", tracks["players"][0][8])
+
+    def test_explicit_white_player_is_rejected_by_hardcoded_goalkeeper_kits(self) -> None:
+        frames = []
+        for _frame_index in range(10):
+            frames.append(
+                {
+                    1: {**player([18, 0, 28, 30], [22, 30], 1), "team_color": (80, 240, 100)},
+                    8: {
+                        **player([2, 0, 12, 30], [5, 30], 1),
+                        "role": "goalkeeper",
+                        "isGoalkeeper": True,
+                        "jersey_color": (235.0, 235.0, 235.0),
+                        "team_color_distance": 92.0,
+                    },
+                    9: {**player([78, 0, 88, 30], [82, 30], 2), "team_color": (245, 245, 245)},
+                }
+            )
+        tracks = {
+            "players": frames,
+            "referees": [{} for _ in frames],
+            "ball": [{} for _ in frames],
+        }
+
+        quality = assign_goalkeeper_teams(tracks)
+
+        self.assertEqual(quality["detected"], 0)
+        self.assertEqual(quality["assigned"], 0)
+        self.assertNotIn("isGoalkeeper", tracks["players"][0][8])
+
+    def test_single_goalkeeper_label_does_not_promote_a_long_lived_field_player(self) -> None:
+        frames = []
+        for frame_index in range(100):
+            field_player = player([2, 0, 12, 30], [5, 30], 1)
+            if frame_index == 0:
+                field_player["role"] = "goalkeeper"
+                field_player["isGoalkeeper"] = True
+            frames.append(
+                {
+                    1: field_player,
+                    2: player([78, 0, 88, 30], [82, 30], 2),
+                }
+            )
+        tracks = {
+            "players": frames,
+            "referees": [{} for _ in frames],
+            "ball": [{} for _ in frames],
+        }
+
+        quality = assign_goalkeeper_teams(tracks)
+
+        self.assertEqual(quality["detected"], 0)
+        self.assertEqual(quality["assigned"], 0)
+        self.assertNotIn("isGoalkeeper", tracks["players"][0][1])
+
+    def test_goal_zone_color_outlier_is_not_promoted_without_hardcoded_kit(self) -> None:
         tracks = {
             "players": [
                 {
@@ -354,29 +579,29 @@ class AnalysisPipelineTests(unittest.TestCase):
 
         quality = assign_goalkeeper_teams(tracks)
 
-        self.assertEqual(tracks["players"][0][77]["team"], 1)
-        self.assertTrue(tracks["players"][0][77]["isGoalkeeper"])
-        self.assertEqual(quality["assigned"], 1)
-        self.assertIn("goal_zone_color_outlier", quality["items"][0]["reason"])
+        self.assertEqual(tracks["players"][0][77]["team"], 2)
+        self.assertNotIn("isGoalkeeper", tracks["players"][0][77])
+        self.assertEqual(quality["detected"], 0)
+        self.assertEqual(quality["assigned"], 0)
 
-    def test_goalkeeper_assignment_is_capped_to_one_per_side(self) -> None:
+    def test_goalkeeper_assignment_is_capped_to_one_per_team(self) -> None:
         tracks = {
             "players": [
                 {
-                    1: player([20, 0, 30, 30], [24, 20], 1),
-                    2: player([70, 0, 80, 30], [84, 20], 2),
-                    90: {**player([2, 0, 12, 30], [5, 20], 1), "role": "goalkeeper", "isGoalkeeper": True, "team_color_distance": 80.0},
-                    91: {**player([4, 0, 14, 30], [7, 20], 1), "role": "goalkeeper", "isGoalkeeper": True, "team_color_distance": 60.0},
-                    92: {**player([88, 0, 98, 30], [96, 20], 2), "role": "goalkeeper", "isGoalkeeper": True, "team_color_distance": 82.0},
-                    93: {**player([60, 0, 70, 30], [55, 20], 2), "role": "goalkeeper", "isGoalkeeper": True},
+                    1: {**player([20, 0, 30, 30], [24, 20], 1), "team_color": (245, 245, 245)},
+                    2: {**player([70, 0, 80, 30], [84, 20], 2), "team_color": (80, 240, 100)},
+                    90: {**player([2, 0, 12, 30], [5, 20], 1), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (30, 30, 30)},
+                    91: {**player([4, 0, 14, 30], [7, 20], 1), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (35, 35, 35)},
+                    92: {**player([88, 0, 98, 30], [96, 20], 2), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (40, 100, 225)},
+                    93: {**player([60, 0, 70, 30], [55, 20], 2), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (45, 105, 220)},
                 },
                 {
-                    1: player([21, 0, 31, 30], [25, 20], 1),
-                    2: player([71, 0, 81, 30], [85, 20], 2),
-                    90: {**player([3, 0, 13, 30], [6, 20], 1), "role": "goalkeeper", "isGoalkeeper": True, "team_color_distance": 80.0},
-                    91: {**player([5, 0, 15, 30], [8, 20], 1), "role": "goalkeeper", "isGoalkeeper": True, "team_color_distance": 60.0},
-                    92: {**player([87, 0, 97, 30], [95, 20], 2), "role": "goalkeeper", "isGoalkeeper": True, "team_color_distance": 82.0},
-                    93: {**player([61, 0, 71, 30], [56, 20], 2), "role": "goalkeeper", "isGoalkeeper": True},
+                    1: {**player([21, 0, 31, 30], [25, 20], 1), "team_color": (245, 245, 245)},
+                    2: {**player([71, 0, 81, 30], [85, 20], 2), "team_color": (80, 240, 100)},
+                    90: {**player([3, 0, 13, 30], [6, 20], 1), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (30, 30, 30)},
+                    91: {**player([5, 0, 15, 30], [8, 20], 1), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (35, 35, 35)},
+                    92: {**player([87, 0, 97, 30], [95, 20], 2), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (40, 100, 225)},
+                    93: {**player([61, 0, 71, 30], [56, 20], 2), "role": "goalkeeper", "isGoalkeeper": True, "jersey_color": (45, 105, 220)},
                 },
             ],
             "referees": [{}, {}],
@@ -385,9 +610,15 @@ class AnalysisPipelineTests(unittest.TestCase):
 
         quality = assign_goalkeeper_teams(tracks)
         selected_ids = {item["id"] for item in quality["items"]}
+        selected_teams = {item["team"] for item in quality["items"]}
 
         self.assertLessEqual(quality["assigned"], 2)
         self.assertEqual(selected_ids, {90, 92})
+        self.assertEqual(selected_teams, {1, 2})
+        self.assertNotEqual(
+            tracks["players"][0][90]["team_color"],
+            tracks["players"][0][92]["team_color"],
+        )
         self.assertTrue(tracks["players"][0][90]["isGoalkeeper"])
         self.assertTrue(tracks["players"][0][92]["isGoalkeeper"])
         self.assertNotIn("isGoalkeeper", tracks["players"][0][91])
@@ -538,6 +769,7 @@ class RecordingCv2:
 
     def __init__(self) -> None:
         self.ellipses: list[tuple] = []
+        self.texts: list[str] = []
 
     def ellipse(self, _canvas, center, axes, angle, start, end, color, thickness, line_type) -> None:
         self.ellipses.append((center, axes, angle, thickness, start, end, color, line_type))
@@ -548,8 +780,12 @@ class RecordingCv2:
     def rectangle(self, _canvas, _top_left, _bottom_right, _color, _thickness, *_args) -> None:
         return None
 
-    def putText(self, _canvas, _text, _origin, _font, _scale, _color, _thickness, _line_type) -> None:
+    def putText(self, _canvas, text, _origin, _font, _scale, _color, _thickness, _line_type) -> None:
+        self.texts.append(text)
         return None
+
+    def getTextSize(self, text, _font, _scale, _thickness):
+        return (len(text) * 6, 10), 2
 
 
 if __name__ == "__main__":

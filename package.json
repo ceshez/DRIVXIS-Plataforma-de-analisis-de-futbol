@@ -24,15 +24,17 @@
   "license": "ISC",
   "author": "Carlos Sanchez Hernandez",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "prisma generate && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "analysis:worker": "node scripts/analysis-worker.mjs",
+    "analysis:model:upload": "node scripts/upload-analysis-model.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
     "test": "vitest run",
     "doctor": "npx react-doctor@latest"
   },

@@ -287,7 +287,6 @@ svg {
 }
 
 .brand-logo {
-  width: clamp(66px, 7vw, 90px);
   height: auto;
 }
 
@@ -5153,10 +5152,6 @@ svg {
     justify-content: space-between;
   }
 
-  .brand-logo {
-    width: 72px;
-  }
-
   .dashboard-chatbot-link {
     min-width: 36px;
     justify-content: center;
@@ -6662,6 +6657,11 @@ svg {
   gap: var(--space-md);
 }
 
+.settings-password-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
 .settings-form label {
   display: grid;
   gap: 0.4rem;
@@ -6906,6 +6906,23 @@ html[data-theme="light"] :is(.site-header, .app-header) {
   background: rgba(248, 245, 241, 0.96);
 }
 
+html[data-theme="light"] .app-toast {
+  border-color: var(--line-strong);
+  background: var(--panel);
+  box-shadow: 0 18px 60px rgba(90, 48, 27, 0.18);
+  color: var(--text);
+}
+
+html[data-theme="light"] .app-toast span {
+  color: var(--text);
+}
+
+html[data-theme="light"] .app-toast button {
+  border-color: var(--line-strong);
+  background: rgba(36, 27, 23, 0.04);
+  color: var(--muted);
+}
+
 html[data-theme="light"] :is(.app-frame--dashboard-main, .auth-panel, .lab-panel, .profile-page__header, .profile-menu__dropdown) {
   background: rgba(251, 248, 244, 0.96);
   color: var(--text);
@@ -7050,9 +7067,12 @@ html[data-theme="light"] .dashboard-lab--figma .analysis-step {
   color: var(--muted);
 }
 
-html[data-theme="light"] .analysis-result-panel__inner strong,
-html[data-theme="light"] .button.ghost.analysis-result-panel__action {
+html[data-theme="light"] .analysis-result-panel__inner strong {
   color: #f2f0ee;
+}
+
+html[data-theme="light"] .button.ghost.analysis-result-panel__action {
+  color: var(--text);
 }
 
 html[data-theme="light"] .analysis-result-panel__inner small,

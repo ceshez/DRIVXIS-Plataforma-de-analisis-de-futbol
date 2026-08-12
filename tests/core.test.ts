@@ -410,3 +410,13 @@ describe("match color editor", () => {
     expect(source).toContain("ArrowLeftRight");
   });
 });
+
+describe("profile password settings", () => {
+  it("keeps the form reference across the async password confirmation", () => {
+    const source = readFileSync(join(process.cwd(), "components", "profile-settings.tsx"), "utf8");
+
+    expect(source).toContain("const formElement = event.currentTarget;");
+    expect(source).toContain('type={showPassword ? "text" : "password"}');
+    expect(source).toContain("formElement.reset()");
+  });
+});

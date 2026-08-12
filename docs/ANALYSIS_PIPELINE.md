@@ -117,9 +117,14 @@ ANALYSIS_MODEL_OBJECT_KEY="models/best.onnx"
 ANALYSIS_DETECTION_FPS="5"
 ANALYSIS_BATCH_SIZE="4"
 ANALYSIS_MAX_WIDTH="1280"
+YOLO_IMAGE_SIZE="640"
+YOLO_PROCESS_EVERY_FRAME="true"
+YOLO_FALLBACK_IMAGE_SIZE="1280"
+YOLO_SPARSE_PLAYER_THRESHOLD="8"
+YOLO_SPARSE_PLAYER_MAX_HEIGHT_RATIO="0.22"
 ```
 
-El worker usa el archivo local si existe. Si falta, lo descarga una vez desde `ANALYSIS_MODEL_OBJECT_KEY` en R2 o desde `ANALYSIS_MODEL_URL` y lo conserva en el volumen `/models`. Procesa frames a 5 FPS, mantiene ByteTrack e interpola las trayectorias al FPS original.
+El worker usa el archivo local si existe. Si falta, lo descarga una vez desde `ANALYSIS_MODEL_OBJECT_KEY` en R2 o desde `ANALYSIS_MODEL_URL` y lo conserva en el volumen `/models`. YOLO procesa cada frame para mantener detecciones continuas durante zooms y movimientos de camara; LocateAnything conserva el muestreo configurado de 5 FPS. ByteTrack mantiene los IDs e interpola huecos cortos. Cuando un frame contiene menos de ocho jugadores y los detectados son pequenos, YOLO lo reintenta a 1280 px sobre el frame nativo para recuperar jugadores lejanos; las cajas se convierten de nuevo a las coordenadas de analisis.
 
 LocateAnything se activa explicitamente:
 

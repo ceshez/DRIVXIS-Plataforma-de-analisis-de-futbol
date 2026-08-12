@@ -255,6 +255,35 @@ class LocateAnythingTemporalTests(unittest.TestCase):
         self.assertNotIn(1, result["tracks"]["players"][24])
         self.assertEqual(result["inference"]["framesProcessed"], 5)
 
+    def test_pipeline_processes_every_frame_when_detector_requests_continuous_tracking(self) -> None:
+        detector = FullFrameFakeDetector()
+        frames = [np.zeros((80, 100, 3), dtype=np.uint8) for _ in range(25)]
+        fake_cv2 = FakeCv2(frames)
+        fake_sv = SimpleNamespace(Detections=FakeDetections, ByteTrack=FakeByteTrack)
+        deps = {"cv2": fake_cv2, "np": np, "sv": fake_sv, "KMeans": object}
+
+        with (
+            patch("analysis.pipeline.tracker.CameraMovementEstimator", FakeCameraMovementEstimator),
+            patch("analysis.pipeline.tracker.TeamAssigner.from_match_info", return_value=FakeAssigner()),
+            patch("analysis.pipeline.tracker.transform_position", side_effect=lambda point, *_args: list(point)),
+        ):
+            result = process_video_pass(
+                input_path=SimpleNamespace(__str__=lambda _self: "fake.mp4"),
+                model_id="analysis/models/best.onnx",
+                model_revision="local",
+                detection_fps=5,
+                batch_size=4,
+                video_info={"frameCount": 25, "frameSize": (100, 80), "fps": 25},
+                calibration={},
+                match_info={},
+                deps=deps,
+                detector=detector,
+            )
+
+        self.assertEqual(detector.batch_sizes, [4, 4, 4, 4, 4, 4, 1])
+        self.assertEqual(result["inference"]["framesProcessed"], 25)
+        self.assertNotIn("interpolated", result["tracks"]["players"][1][1])
+
 
 class FakeDetector:
     def __init__(self) -> None:
@@ -286,6 +315,10 @@ class FakeDetector:
             "slowRetries": 0,
             "parseFailures": 0,
         }
+
+
+class FullFrameFakeDetector(FakeDetector):
+    process_every_frame = True
 
 
 class FakeDetections:

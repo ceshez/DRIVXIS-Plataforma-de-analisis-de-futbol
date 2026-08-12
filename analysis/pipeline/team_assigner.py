@@ -3,6 +3,8 @@ from __future__ import annotations
 import colorsys
 from typing import Any
 
+import numpy as np
+
 from .common import DEFAULT_TEAM_COLORS_BGR, bbox_iou, bbox_width, bgr_to_hex, build_color_anchors, center_of_bbox, measure_distance
 
 
@@ -16,6 +18,9 @@ OCCLUSION_IOU_THRESHOLD = 0.06
 OCCLUSION_MIN_AREA_RATIO = 0.16
 UNKNOWN_TEAM = 0
 UNKNOWN_TEAM_COLOR_BGR = (142, 142, 142)
+NEUTRAL_KIT_MIN_BRIGHTNESS = 105.0
+NEUTRAL_KIT_MAX_CHANNEL_SPREAD = 42.0
+NEUTRAL_KIT_MIN_RATIO = 0.16
 
 
 class TeamAssigner:
@@ -57,6 +62,7 @@ class TeamAssigner:
             (0.18, 0.82, 0.10, 0.62),
             (0.24, 0.76, 0.16, 0.54),
             (0.12, 0.88, 0.18, 0.70),
+            (0.24, 0.76, 0.28, 0.82),
         )
         candidates: list[tuple[float, Any]] = []
         for left, right, top, bottom in crop_specs:
@@ -69,12 +75,16 @@ class TeamAssigner:
             crop = frame[roi_y1:roi_y2, roi_x1:roi_x2]
             if crop.size == 0 or crop.shape[0] < 4 or crop.shape[1] < 3:
                 continue
+            torso_bonus = max(0.0, min(0.20, (top - 0.14) * 0.55))
             scored = self._foreground_cluster_color(crop)
             if scored is not None:
-                candidates.append(scored)
+                candidates.append((scored[0] + torso_bonus, scored[1]))
+            neutral = self._bright_neutral_color(crop)
+            if neutral is not None:
+                candidates.append((neutral[0] + torso_bonus, neutral[1]))
             fallback = self._dominant_uniform_color(crop, cv2)
             if fallback is not None:
-                candidates.append((fallback[0] * 0.82, fallback[1]))
+                candidates.append((fallback[0] * 0.82 + torso_bonus, fallback[1]))
 
         if not candidates:
             return None
@@ -112,6 +122,32 @@ class TeamAssigner:
 
         chosen = max(foreground_clusters, key=cluster_score)
         return cluster_score(chosen), kmeans.cluster_centers_[chosen]
+
+    def _bright_neutral_color(self, image: Any) -> tuple[float, Any] | None:
+        """Recover white/gray kits when the player is only a few pixels wide."""
+        height, width = image.shape[:2]
+        torso = image[
+            max(0, int(height * 0.18)) : max(1, int(height * 0.78)),
+            max(0, int(width * 0.16)) : max(1, int(width * 0.84)),
+        ]
+        pixels = torso.reshape(-1, 3)
+        if len(pixels) < 4:
+            return None
+
+        channel_spread = pixels.max(axis=1) - pixels.min(axis=1)
+        brightness = pixels.mean(axis=1)
+        neutral = (brightness >= NEUTRAL_KIT_MIN_BRIGHTNESS) & (
+            channel_spread <= NEUTRAL_KIT_MAX_CHANNEL_SPREAD
+        )
+        neutral_count = int(neutral.sum())
+        min_count = max(4, int(len(pixels) * NEUTRAL_KIT_MIN_RATIO))
+        if neutral_count < min_count:
+            return None
+
+        color = np.median(pixels[neutral], axis=0)
+        ratio = neutral_count / max(1, len(pixels))
+        score = 0.70 + min(0.22, ratio * 0.50)
+        return score, color
 
     def _dominant_uniform_color(self, image: Any, cv2: Any | None) -> tuple[float, Any] | None:
         pixels = image.reshape(-1, 3)
