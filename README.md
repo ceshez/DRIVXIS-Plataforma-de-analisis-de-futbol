@@ -72,28 +72,6 @@ Documentos clave:
 - [`docs/UI_GUIDE.md`](./docs/UI_GUIDE.md) - reglas visuales.
 - [`docs/ROADMAP.md`](./docs/ROADMAP.md) - mejoras futuras.
 
-## Prompt recomendado para Codex
-
-```txt
-Read first:
-- AGENTS.md
-- docs/INDEX.md
-- docs/CODEX.md
-- docs/PROJECT_CONTEXT.md
-
-Task:
-[describe la tarea]
-
-Modify only:
-[archivos o carpetas]
-
-Do not modify:
-[partes delicadas]
-
-Make the smallest safe change.
-Preserve existing functionality.
-After finishing, summarize files changed, what changed, how to test and risks.
-```
 
 ## Comandos de verificacion
 
