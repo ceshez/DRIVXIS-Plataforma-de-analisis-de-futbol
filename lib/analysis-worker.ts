@@ -2,6 +2,7 @@ import { closeSync, existsSync, mkdirSync, openSync } from "node:fs";
 import { spawn } from "node:child_process";
 import type { StdioOptions } from "node:child_process";
 import path from "node:path";
+import { prisma } from "@/lib/prisma";
 
 type AnalysisWorkerMode = "disabled" | "local" | "vercel-sandbox";
 
@@ -48,6 +49,8 @@ const SANDBOX_REQUIRED_ENV_KEYS = [
   "STORAGE_SECRET_ACCESS_KEY",
 ] as const;
 
+const SANDBOX_LAUNCH_LEASE_MS = 5 * 60 * 1000;
+
 const globalForAnalysisWorker = globalThis as typeof globalThis & {
   drivxisAnalysisKickAt?: number;
 };
@@ -80,11 +83,53 @@ export async function kickAnalysisWorker() {
   globalForAnalysisWorker.drivxisAnalysisKickAt = now;
 
   if (mode === "vercel-sandbox") {
-    await kickVercelSandboxWorker();
+    const reservation = await reserveQueuedSandboxJob();
+    if (!reservation) return;
+
+    try {
+      await kickVercelSandboxWorker();
+    } catch (error) {
+      await releaseQueuedSandboxJob(reservation.jobId, reservation.startedAt);
+      throw error;
+    }
     return;
   }
 
   kickLocalAnalysisWorker();
+}
+
+async function reserveQueuedSandboxJob() {
+  const staleBefore = new Date(Date.now() - SANDBOX_LAUNCH_LEASE_MS);
+  const availableLease = {
+    OR: [{ startedAt: null }, { startedAt: { lt: staleBefore } }],
+  };
+  const job = await prisma.analysisJob.findFirst({
+    where: {
+      status: "QUEUED",
+      ...availableLease,
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  if (!job) return null;
+
+  const startedAt = new Date();
+  const reserved = await prisma.analysisJob.updateMany({
+    where: {
+      id: job.id,
+      status: "QUEUED",
+      ...availableLease,
+    },
+    data: { startedAt },
+  });
+  return reserved.count === 1 ? { jobId: job.id, startedAt } : null;
+}
+
+async function releaseQueuedSandboxJob(jobId: string, startedAt: Date) {
+  await prisma.analysisJob.updateMany({
+    where: { id: jobId, status: "QUEUED", startedAt },
+    data: { startedAt: null },
+  });
 }
 
 async function kickVercelSandboxWorker() {
