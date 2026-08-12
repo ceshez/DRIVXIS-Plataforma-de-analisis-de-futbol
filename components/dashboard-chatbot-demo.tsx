@@ -880,10 +880,7 @@ export function DashboardChatbot({
           <header className={styles.mobileTopbar}>
             <button type="button" aria-label={english ? "Open history" : "Abrir historial"} onClick={() => setMobileSidebarOpen(true)}><Menu size={15} /></button>
             <BrandWordmark compact />
-            <div className={styles.mobileViewSwitch} role="group" aria-label={english ? "Chatbot view" : "Vista del chatbot"}>
-              <button type="button" className={`${styles.mobileViewButton} ${!mobileSidebarOpen ? styles.mobileViewButtonActive : ""}`} aria-pressed={!mobileSidebarOpen} onClick={() => setMobileSidebarOpen(false)}><PanelLeftOpen size={13} /><span>Panel</span></button>
-              <button type="button" className={`${styles.mobileViewButton} ${mobileSidebarOpen ? styles.mobileViewButtonActive : ""}`} aria-pressed={mobileSidebarOpen} onClick={() => setMobileSidebarOpen(true)}><Clock3 size={13} /><span>{english ? "History" : "Historial"}</span></button>
-            </div>
+            <span className={styles.mobileTopbarPlaceholder} aria-hidden="true" />
           </header>
 
           {isConversationMode ? (

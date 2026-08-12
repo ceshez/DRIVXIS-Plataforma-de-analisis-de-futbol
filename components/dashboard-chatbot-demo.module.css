@@ -137,6 +137,23 @@
   color: var(--text);
 }
 
+:global(html[data-theme="light"]) .contextChip {
+  border-color: rgba(217, 79, 22, 0.34);
+  background: #f8e2d6;
+  color: #3a241a;
+}
+
+:global(html[data-theme="light"]) .contextChip:hover,
+:global(html[data-theme="light"]) .contextChip:focus-visible {
+  border-color: rgba(217, 79, 22, 0.58);
+  background: #f2d2c1;
+  color: #211814;
+}
+
+:global(html[data-theme="light"]) .contextChip svg {
+  color: #d94f16;
+}
+
 :global(html[data-theme="light"]) :is(.composerDock, .composerDockInner) {
   border-color: var(--line);
   background: linear-gradient(180deg, rgba(247, 243, 238, 0.55), rgba(247, 243, 238, 0.98));
@@ -902,6 +919,18 @@
   font: inherit;
   font-size: 0.65rem;
   cursor: pointer;
+}
+
+.contextChip:hover,
+.contextChip:focus-visible {
+  border-color: rgba(255, 107, 43, 0.48);
+  background: rgba(255, 107, 43, 0.14);
+  color: rgba(242, 240, 238, 0.94);
+  outline: none;
+}
+
+.contextChip:focus-visible {
+  box-shadow: 0 0 0 2px rgba(255, 107, 43, 0.2);
 }
 
 .contextChip span {

@@ -531,6 +531,13 @@ describe("chatbot interaction polish", () => {
     expect(styles).toContain("@keyframes thinkingBounce");
     expect(component).toContain("enqueueAssistantText");
   });
+
+  it("keeps the mobile header minimal and selected context readable in light mode", () => {
+    expect(component).not.toContain("styles.mobileViewSwitch");
+    expect(component).toContain("styles.mobileTopbarPlaceholder");
+    expect(styles).toContain(':global(html[data-theme="light"]) .contextChip');
+    expect(styles).toContain("color: #3a241a;");
+  });
 });
 
 describe("profile password settings", () => {
